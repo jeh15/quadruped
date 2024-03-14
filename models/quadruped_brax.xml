@@ -57,13 +57,13 @@
             <geom class="visual" type="capsule" size="0.045 0.025" pos="-0.1525 -0.085 0" quat="1 1 0 0"/>
             <geom class="visual" type="capsule" size="0.045 0.025" pos="-0.1525 0.085 0" quat="1 1 0 0"/>
             <body name="front_left_leg" pos="0.1525 0.1225 0" quat="0.258819 0 0.9659258 0">
-                <joint type="hinge" axis="0 1 0" pos="0 0 0" range="-1.57 1.57" limited="true" name="front_left_hip_joint"/>
+                <joint type="hinge" axis="0 1 0" pos="0 0 0" range="-1.57 1.57" limited="true" damping="1" name="front_left_hip_joint"/>
                 <geom class="visual" type="capsule" size="0.03 0.0125" pos="0 0 0" quat="1 1 0 0" rgba="0 1 0 1"/>
                 <body name="front_left_thigh" pos="0 0 0">
                     <geom class="visual" type="box" size="0.0925 0.02 0.0115" pos="0.0925 0 0" quat="1 1 0 0" rgba="1 0 0 1"/>
                     <geom class="visual" type="capsule" size="0.02 0.0115" pos="0.185 0 0" quat="1 1 0 0" rgba="1 0 0 1"/>
                     <body name="front_left_knee" pos="0.185 0 0" quat="0.5 0 -0.8660254 0">
-                        <joint type="hinge" axis="0 1 0" pos="0 0 0" range="-0.57 1.91" limited="true" name="front_left_knee_joint"/>
+                        <joint type="hinge" axis="0 1 0" pos="0 0 0" range="-0.57 1.91" limited="true" damping="1" name="front_left_knee_joint"/>
                         <geom class="collision" type="sphere" size="0.02" pos="0 0 0" rgba="1 0 0 0.5"/>
                         <body name="front_left_calf" pos="0 0 0">
                             <geom class="visual" type="box" size="0.085 0.0175 0.0115" pos="0.085 0 0" quat="1 1 0 0" rgba="0 0 1 1"/>
@@ -76,13 +76,13 @@
                 </body>
             </body>
             <body name="front_right_leg" pos="0.1525 -0.1225 0" quat="0.258819 0 0.9659258 0">
-                <joint type="hinge" axis="0 1 0" pos="0 0 0" range="-1.57 1.57" limited="true" name="front_right_hip_joint"/>
+                <joint type="hinge" axis="0 1 0" pos="0 0 0" range="-1.57 1.57" limited="true" damping="1" name="front_right_hip_joint"/>
                 <geom class="visual" type="capsule" size="0.03 0.0125" pos="0 0 0" quat="1 1 0 0" rgba="0 1 0 1"/>
                 <body name="front_right_thigh" pos="0 0 0">
                     <geom class="visual" type="box" size="0.0925 0.02 0.0115" pos="0.0925 0 0" quat="1 1 0 0" rgba="1 0 0 1"/>
                     <geom class="visual" type="capsule" size="0.02 0.0115" pos="0.185 0 0" quat="1 1 0 0" rgba="1 0 0 1"/>
                     <body name="front_right_knee" pos="0.185 0 0" quat="0.5 0 -0.8660254 0">
-                        <joint type="hinge" axis="0 1 0" pos="0 0 0"  range="-0.57 1.91" limited="true" name="front_right_knee_joint"/>
+                        <joint type="hinge" axis="0 1 0" pos="0 0 0"  range="-0.57 1.91" limited="true" damping="1" name="front_right_knee_joint"/>
                         <geom class="collision" type="sphere" size="0.02" pos="0 0 0" rgba="1 0 0 0.5"/>
                         <body name="front_right_calf" pos="0 0 0">
                             <geom class="visual" type="box" size="0.085 0.0175 0.0115" pos="0.085 0 0" quat="1 1 0 0" rgba="0 0 1 1"/>
@@ -95,13 +95,13 @@
                 </body>
             </body>
             <body name="back_left_leg" pos="-0.1525 0.1225 0" quat="0.258819 0 0.9659258 0">
-                <joint type="hinge" axis="0 1 0" pos="0 0 0" range="-1.57 1.57" limited="true" name="back_left_hip_joint"/>
+                <joint type="hinge" axis="0 1 0" pos="0 0 0" range="-1.57 1.57" limited="true" damping="1" name="back_left_hip_joint"/>
                 <geom class="visual" type="capsule" size="0.03 0.0125" pos="0 0 0" quat="1 1 0 0" rgba="0 1 0 1"/>
                 <body name="back_left_thigh" pos="0 0 0">
                     <geom class="visual" type="box" size="0.0925 0.02 0.0115" pos="0.0925 0 0" quat="1 1 0 0" rgba="1 0 0 1"/>
                     <geom class="visual" type="capsule" size="0.02 0.0115" pos="0.185 0 0" quat="1 1 0 0" rgba="1 0 0 1"/>
                     <body name="back_left_knee" pos="0.185 0 0" quat="0.5 0 -0.8660254 0">
-                        <joint type="hinge" axis="0 1 0" pos="0 0 0" range="-0.57 1.91" limited="true" name="back_left_knee_joint"/>
+                        <joint type="hinge" axis="0 1 0" pos="0 0 0" range="-0.57 1.91" limited="true" damping="1" name="back_left_knee_joint"/>
                         <geom class="collision" type="sphere" size="0.02" pos="0 0 0" rgba="1 0 0 0.5"/>
                         <body name="back_left_calf" pos="0 0 0">
                             <geom class="visual" type="box" size="0.085 0.0175 0.0115" pos="0.085 0 0" quat="1 1 0 0" rgba="0 0 1 1"/>
@@ -114,13 +114,13 @@
                 </body>
             </body>
             <body name="back_right_leg" pos="-0.1525 -0.1225 0" quat="0.258819 0 0.9659258 0">
-                <joint type="hinge" axis="0 1 0" pos="0 0 0" range="-1.57 1.57" limited="true" name="back_right_hip_joint"/>
+                <joint type="hinge" axis="0 1 0" pos="0 0 0" range="-1.57 1.57" limited="true" damping="1" name="back_right_hip_joint"/>
                 <geom class="visual" type="capsule" size="0.03 0.0125" pos="0 0 0" quat="1 1 0 0" rgba="0 1 0 1"/>
                 <body name="back_right_thigh" pos="0 0 0">
                     <geom class="visual" type="box" size="0.0925 0.02 0.0115" pos="0.0925 0 0" quat="1 1 0 0" rgba="1 0 0 1"/>
                     <geom class="visual" type="capsule" size="0.02 0.0115" pos="0.185 0 0" quat="1 1 0 0" rgba="1 0 0 1"/>
                     <body name="back_right_knee" pos="0.185 0 0" quat="0.5 0 -0.8660254 0">
-                        <joint type="hinge" axis="0 1 0" pos="0 0 0" range="-0.57 1.91" limited="true" name="back_right_knee_joint"/>
+                        <joint type="hinge" axis="0 1 0" pos="0 0 0" range="-0.57 1.91" limited="true" damping="1" name="back_right_knee_joint"/>
                         <geom class="collision" type="sphere" size="0.02" pos="0 0 0" rgba="1 0 0 0.5"/>
                         <body name="back_right_calf" pos="0 0 0">
                             <geom class="visual" type="box" size="0.085 0.0175 0.0115" pos="0.085 0 0" quat="1 1 0 0" rgba="0 0 1 1"/>

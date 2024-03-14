@@ -5,9 +5,9 @@ from absl import app
 import numpy as np
 import jax
 import jax.numpy as jnp
+
 import brax
 from brax.io import mjcf, html
-from brax.generalized import pipeline
 from brax.envs.wrappers import training as wrapper
 from brax.envs.base import Env
 from tqdm import tqdm
@@ -48,18 +48,7 @@ def create_environment(
 
 
 def main(argv=None):
-    # Import mjcf file:
-    filename = "models/quadruped/quadruped_brax.xml"
-    filepath = os.path.join(
-        os.path.dirname(
-            os.path.dirname(
-                os.path.dirname(__file__),
-            ),
-        ),
-        filename,
-    )
-
-    n_frames = 5
+    n_frames = 10
     env = create_environment(
         episode_length=None,
         auto_reset=False,
@@ -68,10 +57,8 @@ def main(argv=None):
         n_frames=n_frames,
     )
 
-    env.step_dt
-
     # Load mjcf model:
-    pipeline_model = mjcf.load(filepath)
+    pipeline_model = mjcf.load(env.filepath)
     motor_mask = pipeline_model.actuator.qd_id
 
     initial_q = env.initial_q
@@ -81,9 +68,11 @@ def main(argv=None):
     step_fn = jax.jit(env.step)
 
     # Compile Step Function for timing:
-    initial_key = jax.random.PRNGKey(42)
+    initial_key = jax.random.key(42)
     state = reset_fn(initial_key)
     _ = step_fn(state, base_ctrl)
+
+    x, dx = brax.kinematics.forward(env.sys, state.pipeline_state.q, state.pipeline_state.qd)
 
     state_history = [state.pipeline_state]
     simulation_steps = 5000
@@ -120,8 +109,10 @@ def main(argv=None):
     )
 
     html_path = os.path.join(
-        os.path.dirname(__file__),
-        "visualization.html",
+        os.path.dirname(
+            os.path.dirname(__file__),
+        ),
+        "visualization/visualization.html",
     )
 
     with open(html_path, "w") as f:

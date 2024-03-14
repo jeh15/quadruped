@@ -1,3 +1,5 @@
+import os
+
 from brax import base
 from brax.envs.base import PipelineEnv, State
 from brax.io import mjcf
@@ -21,12 +23,19 @@ class Quadruped(PipelineEnv):
 
     def __init__(
         self,
-        filepath: str,
+        filename: str = 'quadruped_brax.xml',
         backend: str = 'generalized',
         params: config_dict.ConfigDict = config,
         **kwargs,
     ):
-        sys = mjcf.load(filepath)
+        filename = f'models/{filename}'
+        self.filepath = os.path.join(
+            os.path.dirname(
+                os.path.dirname(__file__),
+            ),
+            filename,
+        )
+        sys = mjcf.load(self.filepath)
 
         # Set Backend Parameters:
         sys = sys.replace(dt=0.001)
