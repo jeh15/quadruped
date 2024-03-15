@@ -72,10 +72,22 @@ def main(argv=None):
     state = reset_fn(initial_key)
     _ = step_fn(state, base_ctrl)
 
-    x, dx = brax.kinematics.forward(env.sys, state.pipeline_state.q, state.pipeline_state.qd)
+    # Use utility function:
+    jit_foot_position = jax.jit(quadruped.calculate_foot_position)
+    foot_x = jit_foot_position(
+        env.sys,
+        state.pipeline_state.q,
+        state.pipeline_state.qd,
+    )
+
+    # foot_x = quadruped.calculate_foot_position(
+    #     env.sys,
+    #     state.pipeline_state.q,
+    #     state.pipeline_state.qd,
+    # )
 
     state_history = [state.pipeline_state]
-    simulation_steps = 5000
+    simulation_steps = 1000
     desired_joint_position = np.array([0.0, 0.0])
     kp = 10.0
 

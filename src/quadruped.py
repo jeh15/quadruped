@@ -3,6 +3,10 @@ import os
 from brax import base
 from brax.envs.base import PipelineEnv, State
 from brax.io import mjcf
+from brax.kinematics import forward
+from brax.base import System
+from brax.math import rotate
+
 import jax
 import jax.numpy as jnp
 
@@ -73,6 +77,7 @@ class Quadruped(PipelineEnv):
         # Parameters:
         self.q_size = 15
         self.qd_size = self.q_size - 1
+        self.calf_length = 0.17
 
         # Set Configuration:
         self._forward_reward_weight = params.forward_reward_weight
@@ -94,6 +99,9 @@ class Quadruped(PipelineEnv):
 
         obs = self._get_states(pipeline_state)
 
+        # Forward Kinematics:
+        x, dx = forward(self.sys, q, qd)
+        base_x = [x.pos[0], x.rot[0]]
         # Need to implement a way to get feet positions in the world.
         # Reward based on foot contact with the ground.
         # Reward based on foot height.
@@ -126,11 +134,44 @@ class Quadruped(PipelineEnv):
         """Run one timestep of the environment's dynamics."""
         pipeline_state = self.pipeline_step(state.pipeline_state, action)
         obs = self._get_states(pipeline_state)
+
+        # Foot Positions:
+        foot_positions = calculate_foot_position(
+            self.sys,
+            pipeline_state.q,
+            pipeline_state.qd,
+        )
+        foot_z = foot_positions[:, -1]
+        foot_padding = 0.025
+        reward_foot_height = jnp.where(
+            jnp.abs(foot_z) <= foot_padding,
+            0.0,
+            -10.0 * jnp.abs(foot_z),
+        )
+
         # Reward Function:
-        reward = 0
-        done = 0
+        reward = jnp.array([0.0])
+        done = jnp.array([0])
+        zero = jnp.array([0.0])
+        metrics = {
+            'reward_forward': zero,
+            'reward_linear_velocity': zero,
+            'reward_ctrl': zero,
+            'reward_foot_height': reward_foot_height,
+            'reward_duty_cycle': zero,
+            'reward_termination': zero,
+            'position': jnp.zeros(3),
+            'orientation': jnp.zeros(3),
+            'linear_velocity': jnp.zeros(3),
+            'angular_velocity': jnp.zeros(3),
+        }
+
         return state.replace(
-            pipeline_state=pipeline_state, obs=obs, reward=reward, done=done,
+            pipeline_state=pipeline_state,
+            obs=obs,
+            reward=reward,
+            done=done,
+            metrics=metrics,
         )
 
     @property
@@ -150,3 +191,46 @@ class Quadruped(PipelineEnv):
 
     def _get_body_position(self, pipeline_state: base.State) -> jnp.ndarray:
         return pipeline_state.x.pos[0]
+
+
+# Utility Functions:
+def get_point_taskspace_transform(
+    vector: jax.Array,
+    parent_x: jax.Array,
+    parent_w: jax.Array,
+    base: jax.Array,
+) -> jnp.ndarray:
+    # Rotate vector relative to base:
+    vector_base = rotate(vector, base)
+
+    # Rotate vector relative to its parent:
+    vector_world = rotate(vector_base, parent_w) + parent_x
+
+    return vector_world
+
+
+def calculate_foot_position(
+    sys: System,
+    q: jax.Array,
+    qd: jax.Array,
+) -> jnp.ndarray:
+    # Calculate forward kinematics:
+    x, _ = forward(sys, q, qd)
+    base_w = x.rot[0]
+
+    # Foot indices:
+    idx = jnp.array([2, 4, 6, 8])
+    parent_x = x.pos[idx, :]
+    parent_w = x.rot[idx, :]
+
+    # Calf length:
+    vector = jnp.array([0.17, 0.0, 0.0])
+
+    # Taskspace transform for feet positions:
+    foot_x = jax.vmap(
+        get_point_taskspace_transform,
+        in_axes=(None, 0, 0, None),
+        out_axes=(0),
+    )(vector, parent_x, parent_w, base_w)
+
+    return foot_x
