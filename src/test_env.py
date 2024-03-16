@@ -64,6 +64,8 @@ def main(argv=None):
     initial_q = env.initial_q
     base_ctrl = jnp.zeros_like(motor_mask)
 
+    # reset_fn = env.reset
+    # step_fn = env.step
     reset_fn = jax.jit(env.reset)
     step_fn = jax.jit(env.step)
 

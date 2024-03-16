@@ -65,6 +65,8 @@ class Quadruped(PipelineEnv):
         # State index ids:
         # x, y, z, quat
         self.body_id = jnp.array([0, 1, 2, 3, 4, 5, 6])
+        self.base_x = jnp.array([0, 1, 2])
+        self.base_w = jnp.array([3, 4, 5, 6])
         # hip, knee
         self.front_left_id = jnp.array([7, 8])
         self.front_right_id = jnp.array([9, 10])
@@ -80,6 +82,11 @@ class Quadruped(PipelineEnv):
         self.calf_length = 0.17
 
         # Set Configuration:
+        self.desired_orientation = jnp.array([1.0, 0.0, 0.0, 0.0])
+
+        self.foot_height_weight = 10.0
+        self.orientation_weight = 10.0
+
         self._forward_reward_weight = params.forward_reward_weight
         self._ctrl_cost_weight = params.ctrl_cost_weight
         self._healthy_reward = params.healthy_reward
@@ -99,9 +106,6 @@ class Quadruped(PipelineEnv):
 
         obs = self._get_states(pipeline_state)
 
-        # Forward Kinematics:
-        x, dx = forward(self.sys, q, qd)
-        base_x = [x.pos[0], x.rot[0]]
         # Need to implement a way to get feet positions in the world.
         # Reward based on foot contact with the ground.
         # Reward based on foot height.
@@ -115,6 +119,7 @@ class Quadruped(PipelineEnv):
             'reward_forward': zero,
             'reward_linear_velocity': zero,
             'reward_ctrl': zero,
+            'reward_orientation': zero,
             'reward_foot_height': zero,
             'reward_duty_cycle': zero,
             'reward_termination': zero,
@@ -146,7 +151,13 @@ class Quadruped(PipelineEnv):
         reward_foot_height = jnp.where(
             jnp.abs(foot_z) <= foot_padding,
             0.0,
-            -10.0 * jnp.abs(foot_z),
+            -self.foot_height_weight * jnp.abs(foot_z),
+        )
+
+        # Base Orientation:
+        base_w = pipeline_state.q[self.base_w]
+        reward_orientation = -self.orientation_weight * (
+            1 - jnp.dot(base_w, self.desired_orientation) ** 2
         )
 
         # Reward Function:
@@ -157,6 +168,7 @@ class Quadruped(PipelineEnv):
             'reward_forward': zero,
             'reward_linear_velocity': zero,
             'reward_ctrl': zero,
+            'reward_orientation': reward_orientation,
             'reward_foot_height': reward_foot_height,
             'reward_duty_cycle': zero,
             'reward_termination': zero,
