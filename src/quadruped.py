@@ -67,6 +67,7 @@ class Quadruped(PipelineEnv):
         self.body_id = jnp.array([0, 1, 2, 3, 4, 5, 6])
         self.base_x = jnp.array([0, 1, 2])
         self.base_w = jnp.array([3, 4, 5, 6])
+        self.base_dw = jnp.array([3, 4, 5])
         # hip, knee
         self.front_left_id = jnp.array([7, 8])
         self.front_right_id = jnp.array([9, 10])
@@ -83,9 +84,14 @@ class Quadruped(PipelineEnv):
 
         # Set Configuration:
         self.desired_orientation = jnp.array([1.0, 0.0, 0.0, 0.0])
+        self.min_z, self.max_z = 0.05, 0.4
 
         self.foot_height_weight = 10.0
         self.orientation_weight = 10.0
+        self.linear_velocity_weight = 10.0
+        self.angular_velocity_weight = 10.0
+        self.control_weight = 0.1
+        self.continuation_weight = 1.0
 
         self._forward_reward_weight = params.forward_reward_weight
         self._ctrl_cost_weight = params.ctrl_cost_weight
@@ -105,11 +111,6 @@ class Quadruped(PipelineEnv):
         pipeline_state = self.pipeline_init(q, qd)
 
         obs = self._get_states(pipeline_state)
-
-        # Need to implement a way to get feet positions in the world.
-        # Reward based on foot contact with the ground.
-        # Reward based on foot height.
-        # Reward based on duty cycle of feet.
 
         # Reward Function:
         reward = jnp.array([0.0])
@@ -157,25 +158,52 @@ class Quadruped(PipelineEnv):
         # Base Orientation:
         base_w = pipeline_state.q[self.base_w]
         reward_orientation = -self.orientation_weight * (
-            1 - jnp.dot(base_w, self.desired_orientation) ** 2
+            1 - jnp.square(jnp.dot(base_w, self.desired_orientation))
         )
 
-        # Reward Function:
+        # Velocity Tracking:
+        # Based on the magnitude of the velocity.
+        # TODO(jeh15): Change to tracking a desired velocity vector -> norm(vel_des - vel)
+        linear_velocity = pipeline_state.qd[self.base_x]
+        angular_velocity = pipeline_state.qd[self.base_dw]
+        reward_linear_velocity = self.linear_velocity_weight * jnp.linalg.norm(
+            linear_velocity,
+        )
+        reward_angular_velocity = self.angular_velocity_weight * jnp.linalg.norm(
+            angular_velocity,
+        )
+
+        # Control regularization:
+        reward_control = -self.control_weight * jnp.sum(jnp.square(action))
+
+        # Termination:
+        base_x = pipeline_state.q[self.base_x]
+        termination = jnp.where(
+            base_x[-1] < self.min_z, 1.0, 0.0,
+        )
+        termination = jnp.where(
+            base_x[-1] > self.max_z, 1.0, termination,
+        )
+        reward_survival = (1.0 - termination) * self.continuation_weight
+
+        # Terminate flag:
+        done = termination
+
+        # Reward Function: (TODO(jeh15): Sum up all rewards)
         reward = jnp.array([0.0])
-        done = jnp.array([0])
         zero = jnp.array([0.0])
         metrics = {
-            'reward_forward': zero,
-            'reward_linear_velocity': zero,
-            'reward_ctrl': zero,
+            'reward_linear_velocity': reward_linear_velocity,
+            'reward_angular_velocity': reward_angular_velocity,
+            'reward_control': reward_control,
             'reward_orientation': reward_orientation,
             'reward_foot_height': reward_foot_height,
             'reward_duty_cycle': zero,
-            'reward_termination': zero,
-            'position': jnp.zeros(3),
-            'orientation': jnp.zeros(3),
-            'linear_velocity': jnp.zeros(3),
-            'angular_velocity': jnp.zeros(3),
+            'reward_survival': reward_survival,
+            'position': base_x,
+            'orientation': base_w,
+            'linear_velocity': linear_velocity,
+            'angular_velocity': angular_velocity,
         }
 
         return state.replace(
