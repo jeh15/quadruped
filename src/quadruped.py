@@ -117,17 +117,17 @@ class Quadruped(PipelineEnv):
         done = jnp.array([0])
         zero = jnp.array([0.0])
         metrics = {
-            'reward_forward': zero,
             'reward_linear_velocity': zero,
-            'reward_ctrl': zero,
+            'reward_angular_velocity': zero,
+            'reward_control': zero,
             'reward_orientation': zero,
-            'reward_foot_height': zero,
+            'reward_foot_height': jnp.zeros((4,)),
             'reward_duty_cycle': zero,
-            'reward_termination': zero,
-            'position': jnp.zeros(3),
-            'orientation': jnp.zeros(3),
-            'linear_velocity': jnp.zeros(3),
-            'angular_velocity': jnp.zeros(3),
+            'reward_survival': zero,
+            'position': jnp.zeros((3,)),
+            'orientation': jnp.zeros((4,)),
+            'linear_velocity': jnp.zeros((3,)),
+            'angular_velocity': jnp.zeros((3,)),
         }
 
         return State(pipeline_state, obs, reward, done, metrics)
@@ -135,10 +135,13 @@ class Quadruped(PipelineEnv):
     def step(
         self,
         state: State,
-        action: jax.typing.ArrayLike,
+        action: jax.Array,
     ) -> State:
         """Run one timestep of the environment's dynamics."""
-        pipeline_state = self.pipeline_step(state.pipeline_state, action)
+        pipeline_state = self.pipeline_step(
+            state.pipeline_state,
+            action,
+        )
         obs = self._get_states(pipeline_state)
 
         # Foot Positions:
@@ -187,19 +190,27 @@ class Quadruped(PipelineEnv):
         reward_survival = (1.0 - termination) * self.continuation_weight
 
         # Terminate flag:
-        done = termination
+        done = jnp.array([termination], dtype=jnp.int64)
 
         # Reward Function: (TODO(jeh15): Sum up all rewards)
-        reward = jnp.array([0.0])
+        reward = (
+            reward_survival
+            + reward_control
+            + reward_orientation
+            + jnp.sum(reward_foot_height)
+            + reward_linear_velocity
+            + reward_angular_velocity
+        )
+        reward = jnp.array([reward])
         zero = jnp.array([0.0])
         metrics = {
-            'reward_linear_velocity': reward_linear_velocity,
-            'reward_angular_velocity': reward_angular_velocity,
-            'reward_control': reward_control,
-            'reward_orientation': reward_orientation,
+            'reward_linear_velocity': jnp.array([reward_linear_velocity]),
+            'reward_angular_velocity': jnp.array([reward_angular_velocity]),
+            'reward_control': jnp.array([reward_control]),
+            'reward_orientation': jnp.array([reward_orientation]),
             'reward_foot_height': reward_foot_height,
             'reward_duty_cycle': zero,
-            'reward_survival': reward_survival,
+            'reward_survival': jnp.array([reward_survival]),
             'position': base_x,
             'orientation': base_w,
             'linear_velocity': linear_velocity,
