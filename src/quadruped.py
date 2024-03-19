@@ -103,9 +103,8 @@ class Quadruped(PipelineEnv):
             params.exclude_current_positions_from_observation
         )
 
-    def reset(self, rng: jnp.ndarray) -> State:
+    def reset(self, rng: jax.Array) -> State:
         """Resets the environment to an initial state."""
-        rng, rng1, rng2 = jax.random.split(rng, 3)
         q = self.initial_q
         qd = jnp.zeros((self.qd_size,))
         pipeline_state = self.pipeline_init(q, qd)
@@ -114,7 +113,7 @@ class Quadruped(PipelineEnv):
 
         # Reward Function:
         reward = jnp.array([0.0])
-        done = jnp.array([0])
+        done = jnp.array(0, dtype=jnp.int64)
         zero = jnp.array([0.0])
         metrics = {
             'reward_linear_velocity': zero,
@@ -190,7 +189,7 @@ class Quadruped(PipelineEnv):
         reward_survival = (1.0 - termination) * self.continuation_weight
 
         # Terminate flag:
-        done = jnp.array([termination], dtype=jnp.int64)
+        done = jnp.array(termination, dtype=jnp.int64)
 
         # Reward Function: (TODO(jeh15): Sum up all rewards)
         reward = (

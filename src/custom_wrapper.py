@@ -21,41 +21,70 @@ import jax
 import jax.numpy as jnp
 
 
-def cond(pred, true_fun: Callable, false_fun: Callable, *operands: Any):
-    return jax.lax.cond(pred, true_fun, false_fun, *operands)
+# def cond(pred, true_fun: Callable, false_fun: Callable, *operands: Any):
+#     return jax.lax.cond(pred, true_fun, false_fun, *operands)
 
+
+# class AutoResetWrapper(Wrapper):
+#     """Automatically resets Brax envs that are done."""
+
+#     def reset(self, rng: jax.typing.ArrayLike) -> State:
+#         state = self.env.reset(rng)
+#         return state
+
+#     def step(
+#         self,
+#         state: State,
+#         action: jax.typing.ArrayLike,
+#         rng: jax.Array,
+#     ) -> State:
+#         if 'steps' in state.info:
+#             steps = state.info['steps']
+#             steps = jnp.where(state.done, jnp.zeros_like(steps), steps)
+#             state.info.update(steps=steps)
+#         state = state.replace(done=jnp.zeros_like(state.done))
+#         state = self.env.step(state, action)
+#         maybe_reset = cond(
+#             state.done.any(), self.reset, lambda rng: state, rng,
+#         )
+
+#         def where_done(x, y):
+#             done = state.done
+#             if done.shape:
+#                 done = jnp.reshape(done, [x.shape[0]] + [1] * (len(x.shape) - 1))
+#             return jnp.where(done, x, y)
+
+#         pipeline_state = jax.tree_map(
+#             where_done, maybe_reset.pipeline_state, state.pipeline_state
+#         )
+#         obs = where_done(maybe_reset.obs, state.obs)
+#         return state.replace(pipeline_state=pipeline_state, obs=obs)
 
 class AutoResetWrapper(Wrapper):
-    """Automatically resets Brax envs that are done."""
+  """Automatically resets Brax envs that are done."""
 
-    def reset(self, rng: jax.typing.ArrayLike) -> State:
-        state = self.env.reset(rng)
-        return state
+  def reset(self, rng: jax.Array) -> State:
+    state = self.env.reset(rng)
+    state.info['first_pipeline_state'] = state.pipeline_state
+    state.info['first_obs'] = state.obs
+    return state
 
-    def step(
-        self,
-        state: State,
-        action: jax.typing.ArrayLike,
-        rng: jax.typing.ArrayLike,
-    ) -> State:
-        if 'steps' in state.info:
-            steps = state.info['steps']
-            steps = jnp.where(state.done, jnp.zeros_like(steps), steps)
-            state.info.update(steps=steps)
-        state = state.replace(done=jnp.zeros_like(state.done))
-        state = self.env.step(state, action)
-        maybe_reset = cond(
-            state.done.any(), self.reset, lambda rng: state, rng,
-        )
+  def step(self, state: State, action: jax.Array) -> State:
+    if 'steps' in state.info:
+      steps = state.info['steps']
+      steps = jnp.where(state.done, jnp.zeros_like(steps), steps)
+      state.info.update(steps=steps)
+    state = state.replace(done=jnp.zeros_like(state.done))
+    state = self.env.step(state, action)
 
-        def where_done(x, y):
-            done = state.done
-            if done.shape:
-                done = jnp.reshape(done, [x.shape[0]] + [1] * (len(x.shape) - 1))
-            return jnp.where(done, x, y)
+    def where_done(x, y):
+      done = state.done
+      if done.shape:
+        done = jnp.reshape(done, [x.shape[0]] + [1] * (len(x.shape) - 1))  # type: ignore
+      return jnp.where(done, x, y)
 
-        pipeline_state = jax.tree_map(
-            where_done, maybe_reset.pipeline_state, state.pipeline_state
-        )
-        obs = where_done(maybe_reset.obs, state.obs)
-        return state.replace(pipeline_state=pipeline_state, obs=obs)
+    pipeline_state = jax.tree_map(
+        where_done, state.info['first_pipeline_state'], state.pipeline_state
+    )
+    obs = where_done(state.info['first_obs'], state.obs)
+    return state.replace(pipeline_state=pipeline_state, obs=obs)

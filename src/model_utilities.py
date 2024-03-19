@@ -7,7 +7,6 @@ import distrax
 
 # Types:
 from flax.core import FrozenDict
-from flax.training.train_state import TrainState
 PRNGKey = jax.Array
 
 
@@ -103,6 +102,7 @@ def loss_function(
     returns: jax.typing.ArrayLike,
     previous_log_probability: jax.typing.ArrayLike,
 ) -> jnp.ndarray:
+    print('Compiling Loss Function')
     # Algorithm Coefficients:
     value_coeff = 0.5
     entropy_coeff = 0.01
@@ -151,6 +151,7 @@ def replay(
     model_input: jax.typing.ArrayLike,
     actions: jax.typing.ArrayLike,
 ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    print('Compiling Replay Function')
     mean, std, values = forward_pass(
         model_params,
         apply_fn,
@@ -208,51 +209,49 @@ def replay_serial(
     return values, log_probability, entropy
 
 
-@functools.partial(
-    jax.jit, static_argnames=["batch_size", "episode_length", "ppo_steps"]
-)
-def train_step(
-    model_state: TrainState,
-    model_input: jax.typing.ArrayLike,
-    actions: jax.typing.ArrayLike,
-    advantages: jax.typing.ArrayLike,
-    returns: jax.typing.ArrayLike,
-    previous_log_probability: jax.typing.ArrayLike,
-    batch_size: int,
-    episode_length: int,
-    ppo_steps: int,
-) -> Tuple[TrainState, jnp.ndarray]:
-    # PPO Optimixation Loop:
-    def ppo_loop(carry, xs):
-        model_state = carry
-        loss, gradients = gradient_function(
-            model_state.params,
-            model_state.apply_fn,
-            model_input,
-            actions,
-            advantages,
-            returns,
-            previous_log_probability,
-        )
-        model_state = model_state.apply_gradients(grads=gradients)
+# @functools.partial(
+#     jax.jit, static_argnames=["batch_size", "episode_length", "ppo_steps"]
+# )
+# def train_step(
+#     model_state: TrainState,
+#     model_input: jax.typing.ArrayLike,
+#     actions: jax.typing.ArrayLike,
+#     advantages: jax.typing.ArrayLike,
+#     returns: jax.typing.ArrayLike,
+#     previous_log_probability: jax.typing.ArrayLike,
+#     ppo_steps: int,
+# ) -> Tuple[TrainState, jnp.ndarray]:
+#     # PPO Optimixation Loop:
+#     def ppo_loop(carry, xs):
+#         model_state = carry
+#         loss, gradients = gradient_function(
+#             model_state.params,
+#             model_state.apply_fn,
+#             model_input,
+#             actions,
+#             advantages,
+#             returns,
+#             previous_log_probability,
+#         )
+#         model_state = model_state.apply_gradients(grads=gradients)
 
-        # Pack carry and data:
-        carry = model_state
-        data = loss
-        return carry, data
+#         # Pack carry and data:
+#         carry = model_state
+#         data = loss
+#         return carry, data
 
-    gradient_function = jax.value_and_grad(loss_function)
+#     gradient_function = jax.value_and_grad(loss_function)
 
-    carry, data = jax.lax.scan(
-        f=ppo_loop,
-        init=(model_state),
-        xs=None,
-        length=ppo_steps,
-    )
+#     carry, data = jax.lax.scan(
+#         f=ppo_loop,
+#         init=(model_state),
+#         xs=None,
+#         length=ppo_steps,
+#     )
 
-    # Unpack carry and data:
-    model_state, _ = carry
-    loss = data
-    loss = jnp.mean(loss)
+#     # Unpack carry and data:
+#     model_state, _ = carry
+#     loss = data
+#     loss = jnp.mean(loss)
 
-    return model_state, loss
+#     return model_state, loss

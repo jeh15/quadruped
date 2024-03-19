@@ -1,7 +1,6 @@
 import os
 import pickle
 from absl import app
-from typing import Optional
 import time
 
 import numpy as np
@@ -10,8 +9,7 @@ import jax.numpy as jnp
 import optax
 from flax.training import train_state
 from brax.io import html
-from brax.envs.wrappers import training as wrapper
-from brax.envs.base import Env
+from brax.envs.wrappers.training import wrap
 
 import model
 import model_utilities
@@ -21,35 +19,6 @@ import save_checkpoint
 import quadruped
 
 jax.config.update("jax_enable_x64", True)
-
-
-def create_environment(
-    episode_length: int = 1000,
-    action_repeat: int = 1,
-    auto_reset: bool = True,
-    batch_size: Optional[int] = None,
-    **kwargs,
-) -> Env:
-    """Creates an environment from the registry.
-    Args:
-        episode_length: length of episode
-        action_repeat: how many repeated actions to take per environment step
-        auto_reset: whether to auto reset the environment after an episode is done
-        batch_size: the number of environments to batch together
-        **kwargs: keyword argments that get passed to the Env class constructor
-    Returns:
-        env: an environment
-    """
-    env = quadruped.Quadruped(**kwargs)
-
-    if episode_length is not None:
-        env = wrapper.EpisodeWrapper(env, episode_length, action_repeat)
-    if batch_size:
-        env = wrapper.VmapWrapper(env, batch_size)
-    if auto_reset:
-        env = wrapper.AutoResetWrapper(env)
-
-    return env
 
 
 def init_params(module, input_size, key):
@@ -86,16 +55,17 @@ def main(argv=None):
     best_iteration = 0
 
     # Create Environment:
-    episode_length = 100
+    episode_length = 500
     episode_mini_batch_length = 25
-    num_envs = 5
-    env = create_environment(
+    num_envs = 2
+
+    env = quadruped.Quadruped(backend='generalized')
+    env = wrap(
+        env=env,
         episode_length=episode_length,
         action_repeat=1,
-        auto_reset=False,
-        batch_size=num_envs,
-        backend='generalized',
     )
+
     step_fn = jax.jit(env.step)
     reset_fn = jax.jit(env.reset)
 
@@ -159,6 +129,7 @@ def main(argv=None):
         masks_episode = []
         episode_start = time.time()
         for environment_step in range(episode_length):
+            print(f'Environment Step: {environment_step}')
             key, env_key = jax.random.split(env_key)
             model_input = states.obs
             mean, std, values = model_utilities.forward_pass(

@@ -37,6 +37,8 @@ def train_step(
         data = loss
         return carry, data
 
+    print('Compiling Train Step')
+
     # Compute gradient function:
     gradient_function = jax.value_and_grad(model_utilities.loss_function)
 
