@@ -203,7 +203,7 @@ Temporary Items
 src/checkpoints/*
 !src/checkpoints/.gitkeep 
 
-visualizations/*
+visualization/*
 !visualizations/.gitkeep
 
 src/metrics/*
