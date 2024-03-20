@@ -66,36 +66,32 @@ class ActorCriticNetwork(nn.Module):
 
     # Small Network:
     def model(self, x):
-        # Limit Output Range:
-        range_limit = 0.5
-
         # Shared Layers:
         x = self.dense_1(x)
         x = nn.tanh(x)
         x = self.dense_2(x)
         x = nn.tanh(x)
 
-        # Policy Layer: Nonlinear Function of Acceleration
+        # Policy Layer: Mean
         y = self.dense_3(x)
         y = nn.tanh(y)
         y = self.dense_4(y)
         y = nn.tanh(y)
 
-        # Pipeline that decides std should have more information of the states
+        # Policy Layer: Standard Deviation
         z = self.dense_5(x)
         z = nn.tanh(z)
         z = self.dense_6(z)
         z = nn.tanh(z)
 
-        # Value Layer: Nonlinear Function of Objective Value
+        # Value Layer:
         w = self.dense_7(x)
         w = nn.tanh(w)
         w = self.dense_8(w)
         w = nn.tanh(w)
 
-        # Output Layer: (changed from softmax to sigmoid)
+        # Output Layer:
         mean = self.mean_layer(y)
-        mean = range_limit * nn.tanh(mean)
         std = self.std_layer(z)
         std = nn.sigmoid(std)
         values = self.value_layer(w)
