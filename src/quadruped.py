@@ -85,15 +85,15 @@ class Quadruped(PipelineEnv):
         # Set Configuration:
         self.desired_orientation = jnp.array([1.0, 0.0, 0.0, 0.0])
         self.desired_height = 0.2
-        self.min_z, self.max_z = 0.125, 0.4
+        self.min_z, self.max_z = 0.15, 0.25
 
-        self.foot_height_weight = 10.0
-        self.pose_weight = 100.0
-        self.orientation_weight = 10.0
-        self.linear_velocity_weight = 100.0
-        self.angular_velocity_weight = 100.0
-        self.control_weight = 1.0
-        self.continuation_weight = 1.0
+        self.foot_height_weight = 1.0
+        self.pose_weight = 10.0
+        self.orientation_weight = 1.0
+        self.linear_velocity_weight = 10.0
+        self.angular_velocity_weight = 10.0
+        self.control_weight = 0.1
+        self.continuation_weight = 10.0
 
         self._forward_reward_weight = params.forward_reward_weight
         self._ctrl_cost_weight = params.ctrl_cost_weight
@@ -176,10 +176,10 @@ class Quadruped(PipelineEnv):
         # TODO(jeh15): Change to tracking a desired velocity vector -> norm(vel_des - vel)
         linear_velocity = pipeline_state.qd[self.base_x]
         angular_velocity = pipeline_state.qd[self.base_dw]
-        reward_linear_velocity = self.linear_velocity_weight * jnp.linalg.norm(
+        reward_linear_velocity = -self.linear_velocity_weight * jnp.linalg.norm(
             linear_velocity,
         )
-        reward_angular_velocity = self.angular_velocity_weight * jnp.linalg.norm(
+        reward_angular_velocity = -self.angular_velocity_weight * jnp.linalg.norm(
             angular_velocity,
         )
 

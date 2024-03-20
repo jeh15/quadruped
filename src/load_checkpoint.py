@@ -7,7 +7,6 @@ import jax.numpy as jnp
 import optax
 from flax.training import train_state
 from brax.io import html
-from brax.envs.wrappers.training import wrap
 import orbax.checkpoint
 
 import model
@@ -20,7 +19,7 @@ jax.config.update("jax_enable_x64", True)
 
 FLAGS = flags.FLAGS
 flags.DEFINE_string('filename', None, 'Checkpoint file name.', short_name='f')
-flags.mark_flag_as_required('filename')
+# flags.mark_flag_as_required('filename')
 
 
 def init_params(module, input_size, key):
@@ -101,11 +100,14 @@ def main(argv=None):
 
     target = {'model': model_state}
     orbax_checkpointer = orbax.checkpoint.PyTreeCheckpointer()
-    checkpoint_path = os.path.join(os.path.dirname(__file__), FLAGS.filename)
+    # checkpoint_path = os.path.join(os.path.dirname(__file__), FLAGS.filename)
+    checkpoint_path = os.path.join(os.path.dirname(__file__), 'checkpoints/25')
     model_state = orbax_checkpointer.restore(checkpoint_path, item=target)['model']
 
     state_history = []
+    metrics_history = []
     state_history.append(states.pipeline_state)
+    metrics_history.append(states)
     for environment_step in range(episode_length):
             key, env_key = jax.random.split(env_key)
             model_input = jnp.expand_dims(states.obs, axis=0)
@@ -124,6 +126,7 @@ def main(argv=None):
                 jnp.squeeze(actions),
             )
             states = next_states
+            metrics_history.append(states)
             state_history.append(states.pipeline_state)
 
     html_string = html.render(

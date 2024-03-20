@@ -109,7 +109,7 @@ def main(argv=None):
     training_length = 300
     key, env_key = jax.random.split(initial_key)
     checkpoint_enabled = True
-    pickle_enabled = False
+    pickle_enabled = True
     visualization_enabled = False
     # Metrics:
     metrics_history = []
@@ -161,7 +161,7 @@ def main(argv=None):
 
         episode_end = time.time() - episode_start
         metrics_history.append(metrics_episode)
-        
+
         # Convert to Jax Arrays:
         states_episode = jnp.swapaxes(
             jnp.asarray(states_episode), axis1=1, axis2=0,
