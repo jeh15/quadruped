@@ -198,3 +198,13 @@ Temporary Items
 
 # Built Visual Studio Code Extensions
 *.vsix
+
+# Required Folders:
+src/checkpoints/*
+!src/checkpoints/.gitkeep 
+
+visualizations/*
+!visualizations/.gitkeep
+
+src/metrics/*
+!src/metrics/.gitkeep
