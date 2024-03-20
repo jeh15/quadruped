@@ -84,13 +84,15 @@ class Quadruped(PipelineEnv):
 
         # Set Configuration:
         self.desired_orientation = jnp.array([1.0, 0.0, 0.0, 0.0])
-        self.min_z, self.max_z = 0.05, 0.4
+        self.desired_height = 0.2
+        self.min_z, self.max_z = 0.125, 0.4
 
         self.foot_height_weight = 10.0
+        self.pose_weight = 100.0
         self.orientation_weight = 10.0
-        self.linear_velocity_weight = 10.0
-        self.angular_velocity_weight = 10.0
-        self.control_weight = 0.1
+        self.linear_velocity_weight = 100.0
+        self.angular_velocity_weight = 100.0
+        self.control_weight = 1.0
         self.continuation_weight = 1.0
 
         self._forward_reward_weight = params.forward_reward_weight
@@ -119,6 +121,7 @@ class Quadruped(PipelineEnv):
             'reward_linear_velocity': zero,
             'reward_angular_velocity': zero,
             'reward_control': zero,
+            'reward_pose': zero,
             'reward_orientation': zero,
             'reward_foot_height': jnp.zeros((4,)),
             'reward_duty_cycle': zero,
@@ -156,6 +159,11 @@ class Quadruped(PipelineEnv):
             0.0,
             -self.foot_height_weight * jnp.abs(foot_z),
         )
+
+        # Base Pose: Maintain Z Height
+        base_x = pipeline_state.q[self.base_x]
+        pose_error = self.desired_height - base_x[-1]
+        reward_pose = -self.pose_weight * jnp.square(pose_error)
 
         # Base Orientation:
         base_w = pipeline_state.q[self.base_w]
@@ -195,6 +203,7 @@ class Quadruped(PipelineEnv):
         reward = (
             reward_survival
             + reward_control
+            + reward_pose
             + reward_orientation
             + jnp.sum(reward_foot_height)
             + reward_linear_velocity
@@ -206,6 +215,7 @@ class Quadruped(PipelineEnv):
             'reward_linear_velocity': jnp.array([reward_linear_velocity]),
             'reward_angular_velocity': jnp.array([reward_angular_velocity]),
             'reward_control': jnp.array([reward_control]),
+            'reward_pose': jnp.array([reward_pose]),
             'reward_orientation': jnp.array([reward_orientation]),
             'reward_foot_height': reward_foot_height,
             'reward_duty_cycle': zero,

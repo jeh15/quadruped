@@ -56,8 +56,8 @@ def main(argv=None):
 
     # Create Environment:
     episode_length = 500
-    episode_mini_batch_length = 25
-    num_envs = 2
+    episode_mini_batch_length = 5
+    num_envs = 512
 
     env = quadruped.Quadruped(backend='generalized')
     env = wrap(
@@ -108,14 +108,11 @@ def main(argv=None):
     # Learning Loop:
     training_length = 300
     key, env_key = jax.random.split(initial_key)
-    checkpoint_enabled = False
+    checkpoint_enabled = True
     pickle_enabled = False
     visualization_enabled = False
     # Metrics:
-    reward_history = []
-    loss_history = []
-    time_history = []
-    epoch_time = []
+    metrics_history = []
     for iteration in range(training_length):
         # Episode Loop:
         states = reset_fn(env_key)
@@ -127,9 +124,9 @@ def main(argv=None):
         actions_episode = []
         rewards_episode = []
         masks_episode = []
+        metrics_episode = []
         episode_start = time.time()
         for environment_step in range(episode_length):
-            print(f'Environment Step: {environment_step}')
             key, env_key = jax.random.split(env_key)
             model_input = states.obs
             mean, std, values = model_utilities.forward_pass(
@@ -157,11 +154,14 @@ def main(argv=None):
                 )
             )
             model_input_episode.append(model_input)
+            # Save Metrics
+            metrics_episode.append(states.metrics)
             states = next_states
             state_history.append(states)
 
         episode_end = time.time() - episode_start
-
+        metrics_history.append(metrics_episode)
+        
         # Convert to Jax Arrays:
         states_episode = jnp.swapaxes(
             jnp.asarray(states_episode), axis1=1, axis2=0,
@@ -220,7 +220,6 @@ def main(argv=None):
         )
 
         # Update Function:
-        loss_history = []
         train_start = time.time()
         model_state, loss = optimization_utilities.fit(
             model_state=model_state,
@@ -305,10 +304,7 @@ def main(argv=None):
         with open(metrics_path + "/metrics.pkl", "wb") as f:
             pickle.dump(
                 {
-                    "reward_history": reward_history,
-                    "time_history": time_history,
-                    "epoch_time": epoch_time,
-                    "loss_history": loss_history,
+                    "metrics": metrics_history,
                 },
                 f,
             )
