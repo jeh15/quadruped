@@ -91,7 +91,10 @@ class ActorCriticNetwork(nn.Module):
         w = nn.tanh(w)
 
         # Output Layer:
+        # Based on control range:
+        saturation_scale = 2.0
         mean = self.mean_layer(y)
+        mean = saturation_scale * nn.tanh(mean)
         std = self.std_layer(z)
         std = nn.sigmoid(std)
         values = self.value_layer(w)
