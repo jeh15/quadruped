@@ -210,24 +210,35 @@ def main(argv=None):
             )
         )
 
-        # Pack Data:
-        batch = (
+        # # Pack Data:
+        # batch = (
+        #     model_input_episode,
+        #     actions_episode,
+        #     advantage_episode,
+        #     returns_episode,
+        #     log_probability_episode,
+        # )
+
+        # # Update Function:
+        # train_start = time.time()
+        # model_state, loss = optimization_utilities.fit(
+        #     model_state=model_state,
+        #     batch=batch,
+        #     mini_batch_size=num_mini_batch,
+        #     ppo_steps=ppo_steps,
+        # )
+        # train_end = time.time() - train_start
+
+        # Update Function:
+        model_state, loss = model_utilities.train_step(
+            model_state,
             model_input_episode,
             actions_episode,
             advantage_episode,
             returns_episode,
             log_probability_episode,
+            ppo_steps,
         )
-
-        # Update Function:
-        train_start = time.time()
-        model_state, loss = optimization_utilities.fit(
-            model_state=model_state,
-            batch=batch,
-            mini_batch_size=num_mini_batch,
-            ppo_steps=ppo_steps,
-        )
-        train_end = time.time() - train_start
 
         average_reward = np.mean(
             np.sum(

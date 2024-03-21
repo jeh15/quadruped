@@ -210,7 +210,7 @@ def replay_serial(
 
 
 # @functools.partial(
-#     jax.jit, static_argnames=["batch_size", "episode_length", "ppo_steps"]
+#     jax.jit, static_argnames=["ppo_steps"]
 # )
 # def train_step(
 #     model_state: TrainState,
@@ -255,3 +255,31 @@ def replay_serial(
 #     loss = jnp.mean(loss)
 
 #     return model_state, loss
+
+@functools.partial(jax.jit, static_argnames=['ppo_steps'])
+def train_step(
+    model_state,
+    model_input,
+    actions,
+    advantages,
+    returns,
+    previous_log_probability,
+    ppo_steps,
+):
+    # Print Statement:
+    print('Compiling Train Step...')
+    gradient_function = jax.value_and_grad(loss_function)
+    # PPO Optimixation Loop:
+    for ppo_step in range(ppo_steps):
+        loss, gradients = gradient_function(
+            model_state.params,
+            model_state.apply_fn,
+            model_input,
+            actions,
+            advantages,
+            returns,
+            previous_log_probability,
+        )
+        model_state = model_state.apply_gradients(grads=gradients)
+
+    return model_state, loss
