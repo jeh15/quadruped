@@ -56,8 +56,8 @@ def main(argv=None):
 
     # Create Environment:
     episode_length = 500
-    episode_mini_batch_length = 1
-    num_envs = 256
+    num_mini_batch = 1
+    num_envs = 64
 
     env = quadruped.Quadruped(backend='generalized')
     env = wrap(
@@ -87,7 +87,6 @@ def main(argv=None):
     end_learning_rate = 1e-6
     transition_steps = 100
     transition_begin = 100
-    num_mini_batch = episode_length // episode_mini_batch_length
     ppo_steps = 5
 
     # Create a train state:
@@ -115,7 +114,8 @@ def main(argv=None):
     metrics_history = []
     for iteration in range(training_length):
         # Episode Loop:
-        states = reset_fn(env_key)
+        reset_key = jax.random.split(env_key, num=num_envs)
+        states = reset_fn(reset_key)
         state_history = [states]
         model_input_episode = []
         states_episode = []
@@ -256,6 +256,7 @@ def main(argv=None):
             f'Average Value: {average_value} \t' +
             f'Learning Rate: {current_learning_rate}',
         )
+
         # print(
         #     f'Episode time: {episode_end} \t' +
         #     f'Train time: {train_end}'
