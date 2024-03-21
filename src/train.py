@@ -56,8 +56,8 @@ def main(argv=None):
 
     # Create Environment:
     episode_length = 500
-    episode_mini_batch_length = 5
-    num_envs = 512
+    episode_mini_batch_length = 1
+    num_envs = 256
 
     env = quadruped.Quadruped(backend='generalized')
     env = wrap(
@@ -88,7 +88,7 @@ def main(argv=None):
     transition_steps = 100
     transition_begin = 100
     num_mini_batch = episode_length // episode_mini_batch_length
-    ppo_steps = 10
+    ppo_steps = 5
 
     # Create a train state:
     schedule = optax.linear_schedule(
@@ -256,10 +256,10 @@ def main(argv=None):
             f'Average Value: {average_value} \t' +
             f'Learning Rate: {current_learning_rate}',
         )
-        print(
-            f'Episode time: {episode_end} \t' +
-            f'Train time: {train_end}'
-        )
+        # print(
+        #     f'Episode time: {episode_end} \t' +
+        #     f'Train time: {train_end}'
+        # )
 
         if visualization_enabled:
             if iteration % 25 == 0:

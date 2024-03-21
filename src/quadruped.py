@@ -81,19 +81,20 @@ class Quadruped(PipelineEnv):
         self.q_size = 15
         self.qd_size = self.q_size - 1
         self.calf_length = 0.17
+        self.reset_noise = 0.1
 
         # Set Configuration:
         self.desired_orientation = jnp.array([1.0, 0.0, 0.0, 0.0])
         self.desired_height = 0.2
-        self.min_z, self.max_z = 0.15, 0.25
+        self.min_z, self.max_z = 0.125, 0.275
 
-        self.foot_height_weight = 1.0
-        self.pose_weight = 10.0
-        self.orientation_weight = 1.0
-        self.linear_velocity_weight = 10.0
-        self.angular_velocity_weight = 10.0
-        self.control_weight = 0.1
-        self.continuation_weight = 10.0
+        self.foot_height_weight = 2.0 * sys.dt
+        self.pose_weight = 1.0 * sys.dt
+        self.orientation_weight = 1.0 * sys.dt
+        self.linear_velocity_weight = 1.0 * sys.dt
+        self.angular_velocity_weight = 0.5 * sys.dt
+        self.control_weight = 0.1 * sys.dt
+        self.continuation_weight = 1.0 * sys.dt
 
         self._forward_reward_weight = params.forward_reward_weight
         self._ctrl_cost_weight = params.ctrl_cost_weight
@@ -107,8 +108,18 @@ class Quadruped(PipelineEnv):
 
     def reset(self, rng: jax.Array) -> State:
         """Resets the environment to an initial state."""
-        q = self.initial_q
-        qd = jnp.zeros((self.qd_size,))
+        rng, q_rng, qd_rng = jax.random.split(rng, 3)
+
+        low, high = -self.reset_noise, self.reset_noise
+        q_base = self.initial_q[self.body_id]
+        q_joints = self.initial_q[7:] + jax.random.uniform(
+            q_rng,
+            (self.sys.q_size() - 7,),
+            minval=low,
+            maxval=high,
+        )
+        q = jnp.concatenate([q_base, q_joints])
+        qd = high * jax.random.normal(qd_rng, (self.sys.qd_size(),))
         pipeline_state = self.pipeline_init(q, qd)
 
         obs = self._get_states(pipeline_state)
@@ -157,7 +168,7 @@ class Quadruped(PipelineEnv):
         reward_foot_height = jnp.where(
             jnp.abs(foot_z) <= foot_padding,
             0.0,
-            -self.foot_height_weight * jnp.abs(foot_z),
+            -self.foot_height_weight * jnp.square(foot_z),
         )
 
         # Base Pose: Maintain Z Height
