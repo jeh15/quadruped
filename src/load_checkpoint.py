@@ -19,7 +19,7 @@ jax.config.update("jax_enable_x64", True)
 
 FLAGS = flags.FLAGS
 flags.DEFINE_string('filename', None, 'Checkpoint file name.', short_name='f')
-# flags.mark_flag_as_required('filename')
+flags.mark_flag_as_required('filename')
 
 
 def init_params(module, input_size, key):
@@ -100,8 +100,7 @@ def main(argv=None):
 
     target = {'model': model_state}
     orbax_checkpointer = orbax.checkpoint.PyTreeCheckpointer()
-    # checkpoint_path = os.path.join(os.path.dirname(__file__), FLAGS.filename)
-    checkpoint_path = os.path.join(os.path.dirname(__file__), 'checkpoints/100/default')
+    checkpoint_path = os.path.join(os.path.dirname(__file__), FLAGS.filename)
     model_state = orbax_checkpointer.restore(checkpoint_path, item=target)['model']
 
     state_history = []
