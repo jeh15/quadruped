@@ -93,7 +93,10 @@ class ActorCriticNetwork(nn.Module):
         # Output Layer:
         # Based on control range:
         saturation_scale = 2.0
+        # Output desired joint positon:
         mean = self.mean_layer(y)
+        # w/ saturation output is motor torques
+        # w/o saturation output is joint position
         mean = saturation_scale * nn.tanh(mean)
         std = self.std_layer(z)
         std = nn.sigmoid(std)

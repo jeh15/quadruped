@@ -93,6 +93,8 @@ class Quadruped(PipelineEnv):
         self.orientation_weight = 1.0 * sys.dt
         self.linear_velocity_weight = 1.0 * sys.dt
         self.angular_velocity_weight = 0.5 * sys.dt
+        self.linear_velocity_regularization = 4.0 * sys.dt
+        self.angular_velocity_regularization = 0.05 * sys.dt
         self.control_weight = 0.1 * sys.dt
         self.continuation_weight = 1.0 * sys.dt
 
@@ -110,6 +112,7 @@ class Quadruped(PipelineEnv):
         """Resets the environment to an initial state."""
         rng, q_rng, qd_rng = jax.random.split(rng, 3)
 
+        # Random Noise:
         low, high = -self.reset_noise, self.reset_noise
         q_base = self.initial_q[self.body_id]
         q_joints = self.initial_q[7:] + jax.random.uniform(
@@ -120,6 +123,11 @@ class Quadruped(PipelineEnv):
         )
         q = jnp.concatenate([q_base, q_joints])
         qd = high * jax.random.normal(qd_rng, (self.sys.qd_size(),))
+
+        # # No Random Noise:
+        # q = self.initial_q
+        # qd = jnp.zeros((self.sys.qd_size(),))
+
         pipeline_state = self.pipeline_init(q, qd)
 
         obs = self._get_states(pipeline_state)
@@ -150,6 +158,10 @@ class Quadruped(PipelineEnv):
         state: State,
         action: jax.Array,
     ) -> State:
+        # Helper Function:
+        def phi(x: jax.Array) -> jnp.ndarray:
+            return jnp.exp(-jnp.linalg.norm(x) / 0.25)
+
         """Run one timestep of the environment's dynamics."""
         pipeline_state = self.pipeline_step(
             state.pipeline_state,
@@ -167,30 +179,29 @@ class Quadruped(PipelineEnv):
         foot_padding = 0.025
         reward_foot_height = jnp.where(
             jnp.abs(foot_z) <= foot_padding,
-            0.0,
+            self.foot_height_weight,
             -self.foot_height_weight * jnp.square(foot_z),
         )
 
         # Base Pose: Maintain Z Height
         base_x = pipeline_state.q[self.base_x]
         pose_error = self.desired_height - base_x[-1]
-        reward_pose = -self.pose_weight * jnp.square(pose_error)
+        reward_pose = self.pose_weight * phi(pose_error)
 
         # Base Orientation:
         base_w = pipeline_state.q[self.base_w]
-        reward_orientation = -self.orientation_weight * (
-            1 - jnp.square(jnp.dot(base_w, self.desired_orientation))
-        )
+        orientation_error = 1 - jnp.square(jnp.dot(base_w, self.desired_orientation))
+        reward_orientation = self.orientation_weight * phi(orientation_error)
 
         # Velocity Tracking:
         # Based on the magnitude of the velocity.
         # TODO(jeh15): Change to tracking a desired velocity vector -> norm(vel_des - vel)
         linear_velocity = pipeline_state.qd[self.base_x]
         angular_velocity = pipeline_state.qd[self.base_dw]
-        reward_linear_velocity = -self.linear_velocity_weight * jnp.linalg.norm(
+        reward_linear_velocity = self.linear_velocity_weight * phi(
             linear_velocity,
         )
-        reward_angular_velocity = -self.angular_velocity_weight * jnp.linalg.norm(
+        reward_angular_velocity = self.angular_velocity_weight * phi(
             angular_velocity,
         )
 
@@ -210,7 +221,7 @@ class Quadruped(PipelineEnv):
         # Terminate flag:
         done = jnp.array(termination, dtype=jnp.int64)
 
-        # Reward Function: (TODO(jeh15): Sum up all rewards)
+        # Reward Function:
         reward = (
             reward_survival
             + reward_control

@@ -55,7 +55,7 @@ def main(argv=None):
     best_iteration = 0
 
     # Create Environment:
-    episode_length = 500
+    episode_length = 300
     num_mini_batch = 1
     num_envs = 64
 
@@ -76,14 +76,18 @@ def main(argv=None):
         action_space=env.action_size,
     )
 
+    # Model Input: obs + action
+    model_input_size = (num_envs, env.observation_size + env.action_size)
+    # Model Input: obs
+    # model_input_size = (num_envs, env.observation_size)
     initial_params = init_params(
         module=network,
-        input_size=(num_envs, env.observation_size),
+        input_size=model_input_size,
         key=initial_key,
     )
 
     # Hyperparameters:
-    learning_rate = 1e-3
+    learning_rate = 1e-2
     end_learning_rate = 1e-6
     transition_steps = 100
     transition_begin = 100
@@ -116,6 +120,7 @@ def main(argv=None):
         # Episode Loop:
         reset_key = jax.random.split(env_key, num=num_envs)
         states = reset_fn(reset_key)
+        actions = jnp.zeros((num_envs, env.action_size))
         state_history = [states]
         model_input_episode = []
         states_episode = []
@@ -127,8 +132,12 @@ def main(argv=None):
         metrics_episode = []
         episode_start = time.time()
         for environment_step in range(episode_length):
+            # print(f'Environment Step: {environment_step}')
             key, env_key = jax.random.split(env_key)
-            model_input = states.obs
+            # Input previous action as part of the input:
+            model_input = jnp.concatenate([states.obs, actions], axis=1)
+            # Input only the state:
+            # model_input = states.obs
             mean, std, values = model_utilities.forward_pass(
                 model_params=model_state.params,
                 apply_fn=model_state.apply_fn,
@@ -186,7 +195,10 @@ def main(argv=None):
         )
 
         # No Gradient Calculation:
-        model_input = states.obs
+        # Only obs:
+        # model_input = states.obs
+        # obs + action:
+        model_input = jnp.concatenate([states.obs, actions], axis=1)
         _, _, values = jax.lax.stop_gradient(
             model_utilities.forward_pass(
                 model_params=model_state.params,
