@@ -108,9 +108,11 @@ def main(argv=None):
     action_history = []
     state_history.append(states.pipeline_state)
     metrics_history.append(states)
+    actions = jnp.zeros((env.action_size,))
     for environment_step in range(episode_length):
             key, env_key = jax.random.split(env_key)
-            model_input = jnp.expand_dims(states.obs, axis=0)
+            model_input = jnp.concatenate([states.obs, jnp.squeeze(actions)])
+            model_input = jnp.expand_dims(model_input, axis=0)
             mean, std, values = model_utilities.forward_pass(
                 model_params=model_state.params,
                 apply_fn=model_state.apply_fn,

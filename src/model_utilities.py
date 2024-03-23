@@ -92,6 +92,30 @@ def calculate_advantage(
     return advantage, returns
 
 
+# Vmapped Replay Function:
+@functools.partial(jax.jit, static_argnames=["apply_fn"])
+@functools.partial(jax.vmap, in_axes=(None, None, 1, 1), out_axes=(1, 1, 1, 1, 1))
+def replay(
+    model_params: FrozenDict,
+    apply_fn: Callable[..., Any],
+    model_input: jax.typing.ArrayLike,
+    actions: jax.typing.ArrayLike,
+) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    mean, std, values = forward_pass(
+        model_params,
+        apply_fn,
+        model_input,
+    )
+    log_probability, entropy = evaluate_action(mean, std, actions)
+    return (
+        jnp.squeeze(values),
+        jnp.squeeze(log_probability),
+        jnp.squeeze(entropy),
+        jnp.squeeze(mean),
+        jnp.squeeze(std),
+    )
+
+
 @functools.partial(jax.jit, static_argnames=["apply_fn"])
 def loss_function(
     model_params: FrozenDict,
@@ -101,19 +125,39 @@ def loss_function(
     advantages: jax.typing.ArrayLike,
     returns: jax.typing.ArrayLike,
     previous_log_probability: jax.typing.ArrayLike,
-) -> jnp.ndarray:
-    print('Compiling Loss Function')
+    previous_mean: jax.typing.ArrayLike,
+    previous_std: jax.typing.ArrayLike,
+) -> Tuple[jnp.ndarray, jnp.ndarray]:
+    def _calculate_kl_divergance(previous_mean, previous_std, mean, std):
+        kl = jnp.sum(
+            jnp.log(std / previous_std + 1.0e-5)
+            + (jnp.square(previous_std) + jnp.square(previous_mean - mean))
+            / (2.0 * jnp.square(std))
+            - 0.5,
+            axis=-1,
+        )
+        return jnp.mean(kl)
+
     # Algorithm Coefficients:
     value_coeff = 0.5
     entropy_coeff = 0.01
     clip_coeff = 0.2
 
     # Vmapped Replay:
-    values, log_probability, entropy = replay(
+    values, log_probability, entropy, mean, std = replay(
         model_params,
         apply_fn,
         model_input,
         actions,
+    )
+    # Calculate KL Divergence:
+    kl = jax.lax.stop_gradient(
+        _calculate_kl_divergance(
+            previous_mean,
+            previous_std,
+            mean,
+            std,
+        ),
     )
 
     # Calculate Ratio: (Should this be No Grad?)
@@ -139,147 +183,4 @@ def loss_function(
     # Entropy Loss:
     entropy_loss = -entropy_coeff * jnp.mean(entropy)
 
-    return ppo_loss + value_loss + entropy_loss
-
-
-# Vmapped Replay Function:
-@functools.partial(jax.jit, static_argnames=["apply_fn"])
-@functools.partial(jax.vmap, in_axes=(None, None, 1, 1), out_axes=(1, 1, 1))
-def replay(
-    model_params: FrozenDict,
-    apply_fn: Callable[..., Any],
-    model_input: jax.typing.ArrayLike,
-    actions: jax.typing.ArrayLike,
-) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-    print('Compiling Replay Function')
-    mean, std, values = forward_pass(
-        model_params,
-        apply_fn,
-        model_input,
-    )
-    log_probability, entropy = evaluate_action(mean, std, actions)
-    return jnp.squeeze(values), jnp.squeeze(log_probability), jnp.squeeze(entropy)
-
-
-# Serialized Replay Function:
-@functools.partial(jax.jit, static_argnames=["apply_fn", "length"])
-def replay_serial(
-    model_params: FrozenDict,
-    apply_fn: Callable[..., Any],
-    model_input: jax.Array,
-    actions: jax.Array,
-    length: int,
-) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
-    def forward_pass_rollout(
-            carry: None,
-            xs: Tuple[jax.Array, jax.Array],
-    ) -> Tuple[None, Tuple[jax.Array, jax.Array, jax.Array]]:
-        model_input, actions = xs
-        mean, std, values = forward_pass(
-            model_params,
-            apply_fn,
-            model_input,
-        )
-        log_probability, entropy = evaluate_action(
-            mean,
-            std,
-            actions,
-        )
-        carry = None
-        data = (jnp.squeeze(values), log_probability, entropy)
-        return carry, data
-
-    # Scan over replay:
-    _, data = jax.lax.scan(
-        forward_pass_rollout,
-        None,
-        (model_input, actions),
-        length,
-    )
-    values, log_probability, entropy = data
-    values = jnp.swapaxes(
-        jnp.asarray(values), axis1=1, axis2=0,
-    )
-    log_probability = jnp.swapaxes(
-        jnp.asarray(log_probability), axis1=1, axis2=0,
-    )
-    entropy = jnp.swapaxes(
-        jnp.asarray(entropy), axis1=1, axis2=0,
-    )
-    return values, log_probability, entropy
-
-
-# @functools.partial(
-#     jax.jit, static_argnames=["ppo_steps"]
-# )
-# def train_step(
-#     model_state: TrainState,
-#     model_input: jax.typing.ArrayLike,
-#     actions: jax.typing.ArrayLike,
-#     advantages: jax.typing.ArrayLike,
-#     returns: jax.typing.ArrayLike,
-#     previous_log_probability: jax.typing.ArrayLike,
-#     ppo_steps: int,
-# ) -> Tuple[TrainState, jnp.ndarray]:
-#     # PPO Optimixation Loop:
-#     def ppo_loop(carry, xs):
-#         model_state = carry
-#         loss, gradients = gradient_function(
-#             model_state.params,
-#             model_state.apply_fn,
-#             model_input,
-#             actions,
-#             advantages,
-#             returns,
-#             previous_log_probability,
-#         )
-#         model_state = model_state.apply_gradients(grads=gradients)
-
-#         # Pack carry and data:
-#         carry = model_state
-#         data = loss
-#         return carry, data
-
-#     gradient_function = jax.value_and_grad(loss_function)
-
-#     carry, data = jax.lax.scan(
-#         f=ppo_loop,
-#         init=(model_state),
-#         xs=None,
-#         length=ppo_steps,
-#     )
-
-#     # Unpack carry and data:
-#     model_state, _ = carry
-#     loss = data
-#     loss = jnp.mean(loss)
-
-#     return model_state, loss
-
-@functools.partial(jax.jit, static_argnames=['ppo_steps'])
-def train_step(
-    model_state,
-    model_input,
-    actions,
-    advantages,
-    returns,
-    previous_log_probability,
-    ppo_steps,
-):
-    # Print Statement:
-    print('Compiling Train Step...')
-    gradient_function = jax.value_and_grad(loss_function)
-    # PPO Optimixation Loop:
-    for ppo_step in range(ppo_steps):
-        loss, gradients = gradient_function(
-            model_state.params,
-            model_state.apply_fn,
-            model_input,
-            actions,
-            advantages,
-            returns,
-            previous_log_probability,
-        )
-        model_state = model_state.apply_gradients(grads=gradients)
-
-    return model_state, loss
+    return ppo_loss + value_loss + entropy_loss, kl

@@ -89,7 +89,7 @@ def main(argv=None):
     # )
 
     state_history = [state.pipeline_state]
-    simulation_steps = 1000
+    simulation_steps = 500
     desired_joint_position = np.array([0.0, 0.0])
     kp = 10.0
 

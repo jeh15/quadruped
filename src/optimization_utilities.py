@@ -1,27 +1,28 @@
-from typing import Tuple
 import functools
 
 import jax
 import jax.numpy as jnp
 from flax.training.train_state import TrainState
 
-import model_utilities
-
-Batch = Tuple[jax.Array, jax.Array, jax.Array, jax.Array, jax.Array]
+from model_utilities import loss_function
 
 
-@functools.partial(
-    jax.jit, static_argnames=["ppo_steps"]
-)
+@functools.partial(jax.jit, static_argnames=['ppo_steps'])
 def train_step(
-    model_state: TrainState,
-    batch: Batch,
-    ppo_steps: int,
-) -> Tuple[TrainState, jnp.ndarray]:
+    model_state,
+    model_input,
+    actions,
+    advantages,
+    returns,
+    previous_log_probability,
+    previous_mean,
+    previous_std,
+    ppo_steps,
+):
+    gradient_function = jax.value_and_grad(loss_function, has_aux=True)
     # PPO Optimixation Loop:
-    def ppo_loop(carry, xs):
-        model_state = carry
-        loss, gradients = gradient_function(
+    for ppo_step in range(ppo_steps):
+        (loss, kl), gradients = gradient_function(
             model_state.params,
             model_state.apply_fn,
             model_input,
@@ -29,86 +30,33 @@ def train_step(
             advantages,
             returns,
             previous_log_probability,
+            previous_mean,
+            previous_std,
         )
+
+        # Calculate Learning Rate:
+        desired_kl = 0.01
+        learning_rate = model_state.opt_state.hyperparams['learning_rate']
+        learning_rate = jnp.where(
+            kl > desired_kl * 2.0,
+            jnp.max(
+                jnp.array([1e-5, learning_rate / 1.5]),
+            ),
+            learning_rate,
+        )
+        learning_rate = jnp.where(
+            jnp.logical_and(kl < desired_kl / 2.0, kl > 0.0),
+            jnp.min(
+                jnp.array([1e-2, learning_rate * 1.5]),
+            ),
+            learning_rate,
+        )  # type: ignore
+
+        # Update Learning Rate:
+        model_state.opt_state.hyperparams['learning_rate'] = learning_rate
+        model_state.tx.update(model_state.params, model_state.opt_state)
+
+        # Apply Gradients:
         model_state = model_state.apply_gradients(grads=gradients)
 
-        # Pack carry and data:
-        carry = model_state
-        data = loss
-        return carry, data
-
-    print('Compiling Train Step')
-
-    # Compute gradient function:
-    gradient_function = jax.value_and_grad(model_utilities.loss_function)
-
-    # Unpack Batch:
-    model_input, actions, advantages, returns, previous_log_probability = batch
-
-    # Loop over PPO steps:
-    carry, data = jax.lax.scan(
-        f=ppo_loop,
-        init=(model_state),
-        xs=None,
-        length=ppo_steps,
-    )
-
-    # Unpack carry and data:
-    model_state = carry
-    loss = data
-    loss = jnp.mean(loss)
-
     return model_state, loss
-
-
-@functools.partial(jax.jit, static_argnames=["mini_batch_size"])
-def create_mini_batch(array: jax.Array, mini_batch_size: int) -> jnp.ndarray:
-    return jnp.asarray(
-        jnp.split(array, mini_batch_size, axis=1),
-    )
-
-
-def fit(
-    model_state: TrainState,
-    batch: Batch,
-    mini_batch_size: int,
-    ppo_steps: int,
-) -> Tuple[TrainState, jnp.ndarray]:
-    # Unpack Batch:
-    model_input, actions, advantages, returns, previous_log_probability = batch
-
-    # Split Batch and create mini batches along the episode dimension:
-    model_input = create_mini_batch(
-        model_input, mini_batch_size,
-    )
-    actions = create_mini_batch(
-        actions, mini_batch_size,
-    )
-    advantages = create_mini_batch(
-        advantages, mini_batch_size,
-    )
-    returns = create_mini_batch(
-        returns, mini_batch_size,
-    )
-    previous_log_probability = create_mini_batch(
-        previous_log_probability, mini_batch_size,
-    )
-
-    loss = []
-    for i in range(mini_batch_size):
-        # Pack mini batch:
-        mini_batch = (
-            model_input[i],
-            actions[i],
-            advantages[i],
-            returns[i],
-            previous_log_probability[i]
-        )
-        model_state, loss_mini_batch = train_step(
-            model_state,
-            mini_batch,
-            ppo_steps,
-        )
-        loss.append(loss_mini_batch)
-
-    return model_state, jnp.mean(jnp.asarray(loss))

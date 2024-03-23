@@ -55,9 +55,9 @@ def main(argv=None):
     best_iteration = 0
 
     # Create Environment:
-    episode_length = 300
+    episode_length = 5
     num_mini_batch = 1
-    num_envs = 64
+    num_envs = 2
 
     env = quadruped.Quadruped(backend='generalized')
     env = wrap(
@@ -87,20 +87,11 @@ def main(argv=None):
     )
 
     # Hyperparameters:
-    learning_rate = 1e-2
-    end_learning_rate = 1e-6
-    transition_steps = 100
-    transition_begin = 100
+    learning_rate = 1e-3
     ppo_steps = 5
 
     # Create a train state:
-    schedule = optax.linear_schedule(
-        init_value=learning_rate,
-        end_value=end_learning_rate,
-        transition_steps=ppo_steps * num_mini_batch * transition_steps,
-        transition_begin=ppo_steps * num_mini_batch * transition_begin,
-    )
-    tx = optimizer(learning_rate=schedule)
+    tx = optimizer(learning_rate=learning_rate)
     model_state = create_train_state(
         module=network,
         params=initial_params,
@@ -130,6 +121,8 @@ def main(argv=None):
         rewards_episode = []
         masks_episode = []
         metrics_episode = []
+        mean_episode = []
+        std_episode = []
         episode_start = time.time()
         for environment_step in range(episode_length):
             # print(f'Environment Step: {environment_step}')
@@ -163,6 +156,8 @@ def main(argv=None):
                 )
             )
             model_input_episode.append(model_input)
+            mean_episode.append(jnp.squeeze(mean))
+            std_episode.append(jnp.squeeze(std))
             # Save Metrics
             metrics_episode.append(states.metrics)
             states = next_states
@@ -192,6 +187,12 @@ def main(argv=None):
         )
         model_input_episode = jnp.swapaxes(
             jnp.asarray(model_input_episode), axis1=1, axis2=0,
+        )
+        mean_episode = jnp.swapaxes(
+            jnp.asarray(mean_episode), axis1=1, axis2=0,
+        )
+        std_episode = jnp.swapaxes(
+            jnp.asarray(std_episode), axis1=1, axis2=0,
         )
 
         # No Gradient Calculation:
@@ -249,6 +250,8 @@ def main(argv=None):
             advantage_episode,
             returns_episode,
             log_probability_episode,
+            mean_episode,
+            std_episode,
             ppo_steps,
         )
 
