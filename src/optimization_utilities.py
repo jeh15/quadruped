@@ -4,6 +4,7 @@ import jax
 import jax.numpy as jnp
 from flax.training.train_state import TrainState
 
+import model_utilities
 from model_utilities import loss_function
 
 
