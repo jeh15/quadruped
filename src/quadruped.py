@@ -28,7 +28,7 @@ class Quadruped(PipelineEnv):
     def __init__(
         self,
         filename: str = 'quadruped_brax.xml',
-        backend: str = 'generalized',
+        backend: str = 'mjx',
         params: config_dict.ConfigDict = config,
         **kwargs,
     ):
@@ -69,10 +69,14 @@ class Quadruped(PipelineEnv):
         self.base_w = jnp.array([3, 4, 5, 6])
         self.base_dw = jnp.array([3, 4, 5])
         # hip, knee
-        self.front_left_id = jnp.array([7, 8])
-        self.front_right_id = jnp.array([9, 10])
-        self.back_left_id = jnp.array([11, 12])
-        self.back_right_id = jnp.array([13, 14])
+        self.front_left_x = jnp.array([7, 8])
+        self.front_left_dx = jnp.array([6, 7])
+        self.front_right_x = jnp.array([9, 10])
+        self.front_right_dx = jnp.array([8, 9])
+        self.back_left_x = jnp.array([11, 12])
+        self.back_left_dx = jnp.array([10, 11])
+        self.back_right_x = jnp.array([13, 14])
+        self.back_right_dx = jnp.array([12, 13])
 
         # State indices to joints that can be actuated:
         self.motor_id = sys.actuator.qd_id
@@ -113,20 +117,20 @@ class Quadruped(PipelineEnv):
         rng, q_rng, qd_rng = jax.random.split(rng, 3)
 
         # Random Noise:
-        low, high = -self.reset_noise, self.reset_noise
-        q_base = self.initial_q[self.body_id]
-        q_joints = self.initial_q[7:] + jax.random.uniform(
-            q_rng,
-            (self.sys.q_size() - 7,),
-            minval=low,
-            maxval=high,
-        )
-        q = jnp.concatenate([q_base, q_joints])
-        qd = high * jax.random.normal(qd_rng, (self.sys.qd_size(),))
+        # low, high = -self.reset_noise, self.reset_noise
+        # q_base = self.initial_q[self.body_id]
+        # q_joints = self.initial_q[7:] + jax.random.uniform(
+        #     q_rng,
+        #     (self.sys.q_size() - 7,),
+        #     minval=low,
+        #     maxval=high,
+        # )
+        # q = jnp.concatenate([q_base, q_joints])
+        # qd = high * jax.random.normal(qd_rng, (self.sys.qd_size(),))
 
-        # # No Random Noise:
-        # q = self.initial_q
-        # qd = jnp.zeros((self.sys.qd_size(),))
+        # No Random Noise:
+        q = self.initial_q
+        qd = jnp.zeros((self.sys.qd_size(),))
 
         pipeline_state = self.pipeline_init(q, qd)
 

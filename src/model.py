@@ -7,7 +7,7 @@ class ActorCriticNetwork(nn.Module):
 
     def setup(self):
         dtype = jnp.float64
-        features = 128
+        features = 256
         self.dense_1 = nn.Dense(
             features=features,
             name='dense_1',
@@ -68,36 +68,30 @@ class ActorCriticNetwork(nn.Module):
     def model(self, x):
         # Shared Layers:
         x = self.dense_1(x)
-        x = nn.tanh(x)
+        x = nn.elu(x)
         x = self.dense_2(x)
-        x = nn.tanh(x)
+        x = nn.elu(x)
 
         # Policy Layer: Mean
         y = self.dense_3(x)
-        y = nn.tanh(y)
+        y = nn.elu(y)
         y = self.dense_4(y)
-        y = nn.tanh(y)
+        y = nn.elu(y)
 
         # Policy Layer: Standard Deviation
         z = self.dense_5(x)
-        z = nn.tanh(z)
+        z = nn.elu(z)
         z = self.dense_6(z)
-        z = nn.tanh(z)
+        z = nn.elu(z)
 
         # Value Layer:
         w = self.dense_7(x)
-        w = nn.tanh(w)
+        w = nn.elu(w)
         w = self.dense_8(w)
-        w = nn.tanh(w)
+        w = nn.elu(w)
 
         # Output Layer:
-        # Based on control range:
-        saturation_scale = 2.0
-        # Output desired joint positon:
         mean = self.mean_layer(y)
-        # w/ saturation output is motor torques
-        # w/o saturation output is joint position
-        mean = saturation_scale * nn.tanh(mean)
         std = self.std_layer(z)
         std = nn.sigmoid(std)
         values = self.value_layer(w)

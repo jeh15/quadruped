@@ -40,7 +40,7 @@
             <geom contype="0" conaffinity="0" group="2"/>
         </default>
         <default class="motors">
-            <general gaintype="fixed" biastype="affine" ctrlrange="-2.0 2.0" gainprm="5" biasprm="0 0 0" gear="1 0 0 0 0 0" forcerange="-33.5 33.5"/>
+            <general gaintype="fixed" biastype="affine" gainprm="5" biasprm="0 0 0" gear="1 0 0 0 0 0"/>
         </default>
     </default>
 
@@ -69,7 +69,7 @@
                             <geom class="visual" type="box" size="0.085 0.0175 0.0115" pos="0.085 0 0" quat="1 1 0 0" rgba="0 0 1 1"/>
                             <geom class="visual" type="capsule" size="0.0175 0.0115" pos="0.17 0 0" quat="1 1 0 0" rgba="0 0 1 1"/>
                             <body name="front_left_foot" pos="0.17 0 0">
-                                <geom class="collision" type="sphere" size="0.025" pos="0 0 0" friction="2 0.005 0.0001"/>
+                                <geom class="collision" type="sphere" size="0.025" pos="0 0 0" friction="1.2 0.005 0.0001"/>
                             </body>
                         </body>
                     </body>
@@ -88,7 +88,7 @@
                             <geom class="visual" type="box" size="0.085 0.0175 0.0115" pos="0.085 0 0" quat="1 1 0 0" rgba="0 0 1 1"/>
                             <geom class="visual" type="capsule" size="0.0175 0.0115" pos="0.17 0 0" quat="1 1 0 0" rgba="0 0 1 1"/>
                             <body name="front_right_foot" pos="0.17 0 0">
-                                <geom class="collision" type="sphere" size="0.025" pos="0 0 0" friction="2 0.005 0.0001"/>
+                                <geom class="collision" type="sphere" size="0.025" pos="0 0 0" friction="1.2 0.005 0.0001"/>
                             </body>
                         </body>
                     </body>
@@ -107,7 +107,7 @@
                             <geom class="visual" type="box" size="0.085 0.0175 0.0115" pos="0.085 0 0" quat="1 1 0 0" rgba="0 0 1 1"/>
                             <geom class="visual" type="capsule" size="0.0175 0.0115" pos="0.17 0 0" quat="1 1 0 0" rgba="0 0 1 1"/>
                             <body name="back_left_foot" pos="0.17 0 0">
-                                <geom class="collision" type="sphere" size="0.025" pos="0 0 0" friction="2 0.005 0.0001"/>
+                                <geom class="collision" type="sphere" size="0.025" pos="0 0 0" friction="1.2 0.005 0.0001"/>
                             </body>
                         </body>
                     </body>
@@ -126,7 +126,7 @@
                             <geom class="visual" type="box" size="0.085 0.0175 0.0115" pos="0.085 0 0" quat="1 1 0 0" rgba="0 0 1 1"/>
                             <geom class="visual" type="capsule" size="0.0175 0.0115" pos="0.17 0 0" quat="1 1 0 0" rgba="0 0 1 1"/>
                             <body name="back_right_foot" pos="0.17 0 0">
-                                <geom class="collision" type="sphere" size="0.025" pos="0 0 0" friction="2 0.005 0.0001"/>
+                                <geom class="collision" type="sphere" size="0.025" pos="0 0 0" friction="1.2 0.005 0.0001"/>
                             </body>
                         </body>
                     </body>
