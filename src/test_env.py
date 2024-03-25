@@ -8,8 +8,8 @@ from brax.io import html
 
 import time
 
-import quadruped
 import unitree
+import control_utilities
 
 jax.config.update("jax_enable_x64", True)
 np.set_printoptions(precision=4)
@@ -21,30 +21,30 @@ def main(argv=None):
     episode_run_time = 20.0  # Seconds
     batch_run_time = 0.5  # Seconds
     episode_length = int(episode_run_time / env.dt)
-    episode_length = 1
 
-    # reset_fn = jax.jit(env.reset)
-    # step_fn = jax.jit(env.step)
-    reset_fn = env.reset
-    step_fn = env.step
+    reset_fn = jax.jit(env.reset)
+    step_fn = jax.jit(env.step)
+    feedforward_controller = jax.jit(control_utilities.feedforward_controller)
 
     # Compile Step Function for timing:
     initial_key = jax.random.key(42)
     state = reset_fn(initial_key)
 
     state_history = [state.pipeline_state]
-    kp = 1.0
-    kd = 0.1
 
     start_time = time.time()
     for i in range(episode_length):
-        leg_q = state.pipeline_state.q[7:]
-        leg_qd = state.pipeline_state.qd[6:]
-        # ctrl_input = kp * (np.zeros_like(leg_q) - leg_q) - kd * leg_qd
         ctrl_input = env.base_control
+        joint_qd = state.pipeline_state.qd[6:]
+        ctrl_input = feedforward_controller(
+            jnp.expand_dims(ctrl_input, axis=0),
+            jnp.expand_dims(joint_qd, axis=0),
+            0.1,
+            env.sys.actuator_ctrlrange,
+        )
         if i % 100 == 0:
             print(f'Control Input: {ctrl_input}')
-        state = step_fn(state, ctrl_input)
+        state = step_fn(state, jnp.squeeze(ctrl_input))
         state_history.append(state.pipeline_state)
 
     end_time = time.time() - start_time

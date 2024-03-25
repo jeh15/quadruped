@@ -7,55 +7,51 @@ class ActorCriticNetwork(nn.Module):
 
     def setup(self):
         dtype = jnp.float64
-        features = 256
+        policy_features = 128
+        value_features = 256
         self.dense_1 = nn.Dense(
-            features=features,
+            features=policy_features,
             name='dense_1',
             dtype=dtype,
         )
         self.dense_2 = nn.Dense(
-            features=features,
+            features=policy_features,
             name='dense_2',
             dtype=dtype,
         )
         self.dense_3 = nn.Dense(
-            features=features,
+            features=policy_features,
             name='dense_3',
             dtype=dtype,
         )
         self.dense_4 = nn.Dense(
-            features=features,
+            features=policy_features,
             name='dense_4',
             dtype=dtype,
         )
         self.dense_5 = nn.Dense(
-            features=features,
+            features=value_features,
             name='dense_5',
             dtype=dtype,
         )
         self.dense_6 = nn.Dense(
-            features=features,
+            features=value_features,
             name='dense_6',
             dtype=dtype,
         )
         self.dense_7 = nn.Dense(
-            features=features,
+            features=value_features,
             name='dense_7',
             dtype=dtype,
         )
         self.dense_8 = nn.Dense(
-            features=features,
+            features=value_features,
             name='dense_8',
             dtype=dtype,
         )
-        self.mean_layer = nn.Dense(
-            features=self.action_space,
+        self.policy_layer = nn.Dense(
+            features=2*self.action_space,
             name='mean_layer',
-            dtype=dtype,
-        )
-        self.std_layer = nn.Dense(
-            features=self.action_space,
-            name='std_layer',
             dtype=dtype,
         )
         self.value_layer = nn.Dense(
@@ -66,34 +62,28 @@ class ActorCriticNetwork(nn.Module):
 
     # Small Network:
     def model(self, x):
-        # Shared Layers:
-        x = self.dense_1(x)
-        x = nn.elu(x)
-        x = self.dense_2(x)
-        x = nn.elu(x)
-
         # Policy Layer: Mean
-        y = self.dense_3(x)
-        y = nn.elu(y)
+        y = self.dense_1(x)
+        y = nn.tanh(y)
+        y = self.dense_2(y)
+        y = nn.tanh(y)
+        y = self.dense_3(y)
+        y = nn.tanh(y)
         y = self.dense_4(y)
-        y = nn.elu(y)
-
-        # Policy Layer: Standard Deviation
-        z = self.dense_5(x)
-        z = nn.elu(z)
-        z = self.dense_6(z)
-        z = nn.elu(z)
 
         # Value Layer:
-        w = self.dense_7(x)
-        w = nn.elu(w)
+        w = self.dense_5(x)
+        w = nn.tanh(w)
+        w = self.dense_6(w)
+        w = nn.tanh(w)
+        w = self.dense_7(w)
+        w = nn.tanh(w)
         w = self.dense_8(w)
-        w = nn.elu(w)
 
         # Output Layer:
-        mean = self.mean_layer(y)
-        std = self.std_layer(z)
-        std = nn.sigmoid(std)
+        policy_output = self.policy_layer(y)
+        mean, std = jnp.split(policy_output, 2, axis=0)
+        std = nn.softplus(std)
         values = self.value_layer(w)
         return mean, std, values
 

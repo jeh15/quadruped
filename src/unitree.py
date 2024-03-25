@@ -54,8 +54,8 @@ class Unitree(PipelineEnv):
         # Class Wide Parameters:
         self.initial_q = jnp.array(
             [
-                0, 0, 0.27, 1, 0, 0, 0, 
-                0, 0.9, -0.916298,
+                0, 0, 0.27, 1, 0, 0, 0,
+                0, 0.9, -1.8,
                 0, 0.9, -1.8,
                 0, 0.9, -1.8,
                 0, 0.9, -1.8,

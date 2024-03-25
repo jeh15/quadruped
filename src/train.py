@@ -18,7 +18,7 @@ import optimization_utilities
 import control_utilities
 import save_checkpoint
 
-import quadruped
+import unitree
 
 jax.config.update("jax_enable_x64", True)
 
@@ -60,7 +60,7 @@ def main(argv=None):
     best_iteration = 0
 
     # Create Environment:
-    env = quadruped.Quadruped(backend='mjx')
+    env = unitree.Unitree(backend='mjx')
     episode_run_time = 20.0  # Seconds
     batch_run_time = 0.5  # Seconds
     batch_iterator_length = int(batch_run_time / env.dt)
@@ -75,9 +75,6 @@ def main(argv=None):
 
     step_fn = jax.jit(env.step)
     reset_fn = jax.jit(env.reset)
-    kp = jnp.ones((env.action_size,))
-    kd = 0.1 * jnp.ones((env.action_size,))
-    calculate_control = jax.jit(control_utilities.pd_controller)
 
     # Initize Networks:
     initial_key = jax.random.PRNGKey(key_seed)
@@ -151,8 +148,8 @@ def main(argv=None):
         for environment_step in range(episode_iterator_length):
             for batch_step in range(batch_iterator_length):
                 key, env_key = jax.random.split(env_key)
-                # model_input = jnp.concatenate([states.obs, actions], axis=1)
-                model_input = jnp.concatenate([states.obs, control_input], axis=1)
+                model_input = jnp.concatenate([states.obs, actions], axis=1)
+                # model_input = jnp.concatenate([states.obs, control_input], axis=1)
                 mean, std, values = model_utilities.forward_pass(
                     model_params=model_state.params,
                     apply_fn=model_state.apply_fn,
@@ -162,14 +159,6 @@ def main(argv=None):
                     mean=mean,
                     std=std,
                     key=env_key,
-                )
-                control_input = calculate_control(
-                    actions,
-                    states.pipeline_state.q[:, 7:],
-                    states.pipeline_state.qd[:, 6:],
-                    kp,
-                    kd,
-                    1.0,
                 )
                 next_states = step_fn(
                     states,
