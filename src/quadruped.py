@@ -90,7 +90,7 @@ class Quadruped(PipelineEnv):
         # Set Configuration:
         self.desired_orientation = jnp.array([1.0, 0.0, 0.0, 0.0])
         self.desired_height = 0.2
-        self.min_z, self.max_z = 0.125, 0.275
+        self.min_z, self.max_z = 0.1, 0.3
 
         self.foot_height_weight = 2.0 * sys.dt
         self.pose_weight = 1.0 * sys.dt
@@ -99,8 +99,9 @@ class Quadruped(PipelineEnv):
         self.angular_velocity_weight = 0.5 * sys.dt
         self.linear_velocity_regularization = 4.0 * sys.dt
         self.angular_velocity_regularization = 0.05 * sys.dt
+        self.regularization_weight = 0.001 * sys.dt
         self.control_weight = 0.1 * sys.dt
-        self.continuation_weight = 1.0 * sys.dt
+        self.continuation_weight = 10.0 * sys.dt
 
         self._forward_reward_weight = params.forward_reward_weight
         self._ctrl_cost_weight = params.ctrl_cost_weight
@@ -147,6 +148,7 @@ class Quadruped(PipelineEnv):
             'reward_pose': zero,
             'reward_orientation': zero,
             'reward_foot_height': jnp.zeros((4,)),
+            'reward_joint_regularization': zero,
             'reward_duty_cycle': zero,
             'reward_survival': zero,
             'position': jnp.zeros((3,)),
@@ -212,6 +214,13 @@ class Quadruped(PipelineEnv):
         # Control regularization:
         reward_control = -self.control_weight * jnp.sum(jnp.square(action))
 
+        # Joint Regularization:
+        qd_joints = pipeline_state.qd[7:]
+        reward_joint_regularization = (
+            -self.regularization_weight
+            * jnp.linalg.norm(qd_joints)
+        )
+
         # Termination:
         base_x = pipeline_state.q[self.base_x]
         termination = jnp.where(
@@ -234,6 +243,7 @@ class Quadruped(PipelineEnv):
             + jnp.sum(reward_foot_height)
             + reward_linear_velocity
             + reward_angular_velocity
+            + reward_joint_regularization
         )
         reward = jnp.array([reward])
         zero = jnp.array([0.0])
@@ -244,6 +254,7 @@ class Quadruped(PipelineEnv):
             'reward_pose': jnp.array([reward_pose]),
             'reward_orientation': jnp.array([reward_orientation]),
             'reward_foot_height': reward_foot_height,
+            'reward_joint_regularization': jnp.array([reward_joint_regularization]),
             'reward_duty_cycle': zero,
             'reward_survival': jnp.array([reward_survival]),
             'position': base_x,

@@ -75,12 +75,8 @@ def main(argv=None):
 
     step_fn = jax.jit(env.step)
     reset_fn = jax.jit(env.reset)
-    kp = jnp.array(
-        [2.0, 6.0, 2.0, 6.0, 2.0, 6.0, 2.0, 6.0],
-    )
-    kd = jnp.array(
-        [0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1],
-    )
+    kp = jnp.ones((env.action_size,))
+    kd = 0.1 * jnp.ones((env.action_size,))
     calculate_control = jax.jit(control_utilities.pd_controller)
 
     # Initize Networks:
@@ -173,7 +169,7 @@ def main(argv=None):
                     states.pipeline_state.qd[:, 6:],
                     kp,
                     kd,
-                    2.0,
+                    1.0,
                 )
                 next_states = step_fn(
                     states,
@@ -335,9 +331,7 @@ def main(argv=None):
         metrics_path = os.path.join(directory, "metrics")
         with open(metrics_path + "/metrics.pkl", "wb") as f:
             pickle.dump(
-                {
-                    "metrics": metrics_history,
-                },
+                {"metrics": metrics_history},
                 f,
             )
 
