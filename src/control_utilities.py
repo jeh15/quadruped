@@ -15,4 +15,4 @@ def pd_controller(
 ) -> jnp.ndarray:
     u = kp * (q_desired - q) - kd * qd
     u = jnp.clip(u, -saturation, saturation)
-    return kp * (q_desired - q) - kd * qd
+    return u
