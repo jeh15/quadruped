@@ -7,7 +7,7 @@ import jax.numpy as jnp
 import optax
 from flax.training import train_state
 from brax.io import html
-import orbax.checkpoint
+import orbax.checkpoint as ocp
 
 import model
 import model_utilities
@@ -89,19 +89,20 @@ def main(argv=None):
     )
     del initial_params
 
-    target = {'model': model_state}
-    orbax_checkpointer = orbax.checkpoint.PyTreeCheckpointer()
-    # checkpoint_path = os.path.join(os.path.dirname(__file__), FLAGS.filename)
-    checkpoint_path = os.path.join(os.path.dirname(__file__), "checkpoints/620/default")
-    model_state = orbax_checkpointer.restore(checkpoint_path, item=target)['model']
-
-    # Load Checkpoint: New Manager
-    # directory = os.path.join(os.path.dirname(__file__), "checkpoints/200/default")
-    # option = checkpoint.create_default_options()
-    # manager = checkpoint.CheckpointManager(
-    #     directory=directory,
-
-    # )
+    # Load Checkpoint:
+    checkpoint_metadata = checkpoint.default_checkpoint_metadata()
+    manager_options = checkpoint.default_checkpoint_options()
+    checkpoint_directory = os.path.join(os.path.dirname(__file__), "checkpoints")
+    manager = ocp.CheckpointManager(
+        directory=checkpoint_directory,
+        options=manager_options,
+        item_names=('state', 'metadata'),
+    )
+    model_state, metadata = checkpoint.load_checkpoint(
+        manager=manager,
+        train_state=model_state,
+        metadata=checkpoint_metadata,
+    )
 
     state_history = []
     metrics_history = []

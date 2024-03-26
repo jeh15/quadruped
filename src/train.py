@@ -11,12 +11,13 @@ import optax
 from flax.training import train_state
 from brax.envs.wrappers.training import wrap
 import orbax.checkpoint
+import orbax.checkpoint as ocp
 
 import model
 import model_utilities
 import optimization_utilities
 import control_utilities
-import save_checkpoint
+import checkpoint
 
 import unitree
 
@@ -104,7 +105,18 @@ def main(argv=None):
     )
     del initial_params
 
+    # Create Checkpoint Manager:
+    checkpoint_metadata = checkpoint.default_checkpoint_metadata()
+    manager_options = checkpoint.default_checkpoint_options()
+    checkpoint_directory = checkpoint_path = os.path.join(os.path.dirname(__file__), "checkpoints")
+    manager = ocp.CheckpointManager(
+        directory=checkpoint_directory,
+        options=manager_options,
+        item_names=('state', 'metadata'),
+    )
+
     iteration_step = 0
+    # Rework:
     if FLAGS.filename is not None:
         target = {'model': model_state}
         orbax_checkpointer = orbax.checkpoint.PyTreeCheckpointer()
@@ -293,29 +305,26 @@ def main(argv=None):
             std_episode = []
 
             if checkpoint_enabled:
-                if iteration_step % 10 == 0:
-                    directory = os.path.dirname(__file__)
-                    checkpoint_path = os.path.join(directory, "checkpoints")
-                    save_checkpoint.save_checkpoint(
-                        state=model_state,
-                        path=checkpoint_path,
-                        iteration=iteration_step,
-                    )
+                checkpoint_metadata['iteration'] = iteration_step
+                checkpoint.save_checkpoint(
+                    manager=manager,
+                    train_state=model_state,
+                    metadata=checkpoint_metadata,
+                )
 
         print(f'Iteration: {iteration}')
 
     print(f'The best reward of {best_reward} was achieved at iteration {best_iteration}')
 
-    directory = os.path.dirname(__file__)
     if checkpoint_enabled:
-        checkpoint_path = os.path.join(directory, "checkpoints")
-        save_checkpoint.save_checkpoint(
-            state=model_state,
-            path=checkpoint_path,
-            iteration=iteration,
+        checkpoint.save_checkpoint(
+            manager=manager,
+            train_state=model_state,
+            metadata=checkpoint_metadata,
         )
 
     # Pickle Metrics:
+    directory = os.path.dirname(__file__)
     if pickle_enabled:
         metrics_path = os.path.join(directory, "metrics")
         with open(metrics_path + "/metrics.pkl", "wb") as f:

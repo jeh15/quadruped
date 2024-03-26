@@ -100,7 +100,8 @@ class Unitree(PipelineEnv):
         self.abduction_range_weight = 0.5 * self.dt
         self.knee_range_weight = 0.5 * self.dt
 
-        self.regularization_weight = 0.1 * self.dt
+        self.velocity_regularization_weight = 0.1 * self.dt
+        self.acceleration_regularization_weight = 0.001 * self.dt
         self.control_weight = 0.0005 * self.dt
         self.continuation_weight = 10.0 * self.dt
         self.termination_weight = -10.0 * self.dt
@@ -245,12 +246,12 @@ class Unitree(PipelineEnv):
         # Regularization:
         qd_joints = pipeline_state.qd[6:]
         reward_joint_regularization = (
-            -self.regularization_weight
+            -self.velocity_regularization_weight
             * jnp.linalg.norm(qd_joints)
         )
         qdd_joints = (qd_joints - pipeline_state_prev.qd[6:]) / self.dt
         reward_acceleration_regularization = (
-            -self.regularization_weight
+            -self.acceleration_regularization_weight
             * jnp.linalg.norm(qdd_joints)
         )
 
