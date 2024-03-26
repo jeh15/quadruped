@@ -22,9 +22,10 @@ def main(argv=None):
     batch_run_time = 0.5  # Seconds
     episode_length = int(episode_run_time / env.dt)
 
-    reset_fn = jax.jit(env.reset)
-    step_fn = jax.jit(env.step)
-    feedforward_controller = jax.jit(control_utilities.feedforward_controller)
+    # reset_fn = jax.jit(env.reset)
+    # step_fn = jax.jit(env.step)
+    reset_fn = env.reset
+    step_fn = env.step
 
     # Compile Step Function for timing:
     initial_key = jax.random.key(42)
@@ -35,13 +36,6 @@ def main(argv=None):
     start_time = time.time()
     for i in range(episode_length):
         ctrl_input = env.base_control
-        joint_qd = state.pipeline_state.qd[6:]
-        ctrl_input = feedforward_controller(
-            jnp.expand_dims(ctrl_input, axis=0),
-            jnp.expand_dims(joint_qd, axis=0),
-            0.1,
-            env.sys.actuator_ctrlrange,
-        )
         if i % 100 == 0:
             print(f'Control Input: {ctrl_input}')
         state = step_fn(state, jnp.squeeze(ctrl_input))

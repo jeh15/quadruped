@@ -78,19 +78,9 @@ def main(argv=None):
 
     # Hyperparameters:
     learning_rate = 1e-3
-    end_learning_rate = 1e-6
-    transition_steps = 100
-    transition_begin = 100
-    ppo_steps = 10
 
     # Create a train state:
-    schedule = optax.linear_schedule(
-        init_value=learning_rate,
-        end_value=end_learning_rate,
-        transition_steps=ppo_steps * transition_steps,
-        transition_begin=ppo_steps * transition_begin,
-    )
-    tx = optimizer(learning_rate=schedule)
+    tx = optimizer(learning_rate=learning_rate)
     model_state = create_train_state(
         module=network,
         params=initial_params,

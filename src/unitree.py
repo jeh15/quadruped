@@ -14,13 +14,6 @@ from ml_collections import config_dict
 
 # Configuration:
 config = config_dict.ConfigDict()
-config.forward_reward_weight = 1.25
-config.ctrl_cost_weight = 0.1
-config.healthy_reward = 5.0
-config.terminate_when_unhealthy = True
-config.healthy_z_range = (0.05, 0.4)
-config.reset_noise_scale = 1e-2
-config.exclude_current_positions_from_observation = True
 
 
 class Unitree(PipelineEnv):
@@ -77,7 +70,7 @@ class Unitree(PipelineEnv):
         self.front_left_x = jnp.array([10, 11, 12])
         self.front_left_dx = self.front_left_x - 1
         self.back_right_x = jnp.array([13, 14, 15])
-        self.back_right_dx = self.back_right_x  - 1
+        self.back_right_dx = self.back_right_x - 1
         self.back_left_x = jnp.array([16, 17, 18])
         self.back_left_dx = self.back_left_x - 1
 
@@ -88,14 +81,16 @@ class Unitree(PipelineEnv):
         self.q_size = sys.q_size()
         self.qd_size = sys.qd_size()
         self.calf_length = 0.2
-        self.reset_noise = 0.1
+        self.reset_noise = 0.05
 
         # Set Configuration:
         self.desired_orientation = jnp.array([1.0, 0.0, 0.0, 0.0])
         self.desired_height = 0.27
-        self.min_z, self.max_z = 0.1, 0.5
+        self.min_z, self.max_z = 0.1, 0.4
+        self.min_knee_z, self.max_knee_z = 0.05, 0.3
 
         self.foot_height_weight = 2.0 * sys.dt
+        self.abduction_range_weight = 0.5 * sys.dt
         self.knee_range_weight = 0.5 * sys.dt
         self.pose_weight = 1.0 * sys.dt
         self.orientation_weight = 1.0 * sys.dt
@@ -104,7 +99,7 @@ class Unitree(PipelineEnv):
         self.linear_velocity_regularization = 4.0 * sys.dt
         self.angular_velocity_regularization = 0.05 * sys.dt
         self.regularization_weight = 0.001 * sys.dt
-        self.control_weight = 0.1 * sys.dt
+        self.control_weight = 0.00002 * sys.dt
         self.continuation_weight = 10.0 * sys.dt
 
     def reset(self, rng: jax.Array) -> State:
@@ -112,20 +107,20 @@ class Unitree(PipelineEnv):
         rng, q_rng, qd_rng = jax.random.split(rng, 3)
 
         # Random Noise:
-        # low, high = -self.reset_noise, self.reset_noise
-        # q_base = self.initial_q[self.body_id]
-        # q_joints = self.initial_q[7:] + jax.random.uniform(
-        #     q_rng,
-        #     (self.sys.q_size() - 7,),
-        #     minval=low,
-        #     maxval=high,
-        # )
-        # q = jnp.concatenate([q_base, q_joints])
-        # qd = high * jax.random.normal(qd_rng, (self.sys.qd_size(),))
+        low, high = -self.reset_noise, self.reset_noise
+        q_base = self.initial_q[self.body_id]
+        q_joints = self.initial_q[7:] + jax.random.uniform(
+            q_rng,
+            (self.sys.q_size() - 7,),
+            minval=low,
+            maxval=high,
+        )
+        q = jnp.concatenate([q_base, q_joints])
+        qd = 0.1 * high * jax.random.normal(qd_rng, (self.sys.qd_size(),))
 
         # No Random Noise:
-        q = self.initial_q
-        qd = jnp.zeros((self.qd_size,))
+        # q = self.initial_q
+        # qd = jnp.zeros((self.qd_size,))
 
         pipeline_state = self.pipeline_init(q, qd)
 
@@ -142,13 +137,16 @@ class Unitree(PipelineEnv):
             'reward_pose': zero,
             'reward_orientation': zero,
             'reward_foot_height': jnp.zeros((4,)),
+            'reward_abduction_range': zero,
+            'reward_knee_range': jnp.zeros((4,)),
             'reward_joint_regularization': zero,
-            'reward_duty_cycle': zero,
             'reward_survival': zero,
             'position': jnp.zeros((3,)),
             'orientation': jnp.zeros((4,)),
             'linear_velocity': jnp.zeros((3,)),
             'angular_velocity': jnp.zeros((3,)),
+            'knee_termination': zero,
+            'base_termination': zero,
         }
 
         return State(pipeline_state, obs, reward, done, metrics)
@@ -177,14 +175,22 @@ class Unitree(PipelineEnv):
             self.calf_length,
         )
         foot_z = foot_positions[:, -1]
-        foot_padding = 0.02
+        foot_padding = 0.025
         reward_foot_height = jnp.where(
             jnp.abs(foot_z) <= foot_padding,
             self.foot_height_weight,
             -self.foot_height_weight * foot_z,
         )
 
-        # Knee Position:
+        # Abduction Range:
+        abduction_joint_idx = jnp.array([7, 10, 13, 16])
+        abduction_q = pipeline_state.q[abduction_joint_idx]
+        reward_abduction_range = (
+            -self.abduction_range_weight
+            * jnp.sum(jnp.abs(abduction_q))
+        )
+
+        # Knee Range:
         knee_joint_idx = jnp.array([9, 12, 15, 18])
         knee_ref = -1.8
         knee_range = jnp.pi / 6
@@ -195,7 +201,6 @@ class Unitree(PipelineEnv):
             -self.knee_range_weight,
             self.knee_range_weight,
         )
-
 
         # Base Pose: Maintain Z Height
         base_x = pipeline_state.q[self.base_x]
@@ -220,7 +225,9 @@ class Unitree(PipelineEnv):
         )
 
         # Control regularization:
-        reward_control = -self.control_weight * jnp.sum(jnp.square(action))
+        reward_control = -self.control_weight * jnp.sum(
+            jnp.square(pipeline_state.actuator_velocity)
+        )
 
         # Joint Regularization:
         qd_joints = pipeline_state.qd[7:]
@@ -231,12 +238,23 @@ class Unitree(PipelineEnv):
 
         # Termination:
         base_x = pipeline_state.q[self.base_x]
-        termination = jnp.where(
+        base_termination = jnp.where(
             base_x[-1] < self.min_z, 1.0, 0.0,
         )
-        termination = jnp.where(
-            base_x[-1] > self.max_z, 1.0, termination,
+        base_termination = jnp.where(
+            base_x[-1] > self.max_z, 1.0, base_termination,
         )
+        knee_x = pipeline_state.x.pos[knee_joint_idx]
+        knee_termination = jnp.where(
+            knee_x[:, -1] < self.min_knee_z, 1.0, 0.0,
+        )
+        knee_termination = jnp.where(
+            knee_x[:, -1] > self.max_knee_z, 1.0, knee_termination,
+        )
+        knee_termination = jnp.max(knee_termination)
+        termination_cond = jnp.array([base_termination, knee_termination])
+        termination = jnp.max(termination_cond)
+
         reward_survival = (1.0 - termination) * self.continuation_weight
 
         # Terminate flag:
@@ -252,9 +270,10 @@ class Unitree(PipelineEnv):
             + reward_linear_velocity
             + reward_angular_velocity
             + reward_joint_regularization
+            + jnp.sum(reward_knee_range)
+            + reward_abduction_range
         )
         reward = jnp.array([reward])
-        zero = jnp.array([0.0])
         metrics = {
             'reward_linear_velocity': jnp.array([reward_linear_velocity]),
             'reward_angular_velocity': jnp.array([reward_angular_velocity]),
@@ -262,13 +281,16 @@ class Unitree(PipelineEnv):
             'reward_pose': jnp.array([reward_pose]),
             'reward_orientation': jnp.array([reward_orientation]),
             'reward_foot_height': reward_foot_height,
+            'reward_abduction_range': jnp.array([reward_abduction_range]),
+            'reward_knee_range': reward_knee_range,
             'reward_joint_regularization': jnp.array([reward_joint_regularization]),
-            'reward_duty_cycle': zero,
             'reward_survival': jnp.array([reward_survival]),
             'position': base_x,
             'orientation': base_w,
             'linear_velocity': linear_velocity,
             'angular_velocity': angular_velocity,
+            'knee_termination': jnp.array([knee_termination]),
+            'base_termination': jnp.array([base_termination]),
         }
 
         return state.replace(
