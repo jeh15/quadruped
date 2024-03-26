@@ -7,7 +7,7 @@ class ActorCriticNetwork(nn.Module):
 
     def setup(self):
         dtype = jnp.float64
-        policy_features = 128
+        policy_features = 256
         value_features = 256
         self.dense_1 = nn.Dense(
             features=policy_features,
