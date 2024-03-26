@@ -94,7 +94,7 @@ class Unitree(PipelineEnv):
         self.pose_weight = 2.0 * self.dt
         self.orientation_weight = 1.0 * self.dt
         self.linear_velocity_weight = 1.0 * self.dt
-        self.angular_velocity_weight = 0.5 * self.dt
+        self.angular_velocity_weight = 1.0 * self.dt
 
         self.foot_height_weight = 5.0 * self.dt
         self.abduction_range_weight = 0.5 * self.dt
