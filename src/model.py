@@ -50,7 +50,7 @@ class ActorCriticNetwork(nn.Module):
             dtype=dtype,
         )
         self.policy_layer = nn.Dense(
-            features=self.action_space,
+            features=2 * self.action_space,
             name='mean_layer',
             dtype=dtype,
         )
@@ -81,8 +81,11 @@ class ActorCriticNetwork(nn.Module):
         w = self.dense_8(w)
 
         # Output Layer:
-        mean = self.policy_layer(y)
-        std = 0.1 * jnp.ones_like(mean)
+        policy_output = self.policy_layer(y)
+        mean, std = jnp.split(policy_output, 2, axis=-1)
+        std = nn.softplus(std)
+        # mean = self.policy_layer(y)
+        # std = 1.0 * jnp.ones_like(mean)
         values = self.value_layer(w)
         return mean, std, values
 

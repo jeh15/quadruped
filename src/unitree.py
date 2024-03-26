@@ -91,23 +91,23 @@ class Unitree(PipelineEnv):
         self.min_knee_z, self.max_knee_z = 0.05, 0.3
 
         # Scaled with Phi function:
-        self.pose_weight = 2.0
-        self.orientation_weight = 1.0
-        self.linear_velocity_weight = 1.0
-        self.angular_velocity_weight = 0.5
+        self.pose_weight = 2.0 * self.dt
+        self.orientation_weight = 1.0 * self.dt
+        self.linear_velocity_weight = 1.0 * self.dt
+        self.angular_velocity_weight = 0.5 * self.dt
 
-        self.foot_height_weight = 5.0
-        self.abduction_range_weight = 0.5
-        self.knee_range_weight = 0.5
+        self.foot_height_weight = 5.0 * self.dt
+        self.abduction_range_weight = 0.5 * self.dt
+        self.knee_range_weight = 0.5 * self.dt
 
-        self.regularization_weight = 0.1
-        self.control_weight = 0.0005
-        self.continuation_weight = 10.0
-        self.termination_weight = -10.0
+        self.regularization_weight = 0.1 * self.dt
+        self.control_weight = 0.0005 * self.dt
+        self.continuation_weight = 10.0 * self.dt
+        self.termination_weight = -10.0 * self.dt
 
         # Unused
-        self.linear_velocity_regularization = 0.1
-        self.angular_velocity_regularization = 0.1
+        self.linear_velocity_regularization = 0.1 * self.dt
+        self.angular_velocity_regularization = 0.1 * self.dt
 
     def reset(self, rng: jax.Array) -> State:
         """Resets the environment to an initial state."""

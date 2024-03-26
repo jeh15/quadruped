@@ -162,7 +162,7 @@ def main(argv=None):
                 )
                 next_states = step_fn(
                     states,
-                    control_input,
+                    actions,
                 )
                 states_episode.append(states.obs)
                 values_episode.append(jnp.squeeze(values))
