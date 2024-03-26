@@ -12,14 +12,14 @@ import orbax.checkpoint
 import model
 import model_utilities
 
-import quadruped
+import unitree
 
 
 jax.config.update("jax_enable_x64", True)
 
 FLAGS = flags.FLAGS
 flags.DEFINE_string('filename', None, 'Checkpoint file name.', short_name='f')
-flags.mark_flag_as_required('filename')
+# flags.mark_flag_as_required('filename')
 
 
 def init_params(module, input_size, key):
@@ -55,7 +55,7 @@ def main(argv=None):
     # Create Environment:
     episode_length = 500
     num_envs = 1
-    env = quadruped.Quadruped(backend='generalized')
+    env = unitree.Unitree(backend='mjx')
 
     # Initize Networks and States:
     initial_key = jax.random.PRNGKey(key_seed)
@@ -72,7 +72,7 @@ def main(argv=None):
 
     initial_params = init_params(
         module=network,
-        input_size=(num_envs, env.observation_size),
+        input_size=(num_envs, env.observation_size + env.action_size),
         key=initial_key,
     )
 
@@ -90,7 +90,8 @@ def main(argv=None):
 
     target = {'model': model_state}
     orbax_checkpointer = orbax.checkpoint.PyTreeCheckpointer()
-    checkpoint_path = os.path.join(os.path.dirname(__file__), FLAGS.filename)
+    # checkpoint_path = os.path.join(os.path.dirname(__file__), FLAGS.filename)
+    checkpoint_path = os.path.join(os.path.dirname(__file__), "checkpoints/210/default")
     model_state = orbax_checkpointer.restore(checkpoint_path, item=target)['model']
 
     state_history = []
@@ -117,6 +118,9 @@ def main(argv=None):
                 states,
                 jnp.squeeze(actions),
             )
+            if states.metrics['knee_termination'] == 1:
+                break
+
             states = next_states
             metrics_history.append(states)
             action_history.append(actions)
