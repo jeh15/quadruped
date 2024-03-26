@@ -251,7 +251,7 @@ class Unitree(PipelineEnv):
         qdd_joints = (qd_joints - pipeline_state_prev.qd[6:]) / self.dt
         reward_acceleration_regularization = (
             -self.regularization_weight
-            * -jnp.linalg.norm(qdd_joints)
+            * jnp.linalg.norm(qdd_joints)
         )
 
         # Termination:
@@ -262,7 +262,8 @@ class Unitree(PipelineEnv):
         base_termination = jnp.where(
             base_x[-1] > self.max_z, 1.0, base_termination,
         )
-        knee_x = pipeline_state.x.pos[knee_joint_idx]
+        knee_joint_pos_idx = jnp.array([3, 6, 9, 12])
+        knee_x = pipeline_state.x.pos[knee_joint_pos_idx]
         knee_termination = jnp.where(
             knee_x[:, -1] < self.min_knee_z, 1.0, 0.0,
         )

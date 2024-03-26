@@ -11,6 +11,7 @@ import orbax.checkpoint
 
 import model
 import model_utilities
+import checkpoint
 
 import unitree
 
@@ -91,8 +92,16 @@ def main(argv=None):
     target = {'model': model_state}
     orbax_checkpointer = orbax.checkpoint.PyTreeCheckpointer()
     # checkpoint_path = os.path.join(os.path.dirname(__file__), FLAGS.filename)
-    checkpoint_path = os.path.join(os.path.dirname(__file__), "checkpoints/210/default")
+    checkpoint_path = os.path.join(os.path.dirname(__file__), "checkpoints/620/default")
     model_state = orbax_checkpointer.restore(checkpoint_path, item=target)['model']
+
+    # Load Checkpoint: New Manager
+    # directory = os.path.join(os.path.dirname(__file__), "checkpoints/200/default")
+    # option = checkpoint.create_default_options()
+    # manager = checkpoint.CheckpointManager(
+    #     directory=directory,
+
+    # )
 
     state_history = []
     metrics_history = []
@@ -118,7 +127,10 @@ def main(argv=None):
                 states,
                 jnp.squeeze(actions),
             )
-            if states.metrics['knee_termination'] == 1:
+            if environment_step % 100 == 0:
+                pass
+
+            if states.metrics['knee_termination'] or states.metrics['base_termination'] == 1:
                 break
 
             states = next_states
