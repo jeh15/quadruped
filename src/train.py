@@ -128,7 +128,7 @@ def main(argv=None):
     control_range = env.sys.actuator_ctrlrange
 
     iteration_step = 0
-    if FLAGS.load_checkpoint is not None:
+    if FLAGS.load_checkpoint is True:
         checkpoint_metadata = checkpoint.default_checkpoint_metadata()
         manager_options = checkpoint.default_checkpoint_options()
         checkpoint_directory = os.path.join(os.path.dirname(__file__), "checkpoints")
