@@ -117,7 +117,7 @@ def main(argv=None):
     manager = ocp.CheckpointManager(
         directory=checkpoint_directory,
         options=manager_options,
-        item_names=('state', 'metadata'),
+        item_names=('state', 'statistics_state', 'metadata'),
     )
 
     # Extract remap ranges:
@@ -129,17 +129,10 @@ def main(argv=None):
 
     iteration_step = 0
     if FLAGS.load_checkpoint is True:
-        checkpoint_metadata = checkpoint.default_checkpoint_metadata()
-        manager_options = checkpoint.default_checkpoint_options()
-        checkpoint_directory = os.path.join(os.path.dirname(__file__), "checkpoints")
-        manager = ocp.CheckpointManager(
-            directory=checkpoint_directory,
-            options=manager_options,
-            item_names=('state', 'metadata'),
-        )
-        model_state, metadata = checkpoint.load_checkpoint(
+        model_state, statistics_state, metadata = checkpoint.load_checkpoint(
             manager=manager,
             train_state=model_state,
+            statistics_state=statistics_state,
             metadata=checkpoint_metadata,
         )
         iteration_step = metadata['iteration']
@@ -333,6 +326,7 @@ def main(argv=None):
                 checkpoint.save_checkpoint(
                     manager=manager,
                     train_state=model_state,
+                    statistics_state=statistics_state,
                     metadata=checkpoint_metadata,
                 )
 
@@ -344,6 +338,7 @@ def main(argv=None):
         checkpoint.save_checkpoint(
             manager=manager,
             train_state=model_state,
+            statistics_state=statistics_state,
             metadata=checkpoint_metadata,
         )
 
