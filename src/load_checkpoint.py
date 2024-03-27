@@ -7,9 +7,11 @@ import optax
 from flax.training import train_state
 from brax.io import html
 import orbax.checkpoint as ocp
+from brax.training.acme import running_statistics as rs
 
 import model
 import model_utilities
+import control_utilities
 import checkpoint
 
 import unitree
@@ -87,18 +89,36 @@ def main(argv=None):
     )
     del initial_params
 
-    # Load Checkpoint:
+    # Create Running Statistics:
+    statistics_state = rs.init_state(
+        jnp.zeros((env.observation_size + env.action_size),)
+    )
+
+    # Extract remap ranges:
+    action_range = jnp.tile(
+        A=jnp.array([-1.0, 1.0]),
+        reps=(env.action_size, 1),
+    )
+    control_range = env.sys.actuator_ctrlrange
+
+    # Create Running Statistics:
+    statistics_state = rs.init_state(
+        jnp.zeros((env.observation_size + env.action_size),)
+    )
+
+    # Create Checkpoint Manager:
     checkpoint_metadata = checkpoint.default_checkpoint_metadata()
     manager_options = checkpoint.default_checkpoint_options()
     checkpoint_directory = os.path.join(os.path.dirname(__file__), "checkpoints")
     manager = ocp.CheckpointManager(
         directory=checkpoint_directory,
         options=manager_options,
-        item_names=('state', 'metadata'),
+        item_names=('state', 'statistics_state', 'metadata'),
     )
-    model_state, metadata = checkpoint.load_checkpoint(
+    model_state, statistics_state, metadata = checkpoint.load_checkpoint(
         manager=manager,
         train_state=model_state,
+        statistics_state=statistics_state,
         metadata=checkpoint_metadata,
     )
 
@@ -115,6 +135,7 @@ def main(argv=None):
             mean, std, values = model_utilities.forward_pass(
                 model_params=model_state.params,
                 apply_fn=model_state.apply_fn,
+                statistics_state=statistics_state,
                 x=model_input,
             )
             actions, log_probability, entropy = model_utilities.select_action(
@@ -122,9 +143,14 @@ def main(argv=None):
                 std=std,
                 key=env_key,
             )
+            control_input = control_utilities.remap_controller(
+                actions,
+                action_range,
+                control_range,
+            )
             next_states = step_fn(
                 states,
-                jnp.squeeze(actions),
+                jnp.squeeze(control_input),
             )
             if environment_step % 100 == 0:
                 pass
