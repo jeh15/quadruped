@@ -4,6 +4,9 @@ import functools
 import jax
 import jax.numpy as jnp
 import distrax
+from brax.training.acme import running_statistics as rs
+
+import statistics_utilities
 
 # Types:
 from flax.core import FrozenDict
@@ -14,8 +17,12 @@ PRNGKey = jax.Array
 def forward_pass(
     model_params: FrozenDict,
     apply_fn: Callable[..., Any],
+    statistics_state: rs.RunningStatisticsState,
     x: jax.Array,
 ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    # Normalize Observations:
+    x = statistics_utilities.normalize(statistics_state, x, None)
+    # Pass Normalized Observations:
     mean, std, values = apply_fn({"params": model_params}, x)
     return mean, std, values
 
@@ -73,9 +80,9 @@ def evaluate_action(
 @functools.partial(jax.jit, static_argnames=["episode_length"])
 @functools.partial(jax.vmap, in_axes=(0, 0, 0, None), out_axes=(0, 0))
 def calculate_advantage(
-    rewards: jax.typing.ArrayLike,
-    values: jax.typing.ArrayLike,
-    mask: jax.typing.ArrayLike,
+    rewards: jax.Array,
+    values: jax.Array,
+    mask: jax.Array,
     episode_length: int,
 ) -> Tuple[jnp.ndarray, jnp.ndarray]:
     gamma = 0.99
@@ -94,16 +101,18 @@ def calculate_advantage(
 
 # Vmapped Replay Function:
 @functools.partial(jax.jit, static_argnames=["apply_fn"])
-@functools.partial(jax.vmap, in_axes=(None, None, 1, 1), out_axes=(1, 1, 1, 1, 1))
+@functools.partial(jax.vmap, in_axes=(None, None, None, 1, 1), out_axes=(1, 1, 1, 1, 1))
 def replay(
     model_params: FrozenDict,
     apply_fn: Callable[..., Any],
+    statistics_state: rs.RunningStatisticsState,
     model_input: jax.typing.ArrayLike,
     actions: jax.typing.ArrayLike,
 ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray, jnp.ndarray]:
     mean, std, values = forward_pass(
         model_params,
         apply_fn,
+        statistics_state,
         model_input,
     )
     log_probability, entropy = evaluate_action(mean, std, actions)
@@ -120,6 +129,7 @@ def replay(
 def loss_function(
     model_params: FrozenDict,
     apply_fn: Callable[..., Any],
+    statistics_state: rs.RunningStatisticsState,
     model_input: jax.typing.ArrayLike,
     actions: jax.typing.ArrayLike,
     advantages: jax.typing.ArrayLike,
@@ -147,6 +157,7 @@ def loss_function(
     values, log_probability, entropy, mean, std = replay(
         model_params,
         apply_fn,
+        statistics_state,
         model_input,
         actions,
     )

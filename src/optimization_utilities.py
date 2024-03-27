@@ -2,15 +2,14 @@ import functools
 
 import jax
 import jax.numpy as jnp
-from flax.training.train_state import TrainState
 
-import model_utilities
 from model_utilities import loss_function
 
 
 @functools.partial(jax.jit, static_argnames=['ppo_steps'])
 def train_step(
     model_state,
+    statistics_state,
     model_input,
     actions,
     advantages,
@@ -26,6 +25,7 @@ def train_step(
         (loss, kl), gradients = gradient_function(
             model_state.params,
             model_state.apply_fn,
+            statistics_state,
             model_input,
             actions,
             advantages,

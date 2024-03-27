@@ -1,6 +1,5 @@
 import os
 from absl import app, flags
-from typing import Optional
 
 import jax
 import jax.numpy as jnp
@@ -20,7 +19,6 @@ jax.config.update("jax_enable_x64", True)
 
 FLAGS = flags.FLAGS
 flags.DEFINE_string('filename', None, 'Checkpoint file name.', short_name='f')
-# flags.mark_flag_as_required('filename')
 
 
 def init_params(module, input_size, key):
@@ -131,8 +129,8 @@ def main(argv=None):
             if environment_step % 100 == 0:
                 pass
 
-            if states.metrics['knee_termination'] or states.metrics['base_termination'] == 1:
-                break
+            # if states.metrics['knee_termination'] or states.metrics['base_termination'] == 1:
+            #     break
 
             states = next_states
             metrics_history.append(states)

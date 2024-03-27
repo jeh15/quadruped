@@ -1,5 +1,4 @@
 import os
-import re
 import pickle
 from absl import app, flags
 import time
@@ -10,12 +9,13 @@ import jax.numpy as jnp
 import optax
 from flax.training import train_state
 from brax.envs.wrappers.training import wrap
-import orbax.checkpoint
+from brax.training.acme import running_statistics as rs
 import orbax.checkpoint as ocp
 
 import model
 import model_utilities
 import optimization_utilities
+import statistics_utilities
 import control_utilities
 import checkpoint
 
@@ -24,7 +24,7 @@ import unitree
 jax.config.update("jax_enable_x64", True)
 
 FLAGS = flags.FLAGS
-flags.DEFINE_string('filename', None, 'Checkpoint file name.', short_name='f')
+flags.DEFINE_boolean('load_checkpoint', False, 'Load latest checkpoint.', short_name='l')
 
 
 def init_params(module, input_size, key):
@@ -105,29 +105,44 @@ def main(argv=None):
     )
     del initial_params
 
+    # Create Running Statistics:
+    statistics_state = rs.init_state(
+        jnp.zeros((env.observation_size + env.action_size),)
+    )
+
     # Create Checkpoint Manager:
     checkpoint_metadata = checkpoint.default_checkpoint_metadata()
     manager_options = checkpoint.default_checkpoint_options()
-    checkpoint_directory = checkpoint_path = os.path.join(os.path.dirname(__file__), "checkpoints")
+    checkpoint_directory = os.path.join(os.path.dirname(__file__), "checkpoints")
     manager = ocp.CheckpointManager(
         directory=checkpoint_directory,
         options=manager_options,
         item_names=('state', 'metadata'),
     )
 
+    # Extract remap ranges:
+    action_range = jnp.tile(
+        A=jnp.array([-1.0, 1.0]),
+        reps=(env.action_size, 1),
+    )
+    control_range = env.sys.actuator_ctrlrange
+
     iteration_step = 0
-    # Rework:
-    if FLAGS.filename is not None:
-        target = {'model': model_state}
-        orbax_checkpointer = orbax.checkpoint.PyTreeCheckpointer()
-        checkpoint_path = os.path.join(
-            os.path.dirname(__file__), FLAGS.filename,
+    if FLAGS.load_checkpoint is not None:
+        checkpoint_metadata = checkpoint.default_checkpoint_metadata()
+        manager_options = checkpoint.default_checkpoint_options()
+        checkpoint_directory = os.path.join(os.path.dirname(__file__), "checkpoints")
+        manager = ocp.CheckpointManager(
+            directory=checkpoint_directory,
+            options=manager_options,
+            item_names=('state', 'metadata'),
         )
-        model_state = orbax_checkpointer.restore(
-            checkpoint_path, item=target,
-        )['model']
-        # Quick fix for iteration step: (TODO(jeh15): Store iteration in model)
-        iteration_step = int(re.findall(r'\d+', FLAGS.filename)[0])
+        model_state, metadata = checkpoint.load_checkpoint(
+            manager=manager,
+            train_state=model_state,
+            metadata=checkpoint_metadata,
+        )
+        iteration_step = metadata['iteration']
 
     # Learning Loop:
     training_length = 300
@@ -144,7 +159,6 @@ def main(argv=None):
         # reset_key = jnp.zeros((num_envs, 2), dtype=jnp.uint32)
         states = reset_fn(reset_key)
         actions = jnp.zeros((num_envs, env.action_size))
-        control_input = jnp.zeros((num_envs, env.action_size))
         state_history = [states]
         model_input_episode = []
         states_episode = []
@@ -156,15 +170,18 @@ def main(argv=None):
         metrics_episode = []
         mean_episode = []
         std_episode = []
-        episode_start = time.time()
         for environment_step in range(episode_iterator_length):
             for batch_step in range(batch_iterator_length):
                 key, env_key = jax.random.split(env_key)
                 model_input = jnp.concatenate([states.obs, actions], axis=1)
-                # model_input = jnp.concatenate([states.obs, control_input], axis=1)
+                statistics_state = statistics_utilities.update(
+                    state=statistics_state,
+                    x=model_input,
+                )
                 mean, std, values = model_utilities.forward_pass(
                     model_params=model_state.params,
                     apply_fn=model_state.apply_fn,
+                    statistics_state=statistics_state,
                     x=model_input,
                 )
                 actions, log_probability, entropy = model_utilities.select_action(
@@ -172,9 +189,14 @@ def main(argv=None):
                     std=std,
                     key=env_key,
                 )
+                control_input = control_utilities.remap_controller(
+                    actions,
+                    action_range,
+                    control_range,
+                )
                 next_states = step_fn(
                     states,
-                    actions,
+                    control_input,
                 )
                 states_episode.append(states.obs)
                 values_episode.append(jnp.squeeze(values))
@@ -234,6 +256,7 @@ def main(argv=None):
             _, _, values = model_utilities.forward_pass(
                 model_params=model_state.params,
                 apply_fn=model_state.apply_fn,
+                statistics_state=statistics_state,
                 x=model_input,
             )
 
@@ -253,6 +276,7 @@ def main(argv=None):
             # Update Function:
             model_state, loss = optimization_utilities.train_step(
                 model_state,
+                statistics_state,
                 model_input_episode,
                 actions_episode,
                 advantage_episode,
