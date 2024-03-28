@@ -141,7 +141,7 @@ def main(argv=None):
     training_length = 300
     key, env_key = jax.random.split(initial_key)
     checkpoint_enabled = True
-    pickle_enabled = True
+    pickle_enabled = False
     # Metrics:
     metrics_history = []
     for iteration in range(training_length):
@@ -212,7 +212,7 @@ def main(argv=None):
                 states = next_states
                 state_history.append(states)
 
-            metrics_history.append(metrics_episode)
+            # metrics_history.append(metrics_episode)
             iteration_step += 1
 
             # Convert to Jax Arrays:
