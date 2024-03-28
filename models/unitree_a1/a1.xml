@@ -97,6 +97,7 @@
             <joint class="knee" name="FR_calf_joint"/>
             <geom class="visual" mesh="calf"/>
             <geom class="foot"/>
+            <site name="front_right_foot" pos="0 0 -0.2"/>
           </body>
         </body>
       </body>
@@ -116,6 +117,7 @@
             <joint class="knee" name="FL_calf_joint"/>
             <geom class="visual" mesh="calf"/>
             <geom class="foot"/>
+            <site name="front_left_foot" pos="0 0 -0.2"/>
           </body>
         </body>
       </body>
@@ -135,6 +137,7 @@
             <joint class="knee" name="RR_calf_joint"/>
             <geom class="visual" mesh="calf"/>
             <geom class="foot"/>
+            <site name="back_right_foot" pos="0 0 -0.2"/>
           </body>
         </body>
       </body>
@@ -154,6 +157,7 @@
             <joint class="knee" name="RL_calf_joint"/>
             <geom class="visual" mesh="calf"/>
             <geom class="foot"/>
+            <site name="back_left_foot" pos="0 0 -0.2"/>
           </body>
         </body>
       </body>
