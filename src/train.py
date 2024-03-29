@@ -76,16 +76,18 @@ def main(argv=None):
 
     step_fn = jax.jit(env.step)
     reset_fn = jax.jit(env.reset)
-
-    # Initize Networks:
+    
+    # Model initialization:
     initial_key = jax.random.PRNGKey(key_seed)
+    reset_key = jax.random.split(initial_key, num=num_envs)
+    states = reset_fn(reset_key)
 
     network = model.ActorCriticNetworkVmap(
         action_space=env.action_size,
     )
 
     # Model Input: obs + action
-    model_input_size = (num_envs, env.observation_size + env.action_size)
+    model_input_size = (jnp.shape(states.info['model_input']))
     initial_params = init_params(
         module=network,
         input_size=model_input_size,
@@ -107,7 +109,7 @@ def main(argv=None):
 
     # Create Running Statistics:
     statistics_state = rs.init_state(
-        jnp.zeros((env.observation_size + env.action_size),)
+        jnp.zeros((model_input_size[-1],))
     )
 
     # Create Checkpoint Manager:
@@ -141,9 +143,6 @@ def main(argv=None):
     training_length = 300
     key, env_key = jax.random.split(initial_key)
     checkpoint_enabled = True
-    pickle_enabled = False
-    # Metrics:
-    metrics_history = []
     for iteration in range(training_length):
         # Episode Loop:
         # Different randomization for each environment:
@@ -151,7 +150,6 @@ def main(argv=None):
         # Same randomization for each environment:
         # reset_key = jnp.zeros((num_envs, 2), dtype=jnp.uint32)
         states = reset_fn(reset_key)
-        actions = jnp.zeros((num_envs, env.action_size))
         state_history = [states]
         model_input_episode = []
         states_episode = []
@@ -166,7 +164,7 @@ def main(argv=None):
         for environment_step in range(episode_iterator_length):
             for batch_step in range(batch_iterator_length):
                 key, env_key = jax.random.split(env_key)
-                model_input = jnp.concatenate([states.obs, actions], axis=1)
+                model_input = states.info['model_input']
                 statistics_state = statistics_utilities.update(
                     state=statistics_state,
                     x=model_input,
@@ -194,10 +192,7 @@ def main(argv=None):
                 states_episode.append(states.obs)
                 values_episode.append(jnp.squeeze(values))
                 log_probability_episode.append(jnp.squeeze(log_probability))
-                # Actions as actions:
                 actions_episode.append(jnp.squeeze(actions))
-                # Actions as control input:
-                # actions_episode.append(jnp.squeeze(control_input))
                 rewards_episode.append(jnp.squeeze(states.reward))
                 masks_episode.append(
                     jnp.squeeze(
@@ -212,7 +207,6 @@ def main(argv=None):
                 states = next_states
                 state_history.append(states)
 
-            # metrics_history.append(metrics_episode)
             iteration_step += 1
 
             # Convert to Jax Arrays:
@@ -245,7 +239,7 @@ def main(argv=None):
             )
 
             # No Gradient Calculation: (This is unneeded)
-            model_input = jnp.concatenate([states.obs, actions], axis=1)
+            model_input = states.info['model_input']
             _, _, values = model_utilities.forward_pass(
                 model_params=model_state.params,
                 apply_fn=model_state.apply_fn,
@@ -341,16 +335,6 @@ def main(argv=None):
             statistics_state=statistics_state,
             metadata=checkpoint_metadata,
         )
-
-    # Pickle Metrics:
-    directory = os.path.dirname(__file__)
-    if pickle_enabled:
-        metrics_path = os.path.join(directory, "metrics")
-        with open(metrics_path + "/metrics.pkl", "wb") as f:
-            pickle.dump(
-                {"metrics": metrics_history},
-                f,
-            )
 
 
 if __name__ == '__main__':

@@ -14,7 +14,7 @@ import model_utilities
 import control_utilities
 import checkpoint
 
-import unitree
+import unitree_brax
 
 
 jax.config.update("jax_enable_x64", True)
@@ -56,7 +56,7 @@ def main(argv=None):
     # Create Environment:
     episode_length = 500
     num_envs = 1
-    env = unitree.Unitree(backend='mjx')
+    env = unitree_brax.Unitree(backend='mjx')
 
     # Initize Networks and States:
     initial_key = jax.random.PRNGKey(key_seed)

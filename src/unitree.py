@@ -4,8 +4,8 @@ from brax import base
 from brax.envs.base import PipelineEnv, State
 from brax.io import mjcf
 from brax.kinematics import forward
-from brax.base import System, Motion, Transform
-from brax.math import rotate, quat_inv, normalize
+from brax.base import System
+from brax.math import rotate
 from brax.actuator import to_tau
 
 import jax
@@ -91,65 +91,90 @@ class Unitree(PipelineEnv):
         self.min_z, self.max_z = 0.1, 0.4
         self.min_knee_z, self.max_knee_z = 0.05, 0.3
 
-        # Reward Weights:
-        self.reward_weights = {
-            'linear_velocity_tracking': 1.0 * self.dt,
-            'angular_velocity_tracking': 0.5 * self.dt,
-            'base_height_regularization': 2.0 * self.dt,
-            'orientation': 1.0 * self.dt,
-            'foot_contact': 2.0 * self.dt,
-            'linear_velocity_regularization': -0.5 * self.dt,
-            'angular_velocity_regularization': -0.05 * self.dt,
-            'joint_motion': -0.001 * self.dt,
-            'action_rate': -0.25 * self.dt,
-            'pose_regularization': -0.5 * self.dt,
-            'abduction_regularization': -0.5 * self.dt,
-            'hip_regularization': -0.5 * self.dt,
-            'knee_regularization': -0.5 * self.dt,
-            'foot_slip': -0.1 * self.dt,
-            'termination': 10.0 * self.dt,
-        }
+        # Scaled with Phi function:
+        self.pose_weight = 2.0 * self.dt
+        self.orientation_weight = 1.0 * self.dt
+        self.linear_velocity_weight = 1.0 * self.dt
+        self.angular_velocity_weight = 1.0 * self.dt
+
+        self.foot_height_weight = 5.0 * self.dt
+        self.abduction_range_weight = 0.5 * self.dt
+        self.hip_range_weight = 0.5 * self.dt
+        self.knee_range_weight = 0.5 * self.dt
+
+        self.reward_pose_regularization = 0.01 * self.dt
+        self.velocity_regularization_weight = 0.1 * self.dt
+        self.acceleration_regularization_weight = 0.001 * self.dt
+        self.action_rate_weight = 0.25 * self.dt
+        self.control_weight = 0.0005 * self.dt
+        self.continuation_weight = 10.0 * self.dt
+        self.termination_weight = -10.0 * self.dt
+
+        # Unused
+        self.linear_velocity_regularization = 0.1 * self.dt
+        self.angular_velocity_regularization = 0.1 * self.dt
 
     def reset(self, rng: jax.Array) -> State:
         """Resets the environment to an initial state."""
         rng, q_rng, qd_rng = jax.random.split(rng, 3)
 
         # Random Noise:
-        low, high = -self.reset_noise, self.reset_noise
-        q_base = self.initial_q[self.body_id]
-        q_joints = self.initial_q[7:] + jax.random.uniform(
-            q_rng,
-            (self.sys.q_size() - 7,),
-            minval=low,
-            maxval=high,
-        )
-        q = jnp.concatenate([q_base, q_joints])
-        qd = jnp.zeros((self.sys.qd_size(),))
+        # low, high = -self.reset_noise, self.reset_noise
+        # q_base = self.initial_q[self.body_id]
+        # q_joints = self.initial_q[7:] + jax.random.uniform(
+        #     q_rng,
+        #     (self.sys.q_size() - 7,),
+        #     minval=low,
+        #     maxval=high,
+        # )
+        # q = jnp.concatenate([q_base, q_joints])
+        # qd = 0.1 * high * jax.random.normal(qd_rng, (self.sys.qd_size(),))
+
+        # No Random Noise:
+        q = self.initial_q
+        qd = jnp.zeros((self.qd_size,))
 
         pipeline_state = self.pipeline_init(q, qd)
+
+        # Build model input:
         obs = self._get_states(pipeline_state)
+        action = jnp.zeros((self.action_size,))
+        current_input = jnp.concatenate([obs, action])
+        info = {
+            'state_i': current_input,
+            'state_i-1': jnp.zeros_like(current_input),
+            'state_i-2': jnp.zeros_like(current_input),
+            'state_i-3': jnp.zeros_like(current_input),
+            'state_i-4': jnp.zeros_like(current_input),
+            'model_input': jnp.zeros(5 * current_input.shape[0]),
+        }
 
         # Reward Function:
-        reward = jnp.array(0.0)
+        reward = jnp.array([0.0])
         done = jnp.array(0, dtype=jnp.int64)
         zero = jnp.array([0.0])
-
         metrics = {
-            'rewards': {k: 0.0 for k in self.reward_weights.keys()},
+            'reward_linear_velocity': zero,
+            'reward_angular_velocity': zero,
+            'reward_action_rate': zero,
+            'reward_pose': zero,
+            'reward_orientation': zero,
+            'reward_foot_height': jnp.zeros((4,)),
+            'reward_abduction_range': zero,
+            'reward_hip_range': jnp.zeros((4,)),
+            'reward_knee_range': jnp.zeros((4,)),
+            'reward_joint_regularization': zero,
+            'reward_pose_regularization': zero,
+            'reward_acceleration_regularization': zero,
+            'reward_survival': zero,
+            'previous_action': jnp.zeros((12,)),
+            'previous_qd': jnp.zeros((12,)),
             'position': jnp.zeros((3,)),
             'orientation': jnp.zeros((4,)),
             'linear_velocity': jnp.zeros((3,)),
             'angular_velocity': jnp.zeros((3,)),
             'knee_termination': zero,
             'base_termination': zero,
-        }
-
-        info = {
-            'command': jnp.zeros(3),
-            'previous_action': jnp.zeros(self.action_size),
-            'qd_joints_previous': jnp.zeros_like(q_joints),
-            'feet_air_time': jnp.zeros(4),
-            'last_contact': jnp.zeros(4, dtype=jnp.bool),
         }
 
         return State(pipeline_state, obs, reward, done, metrics, info)
@@ -159,16 +184,20 @@ class Unitree(PipelineEnv):
         state: State,
         action: jax.Array,
     ) -> State:
+        # Helper Function:
+        def phi(x: jax.Array) -> jnp.ndarray:
+            return jnp.exp(-jnp.linalg.norm(x) / 0.25)
+
         """Run one timestep of the environment's dynamics."""
         pipeline_state = self.pipeline_step(
             state.pipeline_state,
             action,
         )
 
-        # States
+        # Observations and States:
         obs = self._get_states(pipeline_state)
-        x = pipeline_state.x
-        dx = pipeline_state.xd
+        q = pipeline_state.q
+        qd = pipeline_state.qd
         q_joints = pipeline_state.q[7:]
         qd_joints = pipeline_state.qd[6:]
 
@@ -176,16 +205,88 @@ class Unitree(PipelineEnv):
         foot_positions = pipeline_state.site_xpos
         foot_contact = foot_positions[:, -1] - self.foot_radius
         contact = foot_contact < 1e-3
-        contact_filter_mm = contact | state.info['last_contact']
-        contact_filter_cm = (foot_contact < 3e-2) | state.info['last_contact']
-        first_contact = (state.info['feet_air_time'] > 0) * contact_filter_mm
-        state.info['feet_air_time'] += self.dt
+        reward_foot_height = jnp.where(
+            contact,
+            self.foot_height_weight,
+            -self.foot_height_weight * foot_positions[:, -1],
+        )
+
+        # Abduction Range:
+        abduction_joint_idx = jnp.array([7, 10, 13, 16])
+        abduction_q = q[abduction_joint_idx]
+        reward_abduction_range = (
+            -self.abduction_range_weight
+            * jnp.linalg.norm(abduction_q)
+        )
+
+        # Hip Range:
+        hip_joint_idx = jnp.array([8, 11, 14, 17])
+        hip_range = jnp.pi / 2
+        hip_ref = 0.9
+        hip_error = hip_ref - q[hip_joint_idx]
+        reward_hip_range = jnp.where(
+            jnp.abs(hip_error) >= hip_range,
+            -self.hip_range_weight,
+            -self.hip_range_weight,
+        )
+
+        # Knee Range:
+        knee_joint_idx = jnp.array([9, 12, 15, 18])
+        knee_ref = -1.8
+        knee_range = jnp.pi / 6
+        knee_q = q[knee_joint_idx]
+        knee_error = knee_ref - knee_q
+        reward_knee_range = jnp.where(
+            jnp.abs(knee_error) >= knee_range,
+            -self.knee_range_weight,
+            self.knee_range_weight,
+        )
+
+        # Base Pose: Maintain Z Height
+        base_x = q[self.base_x]
+        pose_error = self.desired_height - base_x[-1]
+        reward_pose = self.pose_weight * phi(pose_error)
+
+        # Base Orientation:
+        base_w = q[self.base_w]
+        orientation_error = 1 - jnp.square(
+            jnp.dot(base_w, self.desired_orientation),
+        )
+        reward_orientation = -self.orientation_weight * orientation_error
+
+        # Velocity Tracking:
+        # TODO(jeh15): Change to tracking a desired velocity vector -> norm(vel_des - vel)
+        linear_velocity = qd[self.base_x]
+        angular_velocity = qd[self.base_dw]
+        reward_linear_velocity = self.linear_velocity_weight * phi(
+            linear_velocity,
+        )
+        reward_angular_velocity = self.angular_velocity_weight * phi(
+            angular_velocity,
+        )
+
+        # Control regularization:
+        reward_action_rate = -self.action_rate_weight * jnp.linalg.norm(
+            action - state.metrics['previous_action'],
+        )
+
+        # Regularization:
+        reward_joint_regularization = (
+            -self.velocity_regularization_weight
+            * jnp.linalg.norm(qd_joints)
+        )
+        qdd_joints = (qd_joints - state.metrics['previous_qd']) / self.dt
+        reward_acceleration_regularization = (
+            -self.acceleration_regularization_weight
+            * jnp.linalg.norm(qdd_joints)
+        )
+        reward_pose_regularization = (
+            -self.reward_pose_regularization * jnp.linalg.norm(
+                q_joints - self.initial_q[7:]
+            )
+        )
 
         # Termination:
-        base_x = pipeline_state.x.pos[0]
-        base_w = pipeline_state.x.rot[0]
-        linear_velocity = pipeline_state.xd.vel[0]
-        angular_velocity = pipeline_state.xd.ang[0]
         base_termination = jnp.where(
             base_x[-1] < self.min_z, 1.0, 0.0,
         )
@@ -204,53 +305,48 @@ class Unitree(PipelineEnv):
         termination_cond = jnp.array([base_termination, knee_termination])
         termination = jnp.max(termination_cond)
 
+        reward_survival = jnp.where(
+            termination == 1.0,
+            self.termination_weight,
+            self.continuation_weight,
+        )
+
         # Terminate flag:
         done = jnp.array(termination, dtype=jnp.int64)
 
         # Reward Function:
-        rewards = {
-            'linear_velocity_tracking': (
-                self.reward_linear_velocity_tracking(
-                    state.info['command'], x, dx,
-                )
-            ),
-            'angular_velocity_tracking': (
-                self.reward_angular_velocity_tracking(
-                    state.info['command'], x, dx,
-                )
-            ),
-            'linear_velocity_regularization': (
-                self.reward_linear_velocity_z(dx)
-            ),
-            'angular_velocity_regularization': (
-                self.reward_angular_velocity_xy(dx)
-            ),
-            'orientation': self.reward_orientation(x),
-            'joint_motion': self.reward_joint_motion(
-                qd_joints, state.info['qd_joints_previous'],
-            ),
-            'action_rate': self.reward_action_rate(
-                action, state.info['previous_action'],
-            ),
-            'pose_regularization': self.reward_pose_regularization(q_joints),
-            'base_height_regularization': self.reward_base_height_regularization(x),
-            'abduction_regularization': self.reward_abduction_regularization(
-                q_joints,
-            ),
-            'hip_regularization': self.reward_hip_regularization(q_joints),
-            'knee_regularization': self.reward_knee_regularization(q_joints),
-            'foot_contact': self.reward_foot_contact(contact),
-            'foot_slip': self.reward_foot_slip(pipeline_state, contact_filter_cm),
-            'termination': self.reward_survival(termination),
-        }
-
-        rewards = {
-            k: v * self.reward_weights[k] for k, v in rewards.items()
-        }
-        reward = sum(rewards.values())
-
+        reward = (
+            reward_survival
+            + reward_action_rate
+            + reward_pose
+            + reward_orientation
+            + jnp.sum(reward_foot_height)
+            + reward_linear_velocity
+            + reward_angular_velocity
+            + reward_pose_regularization
+            + reward_joint_regularization
+            + reward_acceleration_regularization
+            + jnp.sum(reward_knee_range)
+            + jnp.sum(reward_hip_range)
+            + reward_abduction_range
+        )
+        reward = jnp.array([reward])
         metrics = {
-            'rewards': rewards,
+            'reward_linear_velocity': jnp.array([reward_linear_velocity]),
+            'reward_angular_velocity': jnp.array([reward_angular_velocity]),
+            'reward_action_rate': jnp.array([reward_action_rate]),
+            'reward_pose': jnp.array([reward_pose]),
+            'reward_orientation': jnp.array([reward_orientation]),
+            'reward_foot_height': reward_foot_height,
+            'reward_abduction_range': jnp.array([reward_abduction_range]),
+            'reward_hip_range': reward_hip_range,
+            'reward_knee_range': reward_knee_range,
+            'reward_pose_regularization': jnp.array([reward_pose_regularization]),
+            'reward_joint_regularization': jnp.array([reward_joint_regularization]),
+            'reward_acceleration_regularization': jnp.array([reward_acceleration_regularization]),
+            'reward_survival': jnp.array([reward_survival]),
+            'previous_action': action,
+            'previous_qd': qd_joints,
             'position': base_x,
             'orientation': base_w,
             'linear_velocity': linear_velocity,
@@ -259,10 +355,16 @@ class Unitree(PipelineEnv):
             'base_termination': jnp.array([base_termination]),
         }
 
-        state.info['feet_air_time'] *= ~contact_filter_mm
-        state.info['previous_action'] = action
-        state.info['qd_joints_previous'] = qd_joints
-        state.info['last_contact'] = contact
+        # Model input data:
+        input_keys = ['state_i', 'state_i-1', 'state_i-2', 'state_i-3', 'state_i-4']
+        state.info['state_i'] = jnp.concatenate([obs, action])
+        state.info['state_i-1'] = state.info['state_i']
+        state.info['state_i-2'] = state.info['state_i-1']
+        state.info['state_i-3'] = state.info['state_i-2']
+        state.info['state_i-4'] = state.info['state_i-3']
+        model_input = [state.info[k] for k in state.info if k in input_keys]
+        model_input = jnp.asarray(model_input).flatten()
+        state.info['model_input'] = model_input
 
         return state.replace(
             pipeline_state=pipeline_state,
@@ -290,157 +392,6 @@ class Unitree(PipelineEnv):
     def _get_body_position(self, pipeline_state: base.State) -> jnp.ndarray:
         return pipeline_state.x.pos[0]
 
-    def reward_linear_velocity_z(self, dx: Motion) -> jax.Array:
-        return jnp.square(dx.vel[0, -1])
-
-    def reward_angular_velocity_xy(self, dx: Motion) -> jax.Array:
-        return jnp.linalg.norm(dx.ang[0, :2])
-
-    def reward_orientation(self, x: Transform) -> jax.Array:
-        oreientation_error = 1 - jnp.square(
-            jnp.dot(x.rot[0], self.desired_orientation),
-        )
-        return self.phi(oreientation_error)
-
-    def reward_joint_acceleration(
-        self,
-        qd_joints: jax.Array,
-        qd_joints_previous: jax.Array,
-    ) -> jax.Array:
-        return jnp.linalg.norm((qd_joints - qd_joints_previous) / self.dt)
-
-    def reward_joint_motion(
-        self,
-        qd_joints: jax.Array,
-        qd_joints_previous: jax.Array,
-    ) -> jax.Array:
-        joint_velocity = jnp.linalg.norm(qd_joints)
-        joint_acceleration = jnp.linalg.norm(
-            (qd_joints - qd_joints_previous) / self.dt,
-        )
-        return joint_velocity + joint_acceleration
-
-    def reward_action_rate(
-        self,
-        action: jax.Array,
-        previous_action: jax.Array,
-    ) -> jax.Array:
-        return jnp.linalg.norm(action - previous_action)
-
-    def reward_linear_velocity_tracking(
-        self,
-        command: jax.Array,
-        x: Transform,
-        dx: Motion,
-    ) -> jax.Array:
-        body_velocity = rotate(dx.vel[0], quat_inv(x.rot[0]))
-        velocity_error = jnp.linalg.norm(command[:2] - body_velocity[:2])
-        return self.phi(velocity_error)
-
-    def reward_angular_velocity_tracking(
-        self,
-        command: jax.Array,
-        x: Transform,
-        dx: Motion,
-    ) -> jax.Array:
-        body_angular_velocity = rotate(dx.ang[0], quat_inv(x.rot[0]))
-        angular_velocity_error = jnp.linalg.norm(
-            command[-1] - body_angular_velocity[-1],
-        )
-        return self.phi(angular_velocity_error)
-
-    def reward_feet_air_time(
-        self,
-        command: jax.Array,
-        feet_air_time: jax.Array,
-        contact: jax.Array,
-    ) -> jax.Array:
-        reward_air_time = jnp.sum((feet_air_time - 0.5) * contact)
-        reward_air_time *= (
-            normalize(command[:2])[-1] > 0.05
-        )
-        return reward_air_time
-
-    def reward_foot_contact(
-        self,
-        contact: jax.Array,
-    ) -> jax.Array:
-        reward_contact = jnp.where(
-            contact,
-            1.0,
-            -1.0,
-        )
-        return jnp.linalg.norm(reward_contact)
-
-    def reward_pose_regularization(self, q_joints: jax.Array) -> jax.Array:
-        return jnp.linalg.norm(q_joints - self.initial_q[7:])
-
-    def reward_base_height_regularization(self, x: Transform) -> jax.Array:
-        height_error = jnp.linalg.norm(x.pos[0, -1] - self.desired_height)
-        return self.phi(height_error)
-
-    def reward_abduction_regularization(self, q_joints: jax.Array) -> jax.Array:
-        idx = jnp.array([0, 3, 6, 9])
-        abduction_ref = 0.0
-        return jnp.linalg.norm(q_joints[idx] - abduction_ref)
-
-    def reward_hip_regularization(self, q_joints: jax.Array) -> jax.Array:
-        idx = jnp.array([1, 4, 7, 10])
-        hip_range = jnp.pi / 2
-        hip_ref = 0.9
-        hip_error = hip_ref - q_joints[idx]
-        reward_hip = jnp.where(
-            jnp.abs(hip_error) >= hip_range,
-            -1.0,
-            1.0,
-        )
-        return jnp.linalg.norm(reward_hip)
-
-    def reward_knee_regularization(self, q_joints: jax.Array) -> jax.Array:
-        idx = jnp.array([2, 5, 8, 11])
-        knee_range = jnp.pi / 6
-        knee_ref = -1.8
-        knee_error = knee_ref - q_joints[idx]
-        reward_knee = jnp.where(
-            jnp.abs(knee_error) >= knee_range,
-            -1.0,
-            1.0,
-        )
-        return jnp.linalg.norm(reward_knee)
-
-    def reward_pose_zero_command(
-        self,
-        commands: jax.Array,
-        q_joints: jax.Array,
-    ) -> jax.Array:
-        return jnp.linalg.norm(q_joints - self.initial_q[7:]) * (
-            normalize(commands[:2])[-1] < 0.1
-        )
-
-    def reward_foot_slip(
-        self,
-        pipeline_state: base.State,
-        contact_mask: jax.Array,
-    ) -> jax.Array:
-        idx = jnp.array([3, 6, 9, 12])
-        position = pipeline_state.site_xpos
-        feet_offset = position - pipeline_state.x.pos[idx]
-        offset = base.Transform.create(pos=feet_offset)
-        foot_velocity = offset.vmap().do(pipeline_state.xd.take(idx)).vel
-        contact_mask = jnp.reshape(contact_mask, (-1, 1))
-        return jnp.linalg.norm(foot_velocity[:, :2] * contact_mask)
-
-    def reward_survival(self, termination: jax.Array) -> jax.Array:
-        return jnp.where(
-            termination == 1.0,
-            -1.0,
-            1.0,
-        )
-
-    @staticmethod
-    def phi(x: jax.Array) -> jnp.ndarray:
-        return jnp.exp(-x / 0.25)
-
 
 # Utility Functions:
 def get_point_taskspace_transform(
@@ -451,8 +402,10 @@ def get_point_taskspace_transform(
 ) -> jnp.ndarray:
     # Rotate vector relative to base:
     vector_base = rotate(vector, base)
+
     # Rotate vector relative to its parent:
     vector_world = rotate(vector_base, parent_w) + parent_x
+
     return vector_world
 
 
@@ -465,16 +418,20 @@ def calculate_foot_position(
     # Calculate forward kinematics:
     x, _ = forward(sys, q, qd)
     base_w = x.rot[0]
+
     # Foot indices:
     idx = jnp.array([3, 6, 9, 12])
     parent_x = x.pos[idx, :]
     parent_w = x.rot[idx, :]
+
     # Calf length:
     vector = jnp.array([0.0, 0.0, -calf_length])
+
     # Taskspace transform for feet positions:
     foot_x = jax.vmap(
         get_point_taskspace_transform,
         in_axes=(None, 0, 0, None),
         out_axes=(0),
     )(vector, parent_x, parent_w, base_w)
+
     return foot_x

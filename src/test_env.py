@@ -8,7 +8,7 @@ from brax.io import html
 
 import time
 
-import unitree
+import unitree_brax
 import control_utilities
 
 jax.config.update("jax_enable_x64", True)
@@ -17,7 +17,7 @@ np.set_printoptions(precision=4)
 
 def main(argv=None):
     # env = quadruped.Quadruped(backend='mjx')
-    env = unitree.Unitree(backend='mjx')
+    env = unitree_brax.Unitree(backend='mjx')
     episode_run_time = 20.0  # Seconds
     batch_run_time = 0.5  # Seconds
     episode_length = int(episode_run_time / env.dt)
