@@ -6,12 +6,13 @@ from brax.io import mjcf
 from brax.kinematics import forward
 from brax.base import System
 from brax.math import rotate
-from brax.actuator import to_tau
 
 import jax
 import jax.numpy as jnp
 
 from ml_collections import config_dict
+
+from control_utilities import remap_controller
 
 # Configuration:
 config = config_dict.ConfigDict()
@@ -46,6 +47,11 @@ class Unitree(PipelineEnv):
         super().__init__(sys, **kwargs)
 
         # Class Wide Parameters:
+
+        # State indices to joints that can be actuated:
+        self.motor_id = sys.actuator.qd_id
+        
+        # Default States:
         self.initial_q = jnp.array(
             [
                 0, 0, 0.27, 1, 0, 0, 0,
@@ -58,6 +64,18 @@ class Unitree(PipelineEnv):
         self.base_control = jnp.array([
             0, 0.9, -1.8, 0, 0.9, -1.8, 0, 0.9, -1.8, 0, 0.9, -1.8,
         ])
+
+        # Remap Base Control for Model Input:
+        self.action_range = jnp.tile(
+            A=jnp.array([-1.0, 1.0]),
+            reps=(self.action_size, 1),
+        )
+        self.control_range = self.sys.actuator_ctrlrange
+        self.base_control_remap = remap_controller(
+            jnp.expand_dims(self.base_control, axis=0),
+            self.control_range,
+            self.action_range,
+        ).flatten()
 
         # State index ids:
         # x, y, z, quat
@@ -75,9 +93,6 @@ class Unitree(PipelineEnv):
         self.back_left_x = jnp.array([16, 17, 18])
         self.back_left_dx = self.back_left_x - 1
 
-        # State indices to joints that can be actuated:
-        self.motor_id = sys.actuator.qd_id
-
         # Parameters:
         self.q_size = sys.q_size()
         self.qd_size = sys.qd_size()
@@ -92,11 +107,11 @@ class Unitree(PipelineEnv):
         self.min_knee_z, self.max_knee_z = 0.05, 0.3
 
         # Scaled with Phi function:
-        self.pose_weight = 2.0 * self.dt
         self.linear_velocity_weight = 1.0 * self.dt
         self.angular_velocity_weight = 1.0 * self.dt
 
-        self.orientation_weight = 2.0 * self.dt
+        self.pose_weight = 5.0 * self.dt
+        self.orientation_weight = 5.0 * self.dt
 
         self.foot_height_weight = 5.0 * self.dt
         self.abduction_range_weight = 0.5 * self.dt
@@ -139,15 +154,14 @@ class Unitree(PipelineEnv):
 
         # Build model input:
         obs = self._get_states(pipeline_state)
-        action = jnp.zeros((self.action_size,))
-        current_input = jnp.concatenate([obs, action])
+        current_input = jnp.concatenate([obs, self.base_control_remap])
         info = {
             'state_i': current_input,
-            'state_i-1': jnp.zeros_like(current_input),
-            'state_i-2': jnp.zeros_like(current_input),
-            'state_i-3': jnp.zeros_like(current_input),
-            'state_i-4': jnp.zeros_like(current_input),
-            'model_input': jnp.zeros(5 * current_input.shape[0]),
+            'state_i-1': current_input,
+            'state_i-2': current_input,
+            'state_i-3': current_input,
+            'state_i-4': current_input,
+            'model_input': jnp.tile(current_input, 5),
         }
 
         # Reward Function:
@@ -246,14 +260,20 @@ class Unitree(PipelineEnv):
         # Base Pose: Maintain Z Height
         base_x = q[self.base_x]
         pose_error = self.desired_height - base_x[-1]
-        reward_pose = self.pose_weight * phi(pose_error)
+        reward_pose = -self.pose_weight * jnp.linalg.norm(pose_error)
 
-        # Base Orientation:
+        # Base Orientation: My Formulation
+        # base_w = q[self.base_w]
+        # orientation_error = 1 - jnp.square(
+        #     jnp.dot(base_w, self.desired_orientation),
+        # )
+        # reward_orientation = -self.orientation_weight * orientation_error
+
+        # Barkour Formulation:
         base_w = q[self.base_w]
-        orientation_error = 1 - jnp.square(
-            jnp.dot(base_w, self.desired_orientation),
-        )
-        reward_orientation = -self.orientation_weight * orientation_error
+        up = jnp.array([0.0, 0.0, 1.0])
+        rot_up = rotate(up, base_w)
+        reward_orientation = -self.orientation_weight * jnp.sum(jnp.square(rot_up[:2]))
 
         # Velocity Tracking:
         # TODO(jeh15): Change to tracking a desired velocity vector -> norm(vel_des - vel)
@@ -357,8 +377,13 @@ class Unitree(PipelineEnv):
         }
 
         # Model input data:
+        remap_action = remap_controller(
+            jnp.expand_dims(action, axis=0),
+            self.control_range,
+            self.action_range,
+        ).flatten()
         input_keys = ['state_i', 'state_i-1', 'state_i-2', 'state_i-3', 'state_i-4']
-        state.info['state_i'] = jnp.concatenate([obs, action])
+        state.info['state_i'] = jnp.concatenate([obs, remap_action])
         state.info['state_i-1'] = state.info['state_i']
         state.info['state_i-2'] = state.info['state_i-1']
         state.info['state_i-3'] = state.info['state_i-2']

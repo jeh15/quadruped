@@ -93,12 +93,12 @@ class Unitree(PipelineEnv):
 
         # Reward Weights:
         self.reward_weights = {
-            'linear_velocity_tracking': 2.0 * self.dt,
-            'angular_velocity_tracking': 2.0 * self.dt,
+            'linear_velocity_tracking': 1.0 * self.dt,
+            'angular_velocity_tracking': 0.5 * self.dt,
             'base_height_regularization': 2.0 * self.dt,
             'foot_contact': 1.0 * self.dt,
-            'orientation': -0.1 * self.dt,
-            'linear_velocity_regularization': -0.1 * self.dt,
+            'orientation': -1.0 * self.dt,
+            'linear_velocity_regularization': -4.0 * self.dt,
             'angular_velocity_regularization': -0.05 * self.dt,
             'joint_motion': -0.001 * self.dt,
             'action_rate': -0.25 * self.dt,
@@ -114,20 +114,17 @@ class Unitree(PipelineEnv):
         """Resets the environment to an initial state."""
         rng, q_rng, qd_rng = jax.random.split(rng, 3)
 
-        # Random Noise:
-        low, high = -self.reset_noise, self.reset_noise
-        q_base = self.initial_q[self.body_id]
-        q_joints = self.initial_q[7:] + jax.random.uniform(
-            q_rng,
-            (self.sys.q_size() - 7,),
-            minval=low,
-            maxval=high,
-        )
-        q = jnp.concatenate([q_base, q_joints])
-        qd = jnp.zeros((self.sys.qd_size(),))
+        # No Random Noise:
+        q = self.initial_q
+        qd = jnp.zeros((self.qd_size,))
+
 
         pipeline_state = self.pipeline_init(q, qd)
         obs = self._get_states(pipeline_state)
+        q = pipeline_state.q
+        qd = pipeline_state.qd
+        q_joints = pipeline_state.q[7:]
+        qd_joints = pipeline_state.qd[6:]
 
         # Reward Function:
         reward = jnp.array(0.0)
@@ -144,12 +141,20 @@ class Unitree(PipelineEnv):
             'base_termination': zero,
         }
 
+        action = jnp.zeros((self.action_size,))
+        current_input = jnp.concatenate([obs, action])
         info = {
             'command': jnp.zeros(3),
             'previous_action': jnp.zeros(self.action_size),
             'qd_joints_previous': jnp.zeros_like(q_joints),
             'feet_air_time': jnp.zeros(4),
             'last_contact': jnp.zeros(4, dtype=jnp.bool),
+            'state_i': current_input,
+            'state_i-1': jnp.zeros_like(current_input),
+            'state_i-2': jnp.zeros_like(current_input),
+            'state_i-3': jnp.zeros_like(current_input),
+            'state_i-4': jnp.zeros_like(current_input),
+            'model_input': jnp.zeros(5 * current_input.shape[0]),
         }
 
         return State(pipeline_state, obs, reward, done, metrics, info)
@@ -263,6 +268,17 @@ class Unitree(PipelineEnv):
         state.info['previous_action'] = action
         state.info['qd_joints_previous'] = qd_joints
         state.info['last_contact'] = contact
+
+        # Model input data:
+        input_keys = ['state_i', 'state_i-1', 'state_i-2', 'state_i-3', 'state_i-4']
+        state.info['state_i'] = jnp.concatenate([obs, action])
+        state.info['state_i-1'] = state.info['state_i']
+        state.info['state_i-2'] = state.info['state_i-1']
+        state.info['state_i-3'] = state.info['state_i-2']
+        state.info['state_i-4'] = state.info['state_i-3']
+        model_input = [state.info[k] for k in state.info if k in input_keys]
+        model_input = jnp.asarray(model_input).flatten()
+        state.info['model_input'] = model_input
 
         return state.replace(
             pipeline_state=pipeline_state,
@@ -434,7 +450,7 @@ class Unitree(PipelineEnv):
         return jnp.where(
             termination == 1.0,
             -1.0,
-            1.0,
+            10.0,
         )
 
     @staticmethod
