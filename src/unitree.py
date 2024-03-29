@@ -93,21 +93,22 @@ class Unitree(PipelineEnv):
 
         # Scaled with Phi function:
         self.pose_weight = 2.0 * self.dt
-        self.orientation_weight = 1.0 * self.dt
         self.linear_velocity_weight = 1.0 * self.dt
         self.angular_velocity_weight = 1.0 * self.dt
+
+        self.orientation_weight = 2.0 * self.dt
 
         self.foot_height_weight = 5.0 * self.dt
         self.abduction_range_weight = 0.5 * self.dt
         self.hip_range_weight = 0.5 * self.dt
         self.knee_range_weight = 0.5 * self.dt
 
-        self.reward_pose_regularization = 0.01 * self.dt
-        self.velocity_regularization_weight = 0.1 * self.dt
+        self.reward_pose_regularization = 0.5 * self.dt
+        self.velocity_regularization_weight = 1.0 * self.dt
         self.acceleration_regularization_weight = 0.001 * self.dt
-        self.action_rate_weight = 0.25 * self.dt
+        self.action_rate_weight = 1.0 * self.dt
         self.control_weight = 0.0005 * self.dt
-        self.continuation_weight = 10.0 * self.dt
+        self.continuation_weight = 60.0 * self.dt
         self.termination_weight = -10.0 * self.dt
 
         # Unused
