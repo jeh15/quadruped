@@ -50,7 +50,7 @@ class Unitree(PipelineEnv):
 
         # State indices to joints that can be actuated:
         self.motor_id = sys.actuator.qd_id
-        
+
         # Default States:
         self.initial_q = jnp.array(
             [
@@ -154,7 +154,7 @@ class Unitree(PipelineEnv):
 
         # Build model input:
         obs = self._get_states(pipeline_state)
-        current_input = jnp.concatenate([obs, self.base_control_remap])
+        current_input = jnp.concatenate([obs, self.base_control])
         info = {
             'state_i': current_input,
             'state_i-1': current_input,
@@ -377,13 +377,8 @@ class Unitree(PipelineEnv):
         }
 
         # Model input data:
-        remap_action = remap_controller(
-            jnp.expand_dims(action, axis=0),
-            self.control_range,
-            self.action_range,
-        ).flatten()
         input_keys = ['state_i', 'state_i-1', 'state_i-2', 'state_i-3', 'state_i-4']
-        state.info['state_i'] = jnp.concatenate([obs, remap_action])
+        state.info['state_i'] = jnp.concatenate([obs, action])
         state.info['state_i-1'] = state.info['state_i']
         state.info['state_i-2'] = state.info['state_i-1']
         state.info['state_i-3'] = state.info['state_i-2']

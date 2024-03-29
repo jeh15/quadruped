@@ -14,7 +14,7 @@ import model_utilities
 import control_utilities
 import checkpoint
 
-import unitree_brax
+import unitree
 
 
 jax.config.update("jax_enable_x64", True)
@@ -56,7 +56,7 @@ def main(argv=None):
     # Create Environment:
     episode_length = 500
     num_envs = 1
-    env = unitree_brax.Unitree(backend='mjx')
+    env = unitree.Unitree(backend='mjx')
 
     # Initize Networks and States:
     initial_key = jax.random.PRNGKey(key_seed)
@@ -71,9 +71,10 @@ def main(argv=None):
         action_space=env.action_size,
     )
 
+    model_input_size = (num_envs, states.info['model_input'].shape[-1])
     initial_params = init_params(
         module=network,
-        input_size=(num_envs, env.observation_size + env.action_size),
+        input_size=model_input_size,
         key=initial_key,
     )
 
@@ -91,7 +92,7 @@ def main(argv=None):
 
     # Create Running Statistics:
     statistics_state = rs.init_state(
-        jnp.zeros((env.observation_size + env.action_size),)
+        jnp.zeros((model_input_size[-1],))
     )
 
     # Extract remap ranges:
@@ -100,11 +101,6 @@ def main(argv=None):
         reps=(env.action_size, 1),
     )
     control_range = env.sys.actuator_ctrlrange
-
-    # Create Running Statistics:
-    statistics_state = rs.init_state(
-        jnp.zeros((env.observation_size + env.action_size),)
-    )
 
     # Create Checkpoint Manager:
     checkpoint_metadata = checkpoint.default_checkpoint_metadata()
@@ -130,7 +126,7 @@ def main(argv=None):
     actions = jnp.zeros((env.action_size,))
     for environment_step in range(episode_length):
             key, env_key = jax.random.split(env_key)
-            model_input = jnp.concatenate([states.obs, jnp.squeeze(actions)])
+            model_input = states.info['model_input']
             model_input = jnp.expand_dims(model_input, axis=0)
             mean, std, values = model_utilities.forward_pass(
                 model_params=model_state.params,
