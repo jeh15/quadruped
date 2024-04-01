@@ -123,8 +123,8 @@ class Unitree(PipelineEnv):
         self.acceleration_regularization_weight = 0.001 * self.dt
         self.action_rate_weight = 1.0 * self.dt
         self.control_weight = 0.0005 * self.dt
-        self.continuation_weight = 60.0 * self.dt
-        self.termination_weight = -10.0 * self.dt
+        self.continuation_weight = 50.0 * self.dt
+        self.termination_weight = -60.0 * self.dt
 
         # Unused
         self.linear_velocity_regularization = 0.1 * self.dt
