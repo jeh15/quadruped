@@ -107,13 +107,13 @@ class Unitree(PipelineEnv):
         self.min_knee_z, self.max_knee_z = 0.05, 0.3
 
         # Scaled with kernel function:
-        self.linear_velocity_weight = 1.0 * self.dt
-        self.angular_velocity_weight = 1.0 * self.dt
+        self.linear_velocity_weight = 5.0 * self.dt
+        self.angular_velocity_weight = 5.0 * self.dt
 
         self.pose_weight = 5.0 * self.dt
         self.orientation_weight = 5.0 * self.dt
 
-        self.foot_height_weight = 5.0 * self.dt
+        self.foot_height_weight = 0.0 * self.dt
         self.slip_weight = 1.0 * self.dt
         self.abduction_range_weight = 1.0 * self.dt
         self.hip_range_weight = 0.5 * self.dt
@@ -121,10 +121,10 @@ class Unitree(PipelineEnv):
 
         self.reward_pose_regularization = 0.5 * self.dt
         self.velocity_regularization_weight = 1.0 * self.dt
-        self.acceleration_regularization_weight = 1.0 * self.dt
-        self.action_rate_weight = 1.0 * self.dt
+        self.acceleration_regularization_weight = 0.001 * self.dt
+        self.action_rate_weight = 2.0 * self.dt
         self.control_weight = 0.0005 * self.dt
-        self.continuation_weight = 25.0 * self.dt
+        self.continuation_weight = 50.0 * self.dt
         self.termination_weight = -100.0 * self.dt
 
         # Unused
@@ -229,7 +229,7 @@ class Unitree(PipelineEnv):
         reward_foot_height = jnp.where(
             contact,
             self.foot_height_weight,
-            self.foot_height_weight * inverse_kernel(foot_positions[:, -1]),
+            -self.foot_height_weight * jnp.linalg.norm(foot_positions[:, -1]),
         )
 
         # Foot Slip:
@@ -240,14 +240,14 @@ class Unitree(PipelineEnv):
         foot_velocity = offset.vmap().do(pipeline_state.xd.take(idx)).vel
         contact_mask = jnp.reshape(contact, (-1, 1))
         slip_error = foot_velocity[:, :2] * contact_mask
-        reward_slip = self.slip_weight * inverse_kernel(slip_error)
+        reward_slip = -self.slip_weight * jnp.linalg.norm(slip_error)
 
         # Abduction Range:
         abduction_joint_idx = jnp.array([7, 10, 13, 16])
         abduction_q = q[abduction_joint_idx]
         reward_abduction_range = (
-            self.abduction_range_weight
-            * inverse_kernel(abduction_q)
+            -self.abduction_range_weight
+            * jnp.linalg.norm(abduction_q)
         )
 
         # Hip Range:
@@ -276,7 +276,7 @@ class Unitree(PipelineEnv):
         # Base Pose: Maintain Z Height
         base_x = q[self.base_x]
         pose_error = self.desired_height - base_x[-1]
-        reward_pose = self.pose_weight * inverse_kernel(pose_error)
+        reward_pose = -self.pose_weight * jnp.linalg.norm(pose_error)
 
         # Base Orientation: My Formulation
         # base_w = q[self.base_w]
@@ -289,7 +289,7 @@ class Unitree(PipelineEnv):
         base_w = q[self.base_w]
         up = jnp.array([0.0, 0.0, 1.0])
         rotation_error = rotate(up, base_w)
-        reward_orientation = self.orientation_weight * inverse_kernel(
+        reward_orientation = -self.orientation_weight * jnp.linalg.norm(
             rotation_error
         )
 
@@ -306,22 +306,22 @@ class Unitree(PipelineEnv):
 
         # Control regularization:
         action_rate = action - state.metrics['previous_action']
-        reward_action_rate = self.action_rate_weight * inverse_kernel(
+        reward_action_rate = -self.action_rate_weight * jnp.linalg.norm(
             action_rate
         )
 
         # Regularization:
         reward_joint_regularization = (
-            self.velocity_regularization_weight
-            * inverse_kernel(qd_joints)
+            -self.velocity_regularization_weight
+            * jnp.linalg.norm(qd_joints)
         )
         qdd_joints = (qd_joints - state.metrics['previous_qd']) / self.dt
         reward_acceleration_regularization = (
-            self.acceleration_regularization_weight
-            * inverse_kernel(qdd_joints)
+            -self.acceleration_regularization_weight
+            * jnp.linalg.norm(qdd_joints)
         )
         reward_pose_regularization = (
-            self.reward_pose_regularization * inverse_kernel(
+            -self.reward_pose_regularization * jnp.linalg.norm(
                 q_joints - self.initial_q[7:]
             )
         )
@@ -372,6 +372,7 @@ class Unitree(PipelineEnv):
             + reward_abduction_range
         )
         reward = jnp.array([reward])
+        reward = jnp.clip(reward, -1.0 * self.dt, 1000.0)
         metrics = {
             'reward_linear_velocity': jnp.array([reward_linear_velocity]),
             'reward_angular_velocity': jnp.array([reward_angular_velocity]),

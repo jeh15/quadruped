@@ -174,6 +174,9 @@ def loss_function(
     # Calculate Ratio: (Should this be No Grad?)
     log_ratios = log_probability - previous_log_probability
     ratios = jnp.exp(log_ratios)
+    
+    # Normalize Advantages:
+    advantages = (advantages - jnp.mean(advantages)) / (jnp.std(advantages) + 1e-8)
 
     # Policy Loss:
     unclipped_loss = ratios * advantages

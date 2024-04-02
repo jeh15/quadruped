@@ -16,7 +16,7 @@ import checkpoint
 
 import unitree
 
-
+jax.config.update('jax_default_device', jax.devices('cpu')[0])
 jax.config.update("jax_enable_x64", True)
 
 FLAGS = flags.FLAGS
