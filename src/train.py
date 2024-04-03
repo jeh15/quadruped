@@ -77,7 +77,7 @@ def main(argv=None):
 
     step_fn = jax.jit(env.step)
     reset_fn = jax.jit(env.reset)
-    
+
     # Model initialization:
     initial_key = jax.random.PRNGKey(key_seed)
     reset_key = jax.random.split(initial_key, num=num_envs)

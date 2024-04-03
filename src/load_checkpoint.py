@@ -54,9 +54,10 @@ def main(argv=None):
     key_seed = 42
 
     # Create Environment:
-    episode_length = 500
     num_envs = 1
     env = unitree.Unitree(backend='mjx')
+    episode_run_time = 20.0  # Seconds
+    episode_length = int(episode_run_time / env.dt)
 
     # Initize Networks and States:
     initial_key = jax.random.PRNGKey(key_seed)
@@ -148,11 +149,9 @@ def main(argv=None):
                 states,
                 jnp.squeeze(control_input),
             )
-            if environment_step % 100 == 0:
-                pass
 
-            # if states.metrics['knee_termination'] or states.metrics['base_termination'] == 1:
-            #     break
+            if states.metrics['knee_termination'] or states.metrics['base_termination'] == 1:
+                break
 
             states = next_states
             metrics_history.append(states)

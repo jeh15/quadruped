@@ -99,6 +99,9 @@ class Unitree(PipelineEnv):
         self.calf_length = 0.2
         self.foot_radius = 0.025
         self.reset_noise = 0.05
+        self.disturbance_range = 1.0
+        self.push_range = 0.05
+        self.kick_range = 1.0
 
         # Set Configuration:
         self.desired_orientation = jnp.array([1.0, 0.0, 0.0, 0.0])
@@ -163,6 +166,8 @@ class Unitree(PipelineEnv):
             'state_i-3': current_input,
             'state_i-4': current_input,
             'model_input': jnp.tile(current_input, 5),
+            'iteration': 1,
+            'rng_key': rng,
         }
 
         # Reward Function:
@@ -205,11 +210,58 @@ class Unitree(PipelineEnv):
         def kernel(x: jax.Array) -> jnp.ndarray:
             return jnp.exp(-jnp.linalg.norm(x) / 0.25)
 
-        def inverse_kernel(x: jax.Array) -> jnp.ndarray:
-            scale = 3.0
-            return scale * jnp.exp(-(1 / scale) * jnp.linalg.norm(x)) - scale
+        # RNG Keys:
+        rng, magnitude_rng, angle_rng = jax.random.split(
+            state.info['rng_key'], num=3,
+        )
 
-        """Run one timestep of the environment's dynamics."""
+        # Disturbance:
+        """
+            Pushes every 10 steps -> 0.1 sec
+            Kicks every 500 steps -> 5 sec
+        """
+        push_interval = 10
+        kick_interval = 500
+        # Only disturb in the xy directions:
+        push_magnitude = jax.random.uniform(
+            magnitude_rng,
+            minval=-self.push_range,
+            maxval=self.push_range,
+        )
+        kick_magnitude = jax.random.uniform(
+            magnitude_rng,
+            minval=-self.kick_range,
+            maxval=self.kick_range,
+        )
+        disturbance_angle = jax.random.uniform(
+            angle_rng,
+            minval=-2*jnp.pi,
+            maxval=2*jnp.pi,
+        )
+        push_mask = jnp.where(
+            jnp.mod(state.info['iteration'], push_interval) == 0,
+            1.0,
+            0.0,
+        )
+        kick_mask = jnp.where(
+            jnp.mod(state.info['iteration'], kick_interval) == 0,
+            1.0,
+            0.0,
+        )
+        push = jnp.array([
+            jnp.cos(disturbance_angle) * push_magnitude,
+            jnp.sin(disturbance_angle) * push_magnitude,
+        ])
+        kick = jnp.array([
+            jnp.cos(disturbance_angle) * kick_magnitude,
+            jnp.sin(disturbance_angle) * kick_magnitude,
+        ])
+        disturbance = push * push_mask + kick * kick_mask
+        qvel = state.pipeline_state.qvel
+        qvel = qvel.at[:2].set(disturbance + qvel[:2])
+        state = state.tree_replace({'pipeline_state.qvel': qvel})
+
+        # Physics Step:
         pipeline_state = self.pipeline_step(
             state.pipeline_state,
             action,
@@ -408,6 +460,8 @@ class Unitree(PipelineEnv):
         model_input = [state.info[k] for k in state.info if k in input_keys]
         model_input = jnp.asarray(model_input).flatten()
         state.info['model_input'] = model_input
+        state.info['rng_key'] = magnitude_rng
+        state.info['iteration'] += 1
 
         return state.replace(
             pipeline_state=pipeline_state,
