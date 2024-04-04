@@ -13,6 +13,7 @@ import model
 import model_utilities
 import control_utilities
 import checkpoint
+import render_utilities
 
 import unitree
 
@@ -145,6 +146,13 @@ def main(argv=None):
                 action_range,
                 control_range,
             )
+            kp = 0.5
+            kd = 0.01
+            control_input = (
+                states.pipeline_state.q[7:]
+                + kp * (control_input - states.pipeline_state.q[7:])
+                - kd * (states.pipeline_state.qd[6:])
+            )
             next_states = step_fn(
                 states,
                 jnp.squeeze(control_input),
@@ -157,6 +165,15 @@ def main(argv=None):
             metrics_history.append(states)
             action_history.append(actions)
             state_history.append(states.pipeline_state)
+
+    # Only runs if started locally.
+    # render_utilities.create_video(
+    #     sys=env.sys,
+    #     trajectory=state_history,
+    #     height=240,
+    #     width=320,
+    #     camera=None,
+    # )
 
     html_string = html.render(
         env.sys,
