@@ -61,6 +61,16 @@ class Unitree(PipelineEnv):
                 0, 0.9, -1.8,
             ]
         )
+        # theta = 0
+        # self.initial_q = jnp.array(
+        #     [
+        #         0.0, 1.0, 0.27, jnp.cos(theta/2), 0, 0, jnp.sin(theta/2),
+        #         0, 0.9, -1.8,
+        #         0, 0.9, -1.8,
+        #         0, 0.9, -1.8,
+        #         0, 0.9, -1.8,
+        #     ]
+        # )
         self.base_control = jnp.array([
             0, 0.9, -1.8, 0, 0.9, -1.8, 0, 0.9, -1.8, 0, 0.9, -1.8,
         ])
@@ -100,7 +110,8 @@ class Unitree(PipelineEnv):
         self.foot_radius = 0.025
         self.reset_noise = 0.05
         self.disturbance_range = 1.0
-        self.push_range = 0.05
+        # self.push_range = 0.05
+        self.push_range = 0.0
         self.kick_range = 1.0
 
         # Set Configuration:
@@ -136,7 +147,7 @@ class Unitree(PipelineEnv):
 
     def reset(self, rng: jax.Array) -> State:
         """Resets the environment to an initial state."""
-        rng, q_rng, qd_rng = jax.random.split(rng, 3)
+        rng, x_rng, y_rng = jax.random.split(rng, 3)
 
         # Random Noise:
         # low, high = -self.reset_noise, self.reset_noise
@@ -150,8 +161,31 @@ class Unitree(PipelineEnv):
         # q = jnp.concatenate([q_base, q_joints])
         # qd = 0.1 * high * jax.random.normal(qd_rng, (self.sys.qd_size(),))
 
-        # No Random Noise:
-        q = self.initial_q
+        # Random xy offset:
+        # random_xy = jax.random.uniform(
+        #     q_rng,
+        #     (2,),
+        #     minval=-10,
+        #     maxval=10,
+        # )
+        random_x = jax.random.uniform(
+            x_rng,
+            (),
+            minval=-1,
+            maxval=1,
+        )
+        random_y = jax.random.uniform(
+            y_rng,
+            (),
+            minval=0,
+            maxval=5,
+        )
+        q_base_x = jnp.array([random_x, random_y, self.initial_q[self.base_x][-1]])
+        q_base_w = self.initial_q[self.base_w]
+        q_base = jnp.concatenate([q_base_x, q_base_w])
+        q_joints = self.initial_q[7:]
+
+        q = jnp.concatenate([q_base, q_joints])
         qd = jnp.zeros((self.qd_size,))
 
         pipeline_state = self.pipeline_init(q, qd)

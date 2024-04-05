@@ -1,28 +1,25 @@
 from typing import List, Optional, Union
 
-import matplotlib.pyplot as plt
-from matplotlib.animation import FFMpegWriter
+import cv2 as cv
+import numpy as np
+from tqdm import tqdm
 
 import brax
 from brax import base
 from brax.io import image
 import mujoco
 
+
 def create_video(
-    sys: brax.System,
+    env: brax.System,
     trajectory: Union[List[base.State], base.State],
+    filepath: str = 'output.mp4',
     height: int = 240,
     width: int = 320,
     camera: Optional[str] = None,
 ) -> None:
     # Setup Animation Writer:
-    FPS = int(1 / sys.dt)
-    dpi = 300
-    writer_obj = FFMpegWriter(fps=FPS)
-
-    # Setup Figure:
-    fig, ax = plt.subplots()
-    ax.axis('off')
+    FPS = int(1 / env.dt)
 
     # Create and set context for mujoco rendering:
     ctx = mujoco.GLContext(width, height)
@@ -30,14 +27,23 @@ def create_video(
 
     # Generate Frames:
     frames = image.render_array(
-        sys=sys,
+        sys=env.sys,
         trajectory=trajectory,
         height=height,
         width=width,
         camera=camera,
     )
 
-    with writer_obj.saving(fig, 'output.mp4', dpi):
-        for frame in frames:
-            ax.imshow(frame)
-            writer_obj.grab_frame()
+    out = cv.VideoWriter(
+        filename=filepath,
+        fourcc=cv.VideoWriter_fourcc(*'mp4v'),
+        fps=FPS,
+        frameSize=(width, height),
+        isColor=True,
+    )
+
+    num_frames = np.shape(frames)[0]
+    for i in tqdm(range(num_frames)):
+        out.write(frames[i])
+
+    out.release()
