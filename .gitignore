@@ -208,3 +208,6 @@ visualization/*
 
 src/metrics/*
 !src/metrics/.gitkeep
+
+# Video files
+*.mp4
