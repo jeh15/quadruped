@@ -18,7 +18,7 @@ np.set_printoptions(precision=4)
 
 def main(argv=None):
     env = unitree.Unitree(backend='mjx')
-    episode_run_time = 20.0  # Seconds
+    episode_run_time = 10.0  # Seconds
     batch_run_time = 0.5  # Seconds
     episode_length = int(episode_run_time / env.dt)
 

@@ -49,15 +49,31 @@ class Unitree(PipelineEnv):
         self.motor_id = sys.actuator.qd_id
 
         # Default States:
+        # self.initial_q = jnp.array(
+        #     [
+        #         0, 0, 0.27, 1, 0, 0, 0,
+        #         0, 0.9, -1.8,
+        #         0, 0.9, -1.8,
+        #         0, 0.9, -1.8,
+        #         0, 0.9, -1.8,
+        #     ]
+        # )
         self.initial_q = jnp.array(
             [
-                0, 0, 0.27, 1, 0, 0, 0,
+                0, 0, 0.254, 1, 0, 0, 0,
                 0, 0.9, -1.8,
                 0, 0.9, -1.8,
                 0, 0.9, -1.8,
                 0, 0.9, -1.8,
             ]
         )
+        self.initial_joint = jnp.array([
+            -1.446e-02, 8.940e-01, -1.843e+00,
+            1.648e-02, 8.927e-01, -1.841e+00,
+            -2.133e-02, 8.939e-01, -1.855e+00,
+            2.196e-02, 8.927e-01, -1.854e+00,
+        ])
+
         self.base_control = jnp.array([
             0, 0.9, -1.8, 0, 0.9, -1.8, 0, 0.9, -1.8, 0, 0.9, -1.8,
         ])
@@ -97,7 +113,7 @@ class Unitree(PipelineEnv):
         self.foot_radius = 0.025
         self.reset_noise = 0.05
         self.disturbance_range = 1.0
-        self.push_range = 0.05
+        self.push_range = 0.0
         self.kick_range = 1.0
 
         # Set Configuration:
@@ -126,13 +142,13 @@ class Unitree(PipelineEnv):
         self.knee_range_weight = 0.5 * self.dt
 
         # Regularization:
-        self.reward_pose_regularization = 0.1 * self.dt
-        self.velocity_regularization_weight = 1.0 * self.dt
+        self.reward_pose_regularization = 0.01 * self.dt
+        self.velocity_regularization_weight = 0.001 * self.dt
         self.acceleration_regularization_weight = 0.001 * self.dt
-        self.action_rate_weight = 1.0 * self.dt
+        self.action_rate_weight = 0.25 * self.dt
         self.control_weight = 0.0005 * self.dt
-        self.continuation_weight = 50.0 * self.dt
-        self.termination_weight = -100.0 * self.dt
+        self.continuation_weight = 5.0 * self.dt
+        self.termination_weight = -10.0 * self.dt
 
     def reset(self, rng: jax.Array) -> State:
         """Resets the environment to an initial state."""
@@ -185,7 +201,7 @@ class Unitree(PipelineEnv):
             [jnp.cos(random_theta / 2), 0, 0, jnp.sin(random_theta / 2)],
         )
         q_base = jnp.concatenate([q_base_x, q_base_w])
-        q_joints = self.initial_q[7:]
+        q_joints = self.initial_joint
 
         q = jnp.concatenate([q_base, q_joints])
         qd = jnp.zeros((self.qd_size,))
@@ -425,7 +441,7 @@ class Unitree(PipelineEnv):
         )
         reward_pose_regularization = (
             -self.reward_pose_regularization * jnp.linalg.norm(
-                q_joints - self.initial_q[7:]
+                q_joints - self.initial_joint
             )
         )
 
@@ -478,6 +494,7 @@ class Unitree(PipelineEnv):
         )
         reward = jnp.array([reward])
         reward = jnp.clip(reward, -1.0 * self.dt, 1000.0)
+        # reward = jnp.clip(reward, 0.0, 1000.0)
         metrics = {
             'reward_forward_velocity': jnp.array([forward_velocity_reward]),
             'reward_turning_velocity': jnp.array([turning_velocity_reward]),
