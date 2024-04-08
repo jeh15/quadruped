@@ -120,93 +120,86 @@ def main(argv=None):
         metadata=checkpoint_metadata,
     )
 
-    num_simulations = 24
-    for simulation_iteration in range(num_simulations):
-        termination_flag = False
+    key, env_key = jax.random.split(env_key)
+    states = reset_fn(env_key)
+    state_history = []
+    metrics_history = []
+    action_history = []
+    state_history.append(states.pipeline_state)
+    metrics_history.append(states)
+    actions = jnp.zeros((env.action_size,))
+    for environment_step in range(episode_length):
         key, env_key = jax.random.split(env_key)
-        states = reset_fn(env_key)
-        state_history = []
-        metrics_history = []
-        action_history = []
-        state_history.append(states.pipeline_state)
+        model_input = states.info['model_input']
+        model_input = jnp.expand_dims(model_input, axis=0)
+        mean, std, values = model_utilities.forward_pass(
+            model_params=model_state.params,
+            apply_fn=model_state.apply_fn,
+            statistics_state=statistics_state,
+            x=model_input,
+        )
+        actions, log_probability, entropy = model_utilities.select_action(
+            mean=mean,
+            std=std,
+            key=env_key,
+        )
+        control_input = control_utilities.remap_controller(
+            actions,
+            action_range,
+            control_range,
+        )
+        # kp = 0.5
+        # kd = 0.01
+        # control_input = (
+        #     states.pipeline_state.q[7:]
+        #     + kp * (control_input - states.pipeline_state.q[7:])
+        #     - kd * (states.pipeline_state.qd[6:])
+        # )
+
+        next_states = step_fn(
+            states,
+            jnp.squeeze(control_input),
+        )
+
+        # if states.metrics['knee_termination'] or states.metrics['base_termination'] == 1:
+        #     break
+
+        states = next_states
         metrics_history.append(states)
-        actions = jnp.zeros((env.action_size,))
-        for environment_step in range(episode_length):
-            key, env_key = jax.random.split(env_key)
-            model_input = states.info['model_input']
-            model_input = jnp.expand_dims(model_input, axis=0)
-            if environment_step >= 10:
-                mean, std, values = model_utilities.forward_pass(
-                    model_params=model_state.params,
-                    apply_fn=model_state.apply_fn,
-                    statistics_state=statistics_state,
-                    x=model_input,
-                )
-                actions, log_probability, entropy = model_utilities.select_action(
-                    mean=mean,
-                    std=std,
-                    key=env_key,
-                )
-                control_input = control_utilities.remap_controller(
-                    actions,
-                    action_range,
-                    control_range,
-                )
-                kp = 0.5
-                kd = 0.01
-                control_input = (
-                    states.pipeline_state.q[7:]
-                    + kp * (control_input - states.pipeline_state.q[7:])
-                    - kd * (states.pipeline_state.qd[6:])
-                )
-            else:
-                control_input = env.base_control
+        action_history.append(actions)
+        state_history.append(states.pipeline_state)
 
-            next_states = step_fn(
-                states,
-                jnp.squeeze(control_input),
-            )
+    # Only runs if started locally.
+    # if not termination_flag:
+    #     video_path = os.path.join(
+    #         os.path.dirname(
+    #             os.path.dirname(__file__),
+    #         ),
+    #         f"videos/output_{simulation_iteration}.mp4",
+    #     )
+    #     render_utilities.create_video(
+    #         env=env,
+    #         trajectory=state_history,
+    #         filepath=video_path,
+    #         height=720,
+    #         width=1280,
+    #         camera=None,
+    #     )
 
-            if states.metrics['knee_termination'] or states.metrics['base_termination'] == 1:
-                termination_flag = True
-                break
-
-            states = next_states
-            metrics_history.append(states)
-            action_history.append(actions)
-            state_history.append(states.pipeline_state)
-
-        # Only runs if started locally.
-        if not termination_flag:
-            video_path = os.path.join(
-                os.path.dirname(
-                    os.path.dirname(__file__),
-                ),
-                f"videos/output_{simulation_iteration}.mp4",
-            )
-            render_utilities.create_video(
-                env=env,
-                trajectory=state_history,
-                filepath=video_path,
-                height=720,
-                width=1280,
-                camera=None,
-            )
-
-    # html_string = html.render(
-    #     env.sys,
-    #     state_history,
-    #     height="100vh",
-    #     colab=False,
-    # )
-    # html_path = os.path.join(
-    #     os.path.dirname(
-    #         os.path.dirname(__file__),
-    #     ),
-    #     "visualization/visualization.html",
-    # )
-    # with open(html_path, "w") as f:
-    #     f.writelines(html_string)
+    html_string = html.render(
+        env.sys,
+        state_history,
+        height="100vh",
+        colab=False,
+    )
+    html_path = os.path.join(
+        os.path.dirname(
+            os.path.dirname(__file__),
+        ),
+        "visualization/visualization.html",
+    )
+    with open(html_path, "w") as f:
+        f.writelines(html_string)
 
 
 if __name__ == '__main__':

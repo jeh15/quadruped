@@ -147,8 +147,8 @@ class Unitree(PipelineEnv):
         self.acceleration_regularization_weight = 0.001 * self.dt
         self.action_rate_weight = 0.25 * self.dt
         self.control_weight = 0.0005 * self.dt
-        self.continuation_weight = 5.0 * self.dt
-        self.termination_weight = -10.0 * self.dt
+        self.continuation_weight = 10.0 * self.dt
+        self.termination_weight = -100.0 * self.dt
 
     def reset(self, rng: jax.Array) -> State:
         """Resets the environment to an initial state."""
