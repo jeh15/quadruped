@@ -22,10 +22,10 @@ def main(argv=None):
     batch_run_time = 0.5  # Seconds
     episode_length = int(episode_run_time / env.dt)
 
-    # reset_fn = jax.jit(env.reset)
-    # step_fn = jax.jit(env.step)
-    reset_fn = env.reset
-    step_fn = env.step
+    reset_fn = jax.jit(env.reset)
+    step_fn = jax.jit(env.step)
+    # reset_fn = env.reset
+    # step_fn = env.step
 
     # Compile Step Function for timing:
     initial_key = jax.random.key(42)

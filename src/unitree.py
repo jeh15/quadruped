@@ -5,7 +5,7 @@ from brax.envs.base import PipelineEnv, State
 from brax.io import mjcf
 from brax.kinematics import forward
 from brax.base import System
-from brax.math import rotate
+from brax.math import rotate, quat_inv
 
 import jax
 import jax.numpy as jnp
@@ -36,15 +36,12 @@ class Unitree(PipelineEnv):
         )
         sys = mjcf.load(self.filepath)
 
-        # Set Backend Parameters:
-        sys = sys.replace(dt=0.001)
-        # Control at 100 Hz -> n_frames * dt
-        physics_steps_per_control_step = 10
-        kwargs['n_frames'] = kwargs.get(
-            'n_frames', physics_steps_per_control_step)
-        kwargs['backend'] = backend
+        # Set Simulation and Backend Parameters:
+        self._dt = 0.01
+        sys = sys.tree_replace({'opt.timestep': 0.001, 'dt': 0.001})
 
-        super().__init__(sys, **kwargs)
+        n_frames = kwargs.pop('n_frames', int(self._dt / sys.opt.timestep))
+        super().__init__(sys, backend=backend, n_frames=n_frames)
 
         # Class Wide Parameters:
 
@@ -61,16 +58,6 @@ class Unitree(PipelineEnv):
                 0, 0.9, -1.8,
             ]
         )
-        # theta = 0
-        # self.initial_q = jnp.array(
-        #     [
-        #         0.0, 1.0, 0.27, jnp.cos(theta/2), 0, 0, jnp.sin(theta/2),
-        #         0, 0.9, -1.8,
-        #         0, 0.9, -1.8,
-        #         0, 0.9, -1.8,
-        #         0, 0.9, -1.8,
-        #     ]
-        # )
         self.base_control = jnp.array([
             0, 0.9, -1.8, 0, 0.9, -1.8, 0, 0.9, -1.8, 0, 0.9, -1.8,
         ])
@@ -110,8 +97,7 @@ class Unitree(PipelineEnv):
         self.foot_radius = 0.025
         self.reset_noise = 0.05
         self.disturbance_range = 1.0
-        # self.push_range = 0.05
-        self.push_range = 0.0
+        self.push_range = 0.05
         self.kick_range = 1.0
 
         # Set Configuration:
@@ -120,68 +106,84 @@ class Unitree(PipelineEnv):
         self.min_z, self.max_z = 0.1, 0.4
         self.min_knee_z, self.max_knee_z = 0.05, 0.3
 
-        # Scaled with kernel function:
-        self.linear_velocity_weight = 5.0 * self.dt
-        self.angular_velocity_weight = 5.0 * self.dt
+        # Command Tracking - Scaled with kernel function:
+        self.forward_velocity_weight = 1.0 * self.dt
+        self.turning_velocity_weight = 0.5 * self.dt
 
-        self.pose_weight = 5.0 * self.dt
+        # Penalize for large base velocities:
+        self.linear_velocity_weight = 4.0 * self.dt
+        self.angular_velocity_weight = 0.05 * self.dt
+
+        # Base Height and Orientation:
+        self.pose_weight = 1.0 * self.dt
         self.orientation_weight = 5.0 * self.dt
 
+        # Feet and Joint Range:
         self.foot_height_weight = 0.0 * self.dt
         self.slip_weight = 1.0 * self.dt
         self.abduction_range_weight = 1.0 * self.dt
         self.hip_range_weight = 0.5 * self.dt
         self.knee_range_weight = 0.5 * self.dt
 
-        self.reward_pose_regularization = 0.5 * self.dt
+        # Regularization:
+        self.reward_pose_regularization = 0.1 * self.dt
         self.velocity_regularization_weight = 1.0 * self.dt
         self.acceleration_regularization_weight = 0.001 * self.dt
-        self.action_rate_weight = 2.0 * self.dt
+        self.action_rate_weight = 1.0 * self.dt
         self.control_weight = 0.0005 * self.dt
         self.continuation_weight = 50.0 * self.dt
         self.termination_weight = -100.0 * self.dt
 
-        # Unused
-        self.linear_velocity_regularization = 0.1 * self.dt
-        self.angular_velocity_regularization = 0.1 * self.dt
-
     def reset(self, rng: jax.Array) -> State:
         """Resets the environment to an initial state."""
-        rng, x_rng, y_rng = jax.random.split(rng, 3)
+        rng, x_rng, y_rng, theta_rng, forward_rng, lateral_rng, turning_rng = jax.random.split(rng, 7)
 
-        # Random Noise:
-        # low, high = -self.reset_noise, self.reset_noise
-        # q_base = self.initial_q[self.body_id]
-        # q_joints = self.initial_q[7:] + jax.random.uniform(
-        #     q_rng,
-        #     (self.sys.q_size() - 7,),
-        #     minval=low,
-        #     maxval=high,
-        # )
-        # q = jnp.concatenate([q_base, q_joints])
-        # qd = 0.1 * high * jax.random.normal(qd_rng, (self.sys.qd_size(),))
-
-        # Random xy offset:
-        # random_xy = jax.random.uniform(
-        #     q_rng,
-        #     (2,),
-        #     minval=-10,
-        #     maxval=10,
-        # )
-        random_x = jax.random.uniform(
-            x_rng,
+        # Command:
+        forward_command = jax.random.uniform(
+            forward_rng,
             (),
             minval=-1,
             maxval=1,
         )
+        lateral_command = jax.random.uniform(
+            lateral_rng,
+            (),
+            minval=-0.3,
+            maxval=0.3,
+        )
+        turning_command = jax.random.uniform(
+            turning_rng,
+            (),
+            minval=-1.0,
+            maxval=1.0,
+        )
+        command = jnp.array([forward_command, lateral_command, turning_command])
+
+        # Random Noise:
+        random_x = jax.random.uniform(
+            x_rng,
+            (),
+            minval=-10,
+            maxval=10,
+        )
         random_y = jax.random.uniform(
             y_rng,
             (),
-            minval=0,
-            maxval=5,
+            minval=-10,
+            maxval=10,
         )
-        q_base_x = jnp.array([random_x, random_y, self.initial_q[self.base_x][-1]])
-        q_base_w = self.initial_q[self.base_w]
+        random_theta = jax.random.uniform(
+            theta_rng,
+            (),
+            minval=-jnp.pi,
+            maxval=jnp.pi,
+        )
+        q_base_x = jnp.array(
+            [random_x, random_y, self.initial_q[self.base_x][-1]],
+        )
+        q_base_w = jnp.array(
+            [jnp.cos(random_theta / 2), 0, 0, jnp.sin(random_theta / 2)],
+        )
         q_base = jnp.concatenate([q_base_x, q_base_w])
         q_joints = self.initial_q[7:]
 
@@ -191,17 +193,20 @@ class Unitree(PipelineEnv):
         pipeline_state = self.pipeline_init(q, qd)
 
         # Build model input:
-        obs = self._get_states(pipeline_state)
-        current_input = jnp.concatenate([obs, self.base_control])
+        obs = self._get_observation(pipeline_state)
+        state_input = jnp.concatenate([obs, self.base_control])
+        model_input = jnp.tile(state_input, 5)
+        model_input = jnp.concatenate([command, model_input])
         info = {
-            'state_i': current_input,
-            'state_i-1': current_input,
-            'state_i-2': current_input,
-            'state_i-3': current_input,
-            'state_i-4': current_input,
-            'model_input': jnp.tile(current_input, 5),
+            'state_i': state_input,
+            'state_i-1': state_input,
+            'state_i-2': state_input,
+            'state_i-3': state_input,
+            'state_i-4': state_input,
+            'model_input': model_input,
             'iteration': 1,
             'rng_key': rng,
+            'command': command,
         }
 
         # Reward Function:
@@ -209,6 +214,8 @@ class Unitree(PipelineEnv):
         done = jnp.array(0, dtype=jnp.int64)
         zero = jnp.array([0.0])
         metrics = {
+            'reward_forward_velocity': zero,
+            'reward_turning_velocity': zero,
             'reward_linear_velocity': zero,
             'reward_angular_velocity': zero,
             'reward_action_rate': zero,
@@ -302,13 +309,13 @@ class Unitree(PipelineEnv):
         )
 
         # Observations and States:
-        obs = self._get_states(pipeline_state)
+        obs = self._get_observation(pipeline_state)
         q = pipeline_state.q
         qd = pipeline_state.qd
         q_joints = pipeline_state.q[7:]
         qd_joints = pipeline_state.qd[6:]
 
-        # Foot Contact:
+        # Foot Contact: (TODO: Change to air time)
         foot_positions = pipeline_state.site_xpos
         foot_contact = foot_positions[:, -1] - self.foot_radius
         contact = foot_contact < 1e-3
@@ -364,13 +371,6 @@ class Unitree(PipelineEnv):
         pose_error = self.desired_height - base_x[-1]
         reward_pose = -self.pose_weight * jnp.linalg.norm(pose_error)
 
-        # Base Orientation: My Formulation
-        # base_w = q[self.base_w]
-        # orientation_error = 1 - jnp.square(
-        #     jnp.dot(base_w, self.desired_orientation),
-        # )
-        # reward_orientation = -self.orientation_weight * orientation_error
-
         # Barkour Formulation:
         base_w = q[self.base_w]
         up = jnp.array([0.0, 0.0, 1.0])
@@ -380,17 +380,34 @@ class Unitree(PipelineEnv):
         )
 
         # Velocity Tracking:
-        # TODO(jeh15): Change to tracking a desired velocity vector -> norm(vel_des - vel)
         linear_velocity = qd[self.base_x]
         angular_velocity = qd[self.base_dw]
-        reward_linear_velocity = self.linear_velocity_weight * kernel(
-            linear_velocity,
-        )
-        reward_angular_velocity = self.angular_velocity_weight * kernel(
-            angular_velocity,
+
+        # Forward Velocity Tracking:
+        base_frame_velocity = rotate(linear_velocity, quat_inv(base_w))
+        linear_velocity_error = state.info['command'][:2] - base_frame_velocity[:2]
+        forward_velocity_reward = self.forward_velocity_weight * kernel(
+            linear_velocity_error,
         )
 
-        # Control regularization:
+        # Turning Velocity Tracking:
+        base_frame_angular_velocity = rotate(
+            angular_velocity, quat_inv(base_w),
+        )
+        turning_velocity_error = state.info['command'][-1] - base_frame_angular_velocity[-1]
+        turning_velocity_reward = self.turning_velocity_weight * kernel(
+            turning_velocity_error,
+        )
+
+        # Base Regularization:
+        reward_linear_velocity = -self.linear_velocity_weight * jnp.linalg.norm(
+            linear_velocity[-1],
+        )
+        reward_angular_velocity = -self.angular_velocity_weight * jnp.linalg.norm(
+            angular_velocity[:2],
+        )
+
+        # Control Regularization:
         action_rate = action - state.metrics['previous_action']
         reward_action_rate = -self.action_rate_weight * jnp.linalg.norm(
             action_rate
@@ -443,6 +460,8 @@ class Unitree(PipelineEnv):
         # Reward Function:
         reward = (
             reward_survival
+            + forward_velocity_reward
+            + turning_velocity_reward
             + reward_action_rate
             + reward_pose
             + reward_orientation
@@ -460,6 +479,8 @@ class Unitree(PipelineEnv):
         reward = jnp.array([reward])
         reward = jnp.clip(reward, -1.0 * self.dt, 1000.0)
         metrics = {
+            'reward_forward_velocity': jnp.array([forward_velocity_reward]),
+            'reward_turning_velocity': jnp.array([turning_velocity_reward]),
             'reward_linear_velocity': jnp.array([reward_linear_velocity]),
             'reward_angular_velocity': jnp.array([reward_angular_velocity]),
             'reward_action_rate': jnp.array([reward_action_rate]),
@@ -493,6 +514,7 @@ class Unitree(PipelineEnv):
         state.info['state_i-4'] = state.info['state_i-3']
         model_input = [state.info[k] for k in state.info if k in input_keys]
         model_input = jnp.asarray(model_input).flatten()
+        model_input = jnp.concatenate([state.info['command'], model_input])
         state.info['model_input'] = model_input
         state.info['rng_key'] = magnitude_rng
         state.info['iteration'] += 1
@@ -511,11 +533,44 @@ class Unitree(PipelineEnv):
 
     @property
     def observation_size(self):
-        return self.sys.q_size() + self.sys.qd_size()
+        base_linear_velocity_size = 3
+        base_angular_velocity_size = 3
+        projected_gravity_size = 3
+        joint_position_size = self.sys.q_size() - 7
+        joint_velocity_size = self.sys.qd_size() - 6
+        return (
+            base_linear_velocity_size
+            + base_angular_velocity_size
+            + projected_gravity_size
+            + joint_position_size
+            + joint_velocity_size
+        )
 
-    @property
-    def step_dt(self):
-        return self.dt * self._n_frames
+    def _get_observation(self, pipeline_state: base.State) -> jnp.ndarray:
+        # Base Index:
+        base_dx = jnp.array([0, 1, 2])
+        base_dw = jnp.array([3, 4, 5])
+        # Projected Gravity Calculation:
+        base_inverse_quaternion = quat_inv(pipeline_state.x.rot[0])
+        projected_gravity = rotate(
+            jnp.array([0.0, 0.0, -1.0]), base_inverse_quaternion,
+        )
+        # Observations:
+        base_height = jnp.array([pipeline_state.q[2]])
+        base_linear_velocity = pipeline_state.qd[base_dx]
+        base_angular_velocity = pipeline_state.qd[base_dw]
+        joint_positions = pipeline_state.q[7:]
+        joint_velocities = pipeline_state.qd[6:]
+
+        observation = jnp.concatenate([
+            base_height,
+            base_linear_velocity,
+            base_angular_velocity,
+            projected_gravity,
+            joint_positions,
+            joint_velocities,
+        ])
+        return observation
 
     def _get_states(self, pipeline_state: base.State) -> jnp.ndarray:
         return jnp.concatenate([pipeline_state.q, pipeline_state.qd])

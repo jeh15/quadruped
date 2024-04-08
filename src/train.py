@@ -20,7 +20,6 @@ import control_utilities
 import checkpoint
 
 import unitree
-# import unitree_brax as unitree
 
 jax.config.update("jax_enable_x64", True)
 
