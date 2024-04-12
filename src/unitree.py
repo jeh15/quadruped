@@ -5,14 +5,14 @@ from brax.envs.base import PipelineEnv, State
 from brax.io import mjcf
 from brax.kinematics import forward
 from brax.base import System
-from brax.math import rotate, quat_inv
+from brax.math import rotate, quat_inv, normalize
 
 import jax
 import jax.numpy as jnp
 
 from ml_collections import config_dict
 
-from control_utilities import remap_controller
+from control_utilities import remap_controller, pd_torque_controller
 
 # Configuration:
 config = config_dict.ConfigDict()
@@ -37,8 +37,11 @@ class Unitree(PipelineEnv):
         sys = mjcf.load(self.filepath)
 
         # Set Simulation and Backend Parameters:
-        self._dt = 0.01
-        sys = sys.tree_replace({'opt.timestep': 0.001, 'dt': 0.001})
+        # self._dt = 0.01
+        # sys = sys.tree_replace({'opt.timestep': 0.001, 'dt': 0.001})
+
+        self._dt = 0.02
+        sys = sys.tree_replace({'opt.timestep': 0.002, 'dt': 0.002})
 
         n_frames = kwargs.pop('n_frames', int(self._dt / sys.opt.timestep))
         super().__init__(sys, backend=backend, n_frames=n_frames)
@@ -48,16 +51,9 @@ class Unitree(PipelineEnv):
         # State indices to joints that can be actuated:
         self.motor_id = sys.actuator.qd_id
 
+        self.torque_control = False
+
         # Default States:
-        # self.initial_q = jnp.array(
-        #     [
-        #         0, 0, 0.27, 1, 0, 0, 0,
-        #         0, 0.9, -1.8,
-        #         0, 0.9, -1.8,
-        #         0, 0.9, -1.8,
-        #         0, 0.9, -1.8,
-        #     ]
-        # )
         self.initial_q = jnp.array(
             [
                 0, 0, 0.254, 1, 0, 0, 0,
@@ -77,13 +73,30 @@ class Unitree(PipelineEnv):
         self.base_control = jnp.array([
             0, 0.9, -1.8, 0, 0.9, -1.8, 0, 0.9, -1.8, 0, 0.9, -1.8,
         ])
+        self.qd_limit = 21.0  # rad/s
 
         # Remap Base Control for Model Input:
         self.action_range = jnp.tile(
             A=jnp.array([-1.0, 1.0]),
             reps=(self.action_size, 1),
         )
-        self.control_range = self.sys.actuator_ctrlrange
+        # If using position control:
+        # self.control_range = self.sys.actuator_ctrlrange
+        # If using torque control:
+        self.control_range = jnp.array([
+            [-0.802851, 0.802851],
+            [-1.0472, 4.18879],
+            [-2.69653, -0.916298],
+            [-0.802851, 0.802851],
+            [-1.0472, 4.18879],
+            [-2.69653, -0.916298],
+            [-0.802851, 0.802851],
+            [-1.0472, 4.18879],
+            [-2.69653, -0.916298],
+            [-0.802851, 0.802851],
+            [-1.0472, 4.18879],
+            [-2.69653, -0.916298],
+        ])
         self.base_control_remap = remap_controller(
             jnp.expand_dims(self.base_control, axis=0),
             self.control_range,
@@ -113,7 +126,7 @@ class Unitree(PipelineEnv):
         self.foot_radius = 0.025
         self.reset_noise = 0.05
         self.disturbance_range = 1.0
-        self.push_range = 0.0
+        self.push_range = 0.05
         self.kick_range = 1.0
 
         # Set Configuration:
@@ -123,32 +136,34 @@ class Unitree(PipelineEnv):
         self.min_knee_z, self.max_knee_z = 0.05, 0.3
 
         # Command Tracking - Scaled with kernel function:
-        self.forward_velocity_weight = 1.0 * self.dt
-        self.turning_velocity_weight = 0.5 * self.dt
+        self.forward_velocity_weight = 2.0 * self.dt
+        self.turning_velocity_weight = 1.0 * self.dt
+
+        # Foot Air Time:
+        self.reward_air_time = 2.0 * self.dt
 
         # Penalize for large base velocities:
-        self.linear_velocity_weight = 4.0 * self.dt
+        self.linear_velocity_weight = 2.0 * self.dt
         self.angular_velocity_weight = 0.05 * self.dt
 
         # Base Height and Orientation:
-        self.pose_weight = 1.0 * self.dt
+        self.pose_weight = 5.0 * self.dt
         self.orientation_weight = 5.0 * self.dt
 
         # Feet and Joint Range:
-        self.foot_height_weight = 0.0 * self.dt
         self.slip_weight = 1.0 * self.dt
-        self.abduction_range_weight = 1.0 * self.dt
+        self.abduction_range_weight = 0.1 * self.dt
         self.hip_range_weight = 0.5 * self.dt
         self.knee_range_weight = 0.5 * self.dt
 
         # Regularization:
-        self.reward_pose_regularization = 0.01 * self.dt
-        self.velocity_regularization_weight = 0.001 * self.dt
-        self.acceleration_regularization_weight = 0.001 * self.dt
-        self.action_rate_weight = 0.25 * self.dt
-        self.control_weight = 0.0005 * self.dt
-        self.continuation_weight = 10.0 * self.dt
-        self.termination_weight = -100.0 * self.dt
+        self.reward_pose_regularization = 0.0 * self.dt
+        self.velocity_regularization_weight = 0.0 * self.dt
+        self.acceleration_regularization_weight = 2.5e-7 * self.dt
+        self.action_rate_weight = 0.05 * self.dt
+        self.control_weight = 2e-4 * self.dt
+        self.continuation_weight = 0.0 * self.dt
+        self.termination_weight = 0.0 * self.dt
 
     def reset(self, rng: jax.Array) -> State:
         """Resets the environment to an initial state."""
@@ -223,6 +238,8 @@ class Unitree(PipelineEnv):
             'iteration': 1,
             'rng_key': rng,
             'command': command,
+            'last_contact': jnp.zeros(4, dtype=bool),
+            'feet_air_time': jnp.zeros(4),
         }
 
         # Reward Function:
@@ -237,7 +254,7 @@ class Unitree(PipelineEnv):
             'reward_action_rate': zero,
             'reward_pose': zero,
             'reward_orientation': zero,
-            'reward_foot_height': jnp.zeros((4,)),
+            'reward_air_time': zero,
             'reward_slip': zero,
             'reward_abduction_range': zero,
             'reward_hip_range': jnp.zeros((4,)),
@@ -319,9 +336,22 @@ class Unitree(PipelineEnv):
         state = state.tree_replace({'pipeline_state.qvel': qvel})
 
         # Physics Step:
+        # Process Action:
+        if self.torque_control:
+            torque = pd_torque_controller(
+                action,
+                state.pipeline_state.q[7:],
+                state.pipeline_state.qd[6:],
+                self.initial_q[7:],
+                40.0,
+                0.5,
+                0.25,
+            )
+        else:
+            torque = action
         pipeline_state = self.pipeline_step(
             state.pipeline_state,
-            action,
+            torque,
         )
 
         # Observations and States:
@@ -331,14 +361,18 @@ class Unitree(PipelineEnv):
         q_joints = pipeline_state.q[7:]
         qd_joints = pipeline_state.qd[6:]
 
-        # Foot Contact: (TODO: Change to air time)
+        # Feet Air Time:
         foot_positions = pipeline_state.site_xpos
         foot_contact = foot_positions[:, -1] - self.foot_radius
         contact = foot_contact < 1e-3
-        reward_foot_height = jnp.where(
-            contact,
-            self.foot_height_weight,
-            -self.foot_height_weight * jnp.linalg.norm(foot_positions[:, -1]),
+        contact_filter = contact | state.info['last_contact']
+        first_contact = (state.info['feet_air_time'] > 0) * contact_filter
+        state.info['feet_air_time'] += self.dt
+        reward_air_time = self.reward_air_time * jnp.sum(
+            (state.info['feet_air_time'] - 0.5) * first_contact,
+        )
+        reward_air_time *= (
+            normalize(state.info['command'][:2])[1] > 0.05
         )
 
         # Foot Slip:
@@ -351,6 +385,7 @@ class Unitree(PipelineEnv):
         slip_error = foot_velocity[:, :2] * contact_mask
         reward_slip = -self.slip_weight * jnp.linalg.norm(slip_error)
 
+        # Limit Constraints:
         # Abduction Range:
         abduction_joint_idx = jnp.array([7, 10, 13, 16])
         abduction_q = q[abduction_joint_idx]
@@ -381,6 +416,9 @@ class Unitree(PipelineEnv):
             -self.knee_range_weight,
             self.knee_range_weight,
         )
+
+        # Joint Velocity Limit: (TODO: Implement to smooth out the control)
+        # joint_velocity_limit = jnp.abs(qd_joints) - self.qd_limit
 
         # Base Pose: Maintain Z Height
         base_x = q[self.base_x]
@@ -434,11 +472,17 @@ class Unitree(PipelineEnv):
             -self.velocity_regularization_weight
             * jnp.linalg.norm(qd_joints)
         )
-        qdd_joints = (qd_joints - state.metrics['previous_qd']) / self.dt
-        reward_acceleration_regularization = (
-            -self.acceleration_regularization_weight
-            * jnp.linalg.norm(qdd_joints)
-        )
+        if self.torque_control:
+            reward_acceleration_regularization = (
+                -self.control_weight * jnp.linalg.norm(torque)
+            )
+        else:
+            qdd_joints = (qd_joints - state.metrics['previous_qd']) / self.dt
+            reward_acceleration_regularization = (
+                -self.acceleration_regularization_weight
+                * jnp.linalg.norm(qdd_joints)
+            )
+
         reward_pose_regularization = (
             -self.reward_pose_regularization * jnp.linalg.norm(
                 q_joints - self.initial_joint
@@ -481,7 +525,7 @@ class Unitree(PipelineEnv):
             + reward_action_rate
             + reward_pose
             + reward_orientation
-            + jnp.sum(reward_foot_height)
+            + reward_air_time
             + reward_slip
             + reward_linear_velocity
             + reward_angular_velocity
@@ -492,9 +536,10 @@ class Unitree(PipelineEnv):
             + jnp.sum(reward_hip_range)
             + reward_abduction_range
         )
+        # Clip negative reward:
+        reward = jnp.clip(reward, 0.0, 1000.0)
         reward = jnp.array([reward])
-        reward = jnp.clip(reward, -1.0 * self.dt, 1000.0)
-        # reward = jnp.clip(reward, 0.0, 1000.0)
+
         metrics = {
             'reward_forward_velocity': jnp.array([forward_velocity_reward]),
             'reward_turning_velocity': jnp.array([turning_velocity_reward]),
@@ -503,7 +548,7 @@ class Unitree(PipelineEnv):
             'reward_action_rate': jnp.array([reward_action_rate]),
             'reward_pose': jnp.array([reward_pose]),
             'reward_orientation': jnp.array([reward_orientation]),
-            'reward_foot_height': reward_foot_height,
+            'reward_air_time': jnp.array([reward_air_time]),
             'reward_slip': jnp.array([reward_slip]),
             'reward_abduction_range': jnp.array([reward_abduction_range]),
             'reward_hip_range': reward_hip_range,
@@ -524,6 +569,7 @@ class Unitree(PipelineEnv):
 
         # Model input data:
         input_keys = ['state_i', 'state_i-1', 'state_i-2', 'state_i-3', 'state_i-4']
+        # state.info['state_i'] = jnp.concatenate([obs, action])
         state.info['state_i'] = jnp.concatenate([obs, action])
         state.info['state_i-1'] = state.info['state_i']
         state.info['state_i-2'] = state.info['state_i-1']
@@ -535,6 +581,10 @@ class Unitree(PipelineEnv):
         state.info['model_input'] = model_input
         state.info['rng_key'] = magnitude_rng
         state.info['iteration'] += 1
+
+        # Update Contact Information:
+        state.info['feet_air_time'] *= ~contact_filter
+        state.info['last_contact'] = contact
 
         return state.replace(
             pipeline_state=pipeline_state,

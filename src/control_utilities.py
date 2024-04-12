@@ -47,3 +47,57 @@ def remap_controller(
     )
     clipped_value = jnp.clip(remapped_value, target_range[0], target_range[1])
     return clipped_value
+
+
+# Position Based Controller:
+@jax.jit
+@functools.partial(
+    jax.vmap, in_axes=(0, 0, 0, None, None, None), out_axes=0,
+)
+def pd_controller(
+    q_desired: jax.Array,
+    q: jax.Array,
+    qd: jax.Array,
+    kp: jax.typing.ArrayLike,
+    kd: jax.typing.ArrayLike,
+    control_limit: jax.Array,
+) -> jnp.ndarray:
+    # Error Calculation:
+    position_error = q_desired - q
+    velocity_error = -qd
+    # PD Controller:
+    u = kp * position_error + kd * velocity_error
+    # Saturate Action:
+    u = jnp.clip(u, -control_limit, control_limit)
+    u = q + u
+    return u
+
+
+@jax.jit
+def pd_torque_controller(
+    action: jax.Array,
+    q: jax.Array,
+    qd: jax.Array,
+    q_default: jax.Array,
+    kp: jax.Array,
+    kd: jax.Array,
+    action_scale: jax.Array,
+) -> jnp.ndarray:
+    # Calculate Scaled Action and Error:
+    scaled_action = action_scale * (action - q_default)
+    position_error = q_default - q
+    velocity_error = -qd
+    # PD Controller:
+    u = kp * (scaled_action + position_error) + kd * velocity_error
+    u = jnp.clip(u, -33.5, 33.5)
+    return u
+
+
+@jax.jit
+def calculate_control_saturation(
+    control_range: jnp.ndarray,
+    scale: float,
+) -> jnp.ndarray:
+    max_range = jnp.abs(control_range[:, -1] - control_range[:, 0])
+    saturation_limit = max_range / scale
+    return saturation_limit

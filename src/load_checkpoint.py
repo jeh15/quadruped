@@ -102,7 +102,7 @@ def main(argv=None):
         A=jnp.array([-1.0, 1.0]),
         reps=(env.action_size, 1),
     )
-    control_range = env.sys.actuator_ctrlrange
+    control_range = env.control_range
 
     # Create Checkpoint Manager:
     checkpoint_metadata = checkpoint.default_checkpoint_metadata()
@@ -148,14 +148,6 @@ def main(argv=None):
             action_range,
             control_range,
         )
-        # kp = 0.5
-        # kd = 0.01
-        # control_input = (
-        #     states.pipeline_state.q[7:]
-        #     + kp * (control_input - states.pipeline_state.q[7:])
-        #     - kd * (states.pipeline_state.qd[6:])
-        # )
-
         next_states = step_fn(
             states,
             jnp.squeeze(control_input),

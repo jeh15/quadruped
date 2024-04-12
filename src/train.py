@@ -67,7 +67,7 @@ def main(argv=None):
     batch_iterator_length = int(batch_run_time / env.dt)
     episode_iterator_length = int(episode_run_time / batch_run_time)
     episode_length = int(episode_run_time / env.dt)
-    num_envs = 1024 * 4
+    num_envs = 1024
     env = wrap(
         env=env,
         episode_length=episode_length,
@@ -127,7 +127,7 @@ def main(argv=None):
         A=jnp.array([-1.0, 1.0]),
         reps=(env.action_size, 1),
     )
-    control_range = env.sys.actuator_ctrlrange
+    control_range = env.control_range
 
     iteration_step = 0
     if FLAGS.load_checkpoint is True:
@@ -143,6 +143,8 @@ def main(argv=None):
     training_length = 300
     key, env_key = jax.random.split(initial_key)
     checkpoint_enabled = True
+    reward_total = 0.0
+    reward_iteration = 0
     for iteration in range(training_length):
         # Episode Loop:
         # Different randomization for each environment:
@@ -208,6 +210,7 @@ def main(argv=None):
                 state_history.append(states)
 
             iteration_step += 1
+            reward_iteration += 1
 
             # Convert to Jax Arrays:
             states_episode = jnp.swapaxes(
@@ -237,6 +240,11 @@ def main(argv=None):
             std_episode = jnp.swapaxes(
                 jnp.asarray(std_episode), axis1=1, axis2=0,
             )
+
+            reward_total += np.mean(
+                jnp.sum(rewards_episode, axis=1), axis=0,
+            )
+            average_reward_total = reward_total / reward_iteration
 
             # No Gradient Calculation: (This is unneeded)
             model_input = states.info['model_input']
@@ -294,12 +302,20 @@ def main(argv=None):
                 best_iteration = iteration
 
             current_learning_rate = model_state.opt_state.hyperparams['learning_rate']
+            # print(
+            #     f'Epoch: {iteration_step} \t' +
+            #     f'Average Reward: {average_reward} \t' +
+            #     f'Loss: {loss} \t' +
+            #     f'Average Value: {average_value} \t' +
+            #     f'Learning Rate: {current_learning_rate}',
+            # )
+
             print(
                 f'Epoch: {iteration_step} \t' +
                 f'Average Reward: {average_reward} \t' +
                 f'Loss: {loss} \t' +
                 f'Average Value: {average_value} \t' +
-                f'Learning Rate: {current_learning_rate}',
+                f'Avg. Total Reward: {average_reward_total}',
             )
 
             # Reset for next policy run:

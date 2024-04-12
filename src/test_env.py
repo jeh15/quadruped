@@ -22,6 +22,12 @@ def main(argv=None):
     batch_run_time = 0.5  # Seconds
     episode_length = int(episode_run_time / env.dt)
 
+    control_range = env.sys.actuator_ctrlrange
+    control_limit = control_utilities.calculate_control_saturation(
+        control_range=control_range,
+        scale=5.0,
+    )
+
     reset_fn = jax.jit(env.reset)
     step_fn = jax.jit(env.step)
     # reset_fn = env.reset
@@ -35,7 +41,13 @@ def main(argv=None):
 
     start_time = time.time()
     for i in range(episode_length):
-        ctrl_input = env.base_control
+        idx = np.array([0, 1, 2])
+        ctrl_input = np.array(env.base_control)
+        ctrl_input[idx] = (
+            np.array(env.base_control)[idx]
+            + np.array(env.control_range[:, -1][idx])
+            * np.clip(np.sin(state.pipeline_state.time), 0, 1)
+        )
         if i % 100 == 0:
             print(f'Control Input: {ctrl_input}')
         state = step_fn(state, jnp.squeeze(ctrl_input))
