@@ -8,8 +8,7 @@ from brax.io import html
 
 import time
 
-# import unitree_brax as unitree
-import unitree
+import barkour
 import control_utilities
 
 jax.config.update("jax_enable_x64", True)
@@ -17,16 +16,12 @@ np.set_printoptions(precision=4)
 
 
 def main(argv=None):
-    env = unitree.Unitree(backend='mjx')
+    env = barkour.BarkourEnv()
     episode_run_time = 10.0  # Seconds
     batch_run_time = 0.5  # Seconds
     episode_length = int(episode_run_time / env.dt)
 
     control_range = env.sys.actuator_ctrlrange
-    control_limit = control_utilities.calculate_control_saturation(
-        control_range=control_range,
-        scale=5.0,
-    )
 
     reset_fn = jax.jit(env.reset)
     step_fn = jax.jit(env.step)
@@ -41,13 +36,7 @@ def main(argv=None):
 
     start_time = time.time()
     for i in range(episode_length):
-        idx = np.array([0, 1, 2])
-        ctrl_input = np.array(env.base_control)
-        ctrl_input[idx] = (
-            np.array(env.base_control)[idx]
-            + np.array(env.control_range[:, -1][idx])
-            * np.clip(np.sin(state.pipeline_state.time), 0, 1)
-        )
+        ctrl_input = env._default_ctrl
         if i % 100 == 0:
             print(f'Control Input: {ctrl_input}')
         state = step_fn(state, jnp.squeeze(ctrl_input))
