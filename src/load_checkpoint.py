@@ -15,7 +15,7 @@ import control_utilities
 import checkpoint
 import render_utilities
 
-import unitree
+import barkour
 
 jax.config.update('jax_default_device', jax.devices('cpu')[0])
 jax.config.update("jax_enable_x64", True)
@@ -57,7 +57,7 @@ def main(argv=None):
 
     # Create Environment:
     num_envs = 1
-    env = unitree.Unitree(backend='mjx')
+    env = barkour.BarkourEnv()
     episode_run_time = 20.0  # Seconds
     episode_length = int(episode_run_time / env.dt)
 
@@ -73,7 +73,7 @@ def main(argv=None):
         action_space=env.action_size,
     )
 
-    model_input_size = (num_envs, states.info['model_input'].shape[-1])
+    model_input_size = (num_envs, jnp.shape(states.obs)[0])
     initial_params = init_params(
         module=network,
         input_size=model_input_size,
@@ -102,7 +102,7 @@ def main(argv=None):
         A=jnp.array([-1.0, 1.0]),
         reps=(env.action_size, 1),
     )
-    control_range = env.control_range
+    control_range = env.sys.actuator_ctrlrange
 
     # Create Checkpoint Manager:
     checkpoint_metadata = checkpoint.default_checkpoint_metadata()
@@ -130,7 +130,7 @@ def main(argv=None):
     actions = jnp.zeros((env.action_size,))
     for environment_step in range(episode_length):
         key, env_key = jax.random.split(env_key)
-        model_input = states.info['model_input']
+        model_input = states.obs
         model_input = jnp.expand_dims(model_input, axis=0)
         mean, std, values = model_utilities.forward_pass(
             model_params=model_state.params,
@@ -146,6 +146,11 @@ def main(argv=None):
         control_input = control_utilities.remap_controller(
             actions,
             action_range,
+            control_range,
+        )
+        control_input = control_utilities.relative_controller(
+            control_input,
+            env._default_pose,
             control_range,
         )
         next_states = step_fn(

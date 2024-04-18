@@ -101,3 +101,22 @@ def calculate_control_saturation(
     max_range = jnp.abs(control_range[:, -1] - control_range[:, 0])
     saturation_limit = max_range / scale
     return saturation_limit
+
+
+# Relative Position Based Controller:
+@jax.jit
+@functools.partial(
+    jax.vmap, in_axes=(0, None, None), out_axes=0,
+)
+def relative_controller(
+    q_desired: jax.Array,
+    q_default: jax.Array,
+    control_limit: jax.Array,
+) -> jnp.ndarray:
+    """
+        Remaps action from Desired position to 
+        Desired Position Relative to Default Position
+    """
+    clipped_action = jnp.clip(q_desired, control_limit[:, 0], control_limit[:, -1])
+    action = clipped_action - q_default
+    return action

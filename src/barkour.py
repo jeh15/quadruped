@@ -331,7 +331,9 @@ class BarkourEnv(PipelineEnv):
             x.pos[self._torso_idx - 1])[1]
         state.metrics.update(state.info['rewards'])
 
-        done = jnp.float32(done)
+        # done = jnp.float32(done)
+        done = jnp.float64(done)
+
         state = state.replace(
             pipeline_state=pipeline_state, obs=obs, reward=reward, done=done
         )

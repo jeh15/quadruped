@@ -1,5 +1,5 @@
 import os
-import pickle
+import functools
 from absl import app, flags
 import time
 
@@ -19,7 +19,7 @@ import statistics_utilities
 import control_utilities
 import checkpoint
 
-import unitree
+import barkour
 
 jax.config.update("jax_enable_x64", True)
 
@@ -61,21 +61,30 @@ def main(argv=None):
     best_iteration = 0
 
     # Create Environment:
-    env = unitree.Unitree(backend='mjx')
+    env = barkour.BarkourEnv()
     episode_run_time = 20.0  # Seconds
     batch_run_time = 0.5  # Seconds
     batch_iterator_length = int(batch_run_time / env.dt)
     episode_iterator_length = int(episode_run_time / batch_run_time)
     episode_length = int(episode_run_time / env.dt)
-    num_envs = 1024
+    num_envs = 1024 * 4
     env = wrap(
         env=env,
         episode_length=episode_length,
         action_repeat=1,
+        randomization_fn=functools.partial(
+            barkour.domain_randomize,
+            rng=jax.random.split(
+                jax.random.PRNGKey(0), num_envs
+            ),
+        )
     )
 
     step_fn = jax.jit(env.step)
     reset_fn = jax.jit(env.reset)
+
+    # step_fn = env.step
+    # reset_fn = env.reset
 
     # Model initialization:
     initial_key = jax.random.PRNGKey(key_seed)
@@ -86,8 +95,8 @@ def main(argv=None):
         action_space=env.action_size,
     )
 
-    # Model Input: obs + action
-    model_input_size = (jnp.shape(states.info['model_input']))
+    # Model Input:
+    model_input_size = (jnp.shape(states.obs))
     initial_params = init_params(
         module=network,
         input_size=model_input_size,
@@ -127,7 +136,7 @@ def main(argv=None):
         A=jnp.array([-1.0, 1.0]),
         reps=(env.action_size, 1),
     )
-    control_range = env.control_range
+    control_range = env.sys.actuator_ctrlrange
 
     iteration_step = 0
     if FLAGS.load_checkpoint is True:
@@ -147,10 +156,7 @@ def main(argv=None):
     reward_iteration = 0
     for iteration in range(training_length):
         # Episode Loop:
-        # Different randomization for each environment:
         reset_key = jax.random.split(env_key, num=num_envs)
-        # Same randomization for each environment:
-        # reset_key = jnp.zeros((num_envs, 2), dtype=jnp.uint32)
         states = reset_fn(reset_key)
         state_history = [states]
         model_input_episode = []
@@ -166,7 +172,7 @@ def main(argv=None):
         for environment_step in range(episode_iterator_length):
             for batch_step in range(batch_iterator_length):
                 key, env_key = jax.random.split(env_key)
-                model_input = states.info['model_input']
+                model_input = states.obs
                 statistics_state = statistics_utilities.update(
                     state=statistics_state,
                     x=model_input,
@@ -185,6 +191,11 @@ def main(argv=None):
                 control_input = control_utilities.remap_controller(
                     actions,
                     action_range,
+                    control_range,
+                )
+                control_input = control_utilities.relative_controller(
+                    control_input,
+                    env._default_pose,
                     control_range,
                 )
                 next_states = step_fn(
@@ -247,7 +258,7 @@ def main(argv=None):
             average_reward_total = reward_total / reward_iteration
 
             # No Gradient Calculation: (This is unneeded)
-            model_input = states.info['model_input']
+            model_input = states.obs
             _, _, values = model_utilities.forward_pass(
                 model_params=model_state.params,
                 apply_fn=model_state.apply_fn,
