@@ -67,7 +67,8 @@ def main(argv=None):
     batch_iterator_length = int(batch_run_time / env.dt)
     episode_iterator_length = int(episode_run_time / batch_run_time)
     episode_length = int(episode_run_time / env.dt)
-    num_envs = 1024 * 4
+    num_envs = 1024
+    num_minibatches = 32
     env = wrap(
         env=env,
         episode_length=episode_length,
@@ -95,8 +96,12 @@ def main(argv=None):
         action_space=env.action_size,
     )
 
+    # network = model.ActorCriticNetwork(
+    #     action_space=env.action_size,
+    # )
+
     # Model Input:
-    model_input_size = (jnp.shape(states.obs))
+    model_input_size = (1, jnp.shape(states.obs)[-1])
     initial_params = init_params(
         module=network,
         input_size=model_input_size,
@@ -280,7 +285,7 @@ def main(argv=None):
             )
 
             # Update Function:
-            model_state, loss = optimization_utilities.train_step(
+            model_state, metrics = optimization_utilities.train_step(
                 model_state,
                 statistics_state,
                 model_input_episode,
@@ -291,7 +296,11 @@ def main(argv=None):
                 mean_episode,
                 std_episode,
                 ppo_steps,
+                num_minibatches,
+                key,
             )
+            loss, kl, learning_rate = metrics
+            loss = jnp.mean(loss)
 
             average_reward = np.mean(
                 np.sum(
@@ -313,21 +322,21 @@ def main(argv=None):
                 best_iteration = iteration
 
             current_learning_rate = model_state.opt_state.hyperparams['learning_rate']
-            # print(
-            #     f'Epoch: {iteration_step} \t' +
-            #     f'Average Reward: {average_reward} \t' +
-            #     f'Loss: {loss} \t' +
-            #     f'Average Value: {average_value} \t' +
-            #     f'Learning Rate: {current_learning_rate}',
-            # )
-
             print(
                 f'Epoch: {iteration_step} \t' +
                 f'Average Reward: {average_reward} \t' +
                 f'Loss: {loss} \t' +
                 f'Average Value: {average_value} \t' +
-                f'Avg. Total Reward: {average_reward_total}',
+                f'Learning Rate: {current_learning_rate}',
             )
+
+            # print(
+            #     f'Epoch: {iteration_step} \t' +
+            #     f'Average Reward: {average_reward} \t' +
+            #     f'Loss: {loss} \t' +
+            #     f'Average Value: {average_value} \t' +
+            #     f'Avg. Total Reward: {average_reward_total}',
+            # )
 
             # Reset for next policy run:
             state_history = [states]
