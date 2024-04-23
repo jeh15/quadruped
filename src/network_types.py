@@ -16,7 +16,7 @@ class Transition(NamedTuple):
     observation: jnp.ndarray
     action: jnp.ndarray
     reward: jnp.ndarray
-    termination_mask: jnp.ndarray
+    termination: jnp.ndarray
     next_observation: jnp.ndarray
     extras: Mapping[str, Any]
 

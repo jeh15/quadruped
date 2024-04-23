@@ -59,12 +59,12 @@ def loss_function(
     ppo_networks: ppo_networks.PPONetworks,
     normalization_params: Any,
     data: types.Transition,
-    rng: types.PRNGKey,
     clip_coef: float = 0.2,
     value_coef: float = 0.5,
     entropy_coef: float = 0.01,
     gamma: float = 0.99,
     gae_lambda: float = 0.95,
+    normalize_advantages: bool = False,
 ) -> Tuple[jnp.ndarray, types.Metrics]:
     # Unpack PPO networks:
     action_distribution = ppo_networks.action_distribution
@@ -85,7 +85,61 @@ def loss_function(
     )
 
     # Be careful with these definitions:
+    # Create masks for truncation and termination:
+    rewards = data.reward
     truncation_mask = 1 - data.extras['state_extras']['truncation']
-    termination_mask = data.termination_mask * truncation_mask
+    termination_mask = 1 - data.termination
+    termination_mask *= truncation_mask
 
+    # Calculate GAE:
+    vs, advantages = calculate_gae(
+        rewards=rewards,
+        values=values,
+        bootstrap_value=bootstrap_values,
+        truncation_mask=truncation_mask,
+        termination_mask=termination_mask,
+        gamma=gamma,
+        gae_lambda=gae_lambda,
+    )
+    if normalize_advantages:
+        advantages = (
+            (advantages - jnp.mean(advantages)) / (jnp.std(advantages) + 1e-8)
+        )
 
+    # Calculate ratios:
+    transformed_distribution = action_distribution.create_distribution(logits)
+    log_probs = transformed_distribution.log_prob(data.extras['policy_data']['raw_action'])
+    log_prob = jnp.sum(log_probs, axis=-1)
+    previous_log_prob = data.extras['policy_data']['log_prob']
+    log_ratios = log_prob - previous_log_prob
+    ratios = jnp.exp(log_ratios)
+
+    # Policy Loss:
+    unclipped_loss = ratios * advantages
+    clipped_loss = advantages * jnp.clip(
+        ratios,
+        1.0 - clip_coef,
+        1.0 + clip_coef,
+    )
+    policy_loss = -jnp.mean(jnp.minimum(unclipped_loss, clipped_loss))
+
+    # Value Loss:
+    value_loss = value_coef * jnp.mean(
+        jnp.square(vs - values),
+    )
+
+    # Entropy Loss:
+    entropys = transformed_distribution.entropy()
+    entropy = jnp.sum(entropys, axis=-1)
+    entropy_loss = -entropy_coef * jnp.mean(
+        entropy,
+    )
+
+    loss = policy_loss + value_loss + entropy_loss
+
+    return loss, {
+        "loss": loss,
+        "policy_loss": policy_loss,
+        "value_loss": value_loss,
+        "entropy_loss": entropy_loss,
+    }
