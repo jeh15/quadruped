@@ -6,8 +6,8 @@ import jax
 import jax.numpy as jnp
 from flax import linen as nn
 
-# Custom network_types:
-import network_types
+# Custom types:
+import src.network_types as types
 ActivationFn = Callable[[jnp.ndarray], jnp.ndarray]
 Initializer = Callable[..., Any]
 
@@ -45,7 +45,7 @@ class MLP(nn.Module):
 def make_policy_network(
     input_size: int,
     output_size: int,
-    input_normalization_fn: network_types.InputNormalizationFn = network_types
+    input_normalization_fn: types.InputNormalizationFn = types
     .identity_normalization_fn,
     layer_sizes: Sequence[int] = (256, 256),
     activation: ActivationFn = nn.tanh,
@@ -74,7 +74,7 @@ def make_policy_network(
 
 def make_value_network(
     input_size: int,
-    input_normalization_fn: network_types.InputNormalizationFn = network_types
+    input_normalization_fn: types.InputNormalizationFn = types
     .identity_normalization_fn,
     layer_sizes: Sequence[int] = (256, 256),
     activation: ActivationFn = nn.tanh,

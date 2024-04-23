@@ -9,6 +9,16 @@ NetworkParams = Tuple[NomralizationParams, Params]
 
 Action = jnp.ndarray
 PolicyData = Mapping[str, Any]
+Metrics = Mapping[str, Any]
+
+
+class Transition(NamedTuple):
+    observation: jnp.ndarray
+    action: jnp.ndarray
+    reward: jnp.ndarray
+    termination_mask: jnp.ndarray
+    next_observation: jnp.ndarray
+    extras: Mapping[str, Any]
 
 
 class Policy(Protocol):

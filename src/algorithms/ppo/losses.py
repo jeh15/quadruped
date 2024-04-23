@@ -5,6 +5,7 @@ import jax
 import jax.numpy as jnp
 
 from src.algorithms.ppo import networks as ppo_networks
+from src import network_types as types
 
 
 def calculate_gae(
@@ -53,43 +54,38 @@ def calculate_gae(
     return vs, advantages
 
 
-def test(argv=None):
-    # Test Case Import:
-    from brax.training.agents.ppo.losses import compute_gae
+def loss_function(
+    params: PPONetworkParams,
+    ppo_networks: ppo_networks.PPONetworks,
+    normalization_params: Any,
+    data: types.Transition,
+    rng: types.PRNGKey,
+    clip_coef: float = 0.2,
+    value_coef: float = 0.5,
+    entropy_coef: float = 0.01,
+    gamma: float = 0.99,
+    gae_lambda: float = 0.95,
+) -> Tuple[jnp.ndarray, types.Metrics]:
+    # Unpack PPO networks:
+    action_distribution = ppo_networks.action_distribution
+    policy_apply = ppo_networks.policy_network.apply
+    value_apply = ppo_networks.value_network.apply
 
-    key = jax.random.PRNGKey(42)
-    shape = (10, 3)
-    bootstrap_shape = (1, 3)
-    rewards = jax.random.normal(
-        key, shape=shape,
-    )
-    values = jax.random.normal(
-        key, shape=shape,
-    )
-    bootstrap_value = jax.random.normal(
-        key, shape=bootstrap_shape,
-    )
-    truncation_mask = jax.random.randint(
-        key, shape=shape, minval=0, maxval=1,
-    )
-    termination_mask = jax.random.randint(
-        key, shape=shape, minval=0, maxval=1,
-    )
+    # Reorder data: (B, T, ...) -> (T, B, ...)
+    data = jax.tree_util.tree_map(lambda x: jnp.swapaxes(x, 0, 1), data)
 
-    vs, advantages = calculate_gae(
-        rewards, values, bootstrap_value, truncation_mask, termination_mask,
+    logits = policy_apply(
+        normalization_params, params.policy, data.observation,
     )
-
-    truncation_mask = 1 - truncation_mask
-    termination_mask = 1 - termination_mask
-    _vs, _advantages = compute_gae(
-        rewards, values, bootstrap_value, truncation_mask, termination_mask,
+    values = value_apply(
+        normalization_params, params.value, data.observation,
+    )
+    bootstrap_values = value_apply(
+        normalization_params, params.value, data.next_observation[-1],
     )
 
-    # Test Values:
-    print(f'vs test: {jnp.allclose(vs, _vs)}')
-    print(f'advantages test: {jnp.allclose(advantages, _advantages)}')
+    # Be careful with these definitions:
+    truncation_mask = 1 - data.extras['state_extras']['truncation']
+    termination_mask = data.termination_mask * truncation_mask
 
 
-if __name__ == "__main__":
-    test()
