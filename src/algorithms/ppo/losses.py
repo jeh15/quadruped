@@ -1,11 +1,10 @@
 from typing import Any, Tuple
 
-import flax
 import jax
 import jax.numpy as jnp
 
 from src.algorithms.ppo import networks as ppo_networks
-from src import network_types as types
+from src import module_types as types
 
 
 def calculate_gae(
@@ -55,7 +54,7 @@ def calculate_gae(
 
 
 def loss_function(
-    params: PPONetworkParams,
+    params: ppo_networks.PPONetworkParams,
     ppo_networks: ppo_networks.PPONetworks,
     normalization_params: Any,
     data: types.Transition,
@@ -75,13 +74,13 @@ def loss_function(
     data = jax.tree_util.tree_map(lambda x: jnp.swapaxes(x, 0, 1), data)
 
     logits = policy_apply(
-        normalization_params, params.policy, data.observation,
+        normalization_params, params.policy_params, data.observation,
     )
     values = value_apply(
-        normalization_params, params.value, data.observation,
+        normalization_params, params.value_params, data.observation,
     )
     bootstrap_values = value_apply(
-        normalization_params, params.value, data.next_observation[-1],
+        normalization_params, params.value_params, data.next_observation[-1],
     )
 
     # Be careful with these definitions:

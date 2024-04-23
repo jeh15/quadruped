@@ -7,7 +7,7 @@ import jax.numpy as jnp
 from flax import linen as nn
 
 # Custom types:
-import src.network_types as types
+import src.module_types as types
 ActivationFn = Callable[[jnp.ndarray], jnp.ndarray]
 Initializer = Callable[..., Any]
 
@@ -21,7 +21,7 @@ class FeedForwardNetwork:
 class MLP(nn.Module):
     layer_sizes: Sequence[int]
     activation: ActivationFn = nn.tanh
-    kernel_init: Initializer = nn.initializers.lecun_uniform()
+    kernel_init: Initializer = jax.nn.initializers.lecun_uniform()
     activate_final: bool = False
     bias: bool = True
     layer_normalization: bool = False
@@ -39,7 +39,7 @@ class MLP(nn.Module):
                 x = self.activation(x)
                 if self.layer_normalization:
                     x = nn.LayerNorm(name=f"layer_norm_{i}")(x)
-            return x
+        return x
 
 
 def make_policy_network(
@@ -49,7 +49,7 @@ def make_policy_network(
     .identity_normalization_fn,
     layer_sizes: Sequence[int] = (256, 256),
     activation: ActivationFn = nn.tanh,
-    kernel_init: Initializer = nn.initializers.lecun_uniform(),
+    kernel_init: Initializer = jax.nn.initializers.lecun_uniform(),
     bias: bool = True,
     layer_normalization: bool = False,
 ) -> FeedForwardNetwork:
@@ -68,7 +68,7 @@ def make_policy_network(
 
     dummy_input = jnp.zeros((1, input_size))
     return FeedForwardNetwork(
-        init=lambda key: policy_network.init(key, dummy_input), apply=apply
+        init=lambda key: policy_network.init(key, dummy_input), apply=apply,
     )
 
 
@@ -78,7 +78,7 @@ def make_value_network(
     .identity_normalization_fn,
     layer_sizes: Sequence[int] = (256, 256),
     activation: ActivationFn = nn.tanh,
-    kernel_init: Initializer = nn.initializers.lecun_uniform(),
+    kernel_init: Initializer = jax.nn.initializers.lecun_uniform(),
     bias: bool = True,
     layer_normalization: bool = False,
 ) -> FeedForwardNetwork:
@@ -93,9 +93,9 @@ def make_value_network(
 
     def apply(normalization_params, value_params, x):
         x = input_normalization_fn(x, normalization_params)
-        return value_network.apply(value_params, x)
+        return jnp.squeeze(value_network.apply(value_params, x), axis=-1)
 
     dummy_input = jnp.zeros((1, input_size))
     return FeedForwardNetwork(
-        init=lambda key: value_network.init(key, dummy_input), apply=apply
+        init=lambda key: value_network.init(key, dummy_input), apply=apply,
     )

@@ -1,5 +1,6 @@
 from typing import Sequence, Tuple
 
+import jax
 import jax.numpy as jnp
 
 import flax
@@ -9,8 +10,8 @@ import distrax
 
 from src import networks
 from src import distribution
-from src import network_types as types
-from src.network_types import PRNGKey
+from src import module_types as types
+from src.module_types import PRNGKey
 
 
 @flax.struct.dataclass
@@ -18,6 +19,12 @@ class PPONetworks:
     policy_network: networks.FeedForwardNetwork
     value_network: networks.FeedForwardNetwork
     action_distribution: distribution.ParametricDistribution
+
+
+@flax.struct.dataclass
+class PPONetworkParams:
+    policy_params: types.Params
+    value_params: types.Params
 
 
 def make_inference_fn(ppo_networks: PPONetworks):
@@ -54,30 +61,33 @@ def make_inference_fn(ppo_networks: PPONetworks):
 
 
 def make_ppo_networks(
-    input_size: int,
-    output_size: int,
+    observation_size: int,
+    action_size: int,
     input_normalization_fn: types.InputNormalizationFn = types
     .identity_normalization_fn,
     policy_layer_sizes: Sequence[int] = (256, 256),
     value_layer_sizes: Sequence[int] = (256, 256),
     activation: networks.ActivationFn = nn.tanh,
+    kernel_init: types.Initializer = jax.nn.initializers.lecun_uniform(),
     action_distribution: distribution.ParametricDistribution = distribution
     .ParametricDistribution(distribution=distrax.Normal),
 ) -> PPONetworks:
     """Creates the Policy and Value Networks for PPO."""
     policy_network = networks.make_policy_network(
-        input_size=input_size,
-        output_size=output_size,
+        input_size=observation_size,
+        output_size=2*action_size,
         input_normalization_fn=input_normalization_fn,
         layer_sizes=policy_layer_sizes,
         activation=activation,
+        kernel_init=kernel_init,
     )
 
     value_network = networks.make_value_network(
-        input_size=input_size,
+        input_size=observation_size,
         input_normalization_fn=input_normalization_fn,
         layer_sizes=value_layer_sizes,
         activation=activation,
+        kernel_init=kernel_init,
     )
 
     return PPONetworks(

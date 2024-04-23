@@ -6,6 +6,8 @@ Params = Any
 PRNGKey = jnp.ndarray
 NomralizationParams = Any
 NetworkParams = Tuple[NomralizationParams, Params]
+ActivationFn = Callable[[jnp.ndarray], jnp.ndarray]
+Initializer = Callable[..., Any]
 
 Action = jnp.ndarray
 PolicyData = Mapping[str, Any]
