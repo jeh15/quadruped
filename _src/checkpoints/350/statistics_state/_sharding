@@ -1,0 +1,1 @@
+{"Y291bnQ=":"{\"sharding_type\": \"SingleDeviceSharding\", \"device_str\": \"cuda:0\"}","bWVhbg==":"{\"sharding_type\": \"SingleDeviceSharding\", \"device_str\": \"cuda:0\"}","c3Rk":"{\"sharding_type\": \"SingleDeviceSharding\", \"device_str\": \"cuda:0\"}","c3VtbWVkX3ZhcmlhbmNl":"{\"sharding_type\": \"SingleDeviceSharding\", \"device_str\": \"cuda:0\"}"}
