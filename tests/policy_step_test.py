@@ -89,7 +89,6 @@ class TrainingUtilitiesTest(absltest.TestCase):
             transition.next_observation, brax_transition.next_observation,
         )
 
-
     def test_unroll_policy_steps(self):
         rng_key = jax.random.key(seed=42)
 
@@ -125,7 +124,7 @@ class TrainingUtilitiesTest(absltest.TestCase):
         policy_fn = policy_generator([normalization_params, policy_params])
 
         # Refactored Unroll Policy Steps:
-        state, transition = unroll_policy_steps(
+        final_state, transitions = unroll_policy_steps(
             env=env,
             state=state,
             policy=policy_fn,
@@ -133,6 +132,36 @@ class TrainingUtilitiesTest(absltest.TestCase):
             num_steps=10,
         )
 
+        # Brax Unroll Policy Steps:
+        brax_final_state, brax_transitions = generate_unroll(
+            env=env,
+            env_state=state,
+            policy=policy_fn,
+            key=rng_key,
+            unroll_length=10,
+        )
+
+        # Test State:
+        np.testing.assert_array_almost_equal(
+            final_state.obs, brax_final_state.obs,
+        )
+
+        # Test Transition Container:
+        np.testing.assert_array_almost_equal(
+            transitions.observation, brax_transitions.observation,
+        )
+        np.testing.assert_array_almost_equal(
+            transitions.action, brax_transitions.action,
+        )
+        np.testing.assert_array_almost_equal(
+            transitions.reward, brax_transitions.reward,
+        )
+        np.testing.assert_array_almost_equal(
+            transitions.termination, 1.0 - brax_transitions.discount,
+        )
+        np.testing.assert_array_almost_equal(
+            transitions.next_observation, brax_transitions.next_observation,
+        )
 
 
 if __name__ == '__main__':
