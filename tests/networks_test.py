@@ -7,10 +7,12 @@ import distrax
 
 from src import networks
 from brax.training import networks as brax_networks
-from src.algorithms.ppo import networks as ppo_networks
+from src.algorithms.ppo import network_utilities as ppo_networks
 from brax.training.agents.ppo import networks as brax_ppo_networks
 from src.module_types import identity_normalization_fn
-from src.distribution import ParametricDistribution
+from src.distribution_utilities import ParametricDistribution
+
+jax.config.parse_flags_with_absl()
 
 
 def rename_params(new_params, params):

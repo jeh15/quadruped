@@ -5,7 +5,9 @@ import numpy as np
 import distrax
 
 import brax.training.distribution
-import src.distribution
+import src.distribution_utilities
+
+jax.config.parse_flags_with_absl()
 
 
 class DistributionTest(absltest.TestCase):
@@ -25,7 +27,7 @@ class DistributionTest(absltest.TestCase):
         )
 
         # Distrax Distribution:
-        distrax_distribution = src.distribution.ParametricDistribution(
+        distrax_distribution = src.distribution_utilities.ParametricDistribution(
             distribution=distrax.Normal,
             bijector=distrax.Tanh(),
             min_std=std,

@@ -9,7 +9,7 @@ from flax import linen as nn
 import distrax
 
 from src import networks
-from src import distribution
+from src import distribution_utilities
 from src import module_types as types
 from src.module_types import PRNGKey
 
@@ -18,7 +18,7 @@ from src.module_types import PRNGKey
 class PPONetworks:
     policy_network: networks.FeedForwardNetwork
     value_network: networks.FeedForwardNetwork
-    action_distribution: distribution.ParametricDistribution
+    action_distribution: distribution_utilities.ParametricDistribution
 
 
 @flax.struct.dataclass
@@ -69,7 +69,7 @@ def make_ppo_networks(
     value_layer_sizes: Sequence[int] = (256, 256),
     activation: networks.ActivationFn = nn.tanh,
     kernel_init: types.Initializer = jax.nn.initializers.lecun_uniform(),
-    action_distribution: distribution.ParametricDistribution = distribution
+    action_distribution: distribution_utilities.ParametricDistribution = distribution_utilities
     .ParametricDistribution(distribution=distrax.Normal),
 ) -> PPONetworks:
     """Creates the Policy and Value Networks for PPO."""

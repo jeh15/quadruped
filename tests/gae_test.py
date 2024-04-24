@@ -4,8 +4,10 @@ import jax
 import numpy as np
 
 # Test Case Import:
-from src.algorithms.ppo.losses import calculate_gae
+from src.algorithms.ppo.loss_utilities import calculate_gae
 from brax.training.agents.ppo.losses import compute_gae
+
+jax.config.parse_flags_with_absl()
 
 
 class GAETest(absltest.TestCase):

@@ -3,7 +3,7 @@ from typing import Any, Tuple
 import jax
 import jax.numpy as jnp
 
-from src.algorithms.ppo import networks as ppo_networks
+from src.algorithms.ppo import network_utilities as ppo_networks
 from src import module_types as types
 
 
