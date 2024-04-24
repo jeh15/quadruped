@@ -28,7 +28,7 @@ def main(argv=None):
         reward_scaling=1, episode_length=1000, normalize_observations=True,
         action_repeat=1, unroll_length=20, num_minibatches=32,
         num_updates_per_batch=4, discounting=0.97, learning_rate=3.0e-4,
-        entropy_cost=1e-2, num_envs=8192, batch_size=256,
+        entropy_cost=1e-2, num_envs=1, batch_size=256,
         network_factory=make_networks_factory,
         randomization_fn=barkour.domain_randomize, seed=0)
 

@@ -86,7 +86,7 @@ def loss_function(
     # Be careful with these definitions:
     # Create masks for truncation and termination:
     rewards = data.reward
-    truncation_mask = 1 - data.extras['state_extras']['truncation']
+    truncation_mask = 1 - data.extras['state_data']['truncation']
     termination_mask = 1 - data.termination
     termination_mask *= truncation_mask
 
@@ -128,6 +128,7 @@ def loss_function(
     )
 
     # Entropy Loss:
+    # TODO(jeh15): Tanh bijector cannot be used here. Implement override for this.
     entropys = transformed_distribution.entropy()
     entropy = jnp.sum(entropys, axis=-1)
     entropy_loss = -entropy_coef * jnp.mean(
