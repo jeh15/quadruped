@@ -58,6 +58,7 @@ def loss_function(
     ppo_networks: ppo_networks.PPONetworks,
     normalization_params: Any,
     data: types.Transition,
+    rng_key: types.PRNGKey,
     clip_coef: float = 0.2,
     value_coef: float = 0.5,
     entropy_coef: float = 0.01,
@@ -128,8 +129,10 @@ def loss_function(
     )
 
     # Entropy Loss:
-    # TODO(jeh15): Tanh bijector cannot be used here. Implement override for this.
-    entropys = transformed_distribution.entropy()
+    entropys = action_distribution.entropy(
+        logits,
+        rng_key,
+    )
     entropy = jnp.sum(entropys, axis=-1)
     entropy_loss = -entropy_coef * jnp.mean(
         entropy,

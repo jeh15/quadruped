@@ -6,6 +6,8 @@ import jax.numpy as jnp
 
 import distrax
 
+import src.module_types as types
+
 
 @dataclass
 class ParametricDistribution():
@@ -21,3 +23,16 @@ class ParametricDistribution():
             distribution=self.distribution(loc=loc, scale=scale),
             bijector=self.bijector,
         )
+
+    def entropy(
+        self,
+        params: jnp.ndarray,
+        rng_key: types.PRNGKey,
+    ) -> jnp.ndarray:
+        transformed_distribution = self.create_distribution(params=params)
+        sample = transformed_distribution.sample(seed=rng_key)
+        entropy = transformed_distribution.distribution.entropy()
+        forward_log_det_jacobian = self.bijector.forward_log_det_jacobian(
+            sample,
+        )
+        return entropy + forward_log_det_jacobian

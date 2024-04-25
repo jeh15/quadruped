@@ -7,6 +7,7 @@ import flax.linen as nn
 import distrax
 
 from brax.envs import fast
+from brax.envs.wrappers.training import wrap
 from src.algorithms.ppo.network_utilities import PPONetworkParams
 import src.algorithms.ppo.network_utilities as ppo_networks
 from src.module_types import identity_normalization_fn
@@ -70,7 +71,11 @@ class LossUtilitiesTest(absltest.TestCase):
 
         # Brax Environment:
         env = fast.Fast()
-        state = env.reset(rng_key)
+        env = wrap(
+            env,
+            episode_length=10,
+            action_repeat=1,
+        )
 
         # Network Params:
         layer_sizes = (32, 32)
@@ -100,19 +105,43 @@ class LossUtilitiesTest(absltest.TestCase):
         policy_generator = ppo_networks.make_inference_fn(networks)
         policy_fn = policy_generator([normalization_params, policy_params])
 
-        _, transitions = unroll_policy_steps(
-            env=env,
-            state=state,
-            policy=policy_fn,
-            key=rng_key,
-            num_steps=10,
+        # Unroll Policy Steps:
+        num_steps = 10
+        batch_size = 32
+        num_minibatches = 4
+        num_envs = 1
+
+        process_count = jax.process_count()
+        local_device_count = jax.local_device_count()
+        local_devices_to_use = local_device_count
+
+        key_envs = jax.random.split(rng_key, num_envs // process_count)
+        key_envs = jnp.reshape(
+            key_envs,
+            (local_devices_to_use, -1) + key_envs.shape[1:],
         )
+        state = env.reset(key_envs)
 
-        print(transitions)
-        
-        data = jax.tree_util.tree_map(lambda x: jnp.swapaxes(x, 0, 1), transitions)
+        # Needs batch dimension:
+        def f(carry, unused_t):
+            current_state, current_key = carry
+            current_key, next_key = jax.random.split(current_key)
+            next_state, data = unroll_policy_steps(
+                env,
+                current_state,
+                policy_fn,
+                current_key,
+                num_steps,
+                extra_fields=('truncation',)
+            )
+            return (next_state, next_key), data
 
-        print(data)
+        _, transitions = jax.lax.scan(
+            f,
+            (state, rng_key),
+            None,
+            length=batch_size * num_minibatches // num_envs,
+        )
 
         params = PPONetworkParams(
             policy_params=policy_params,
@@ -125,27 +154,13 @@ class LossUtilitiesTest(absltest.TestCase):
             ppo_networks=networks,
             normalization_params=normalization_params,
             data=transitions,
+            rng_key=rng_key,
             clip_coef=0.2,
             value_coef=0.5,
             entropy_coef=0.01,
             gamma=0.99,
             gae_lambda=0.95,
             normalize_advantages=False,
-        )
-
-        # Brax Loss Function:
-        brax_loss, brax_metrics = compute_ppo_loss(
-            params=params,
-            normalizer_params=normalization_params,
-            data=transitions,
-            rng=rng_key,
-            ppo_network=networks,
-            entropy_cost=0.01,
-            discounting=0.99,
-            reward_scaling=1.0,
-            gae_lambda=0.95,
-            clipping_epsilon=0.2,
-            normalize_advantage=False,
         )
 
 
