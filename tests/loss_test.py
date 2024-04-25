@@ -13,12 +13,22 @@ import src.algorithms.ppo.network_utilities as ppo_networks
 from src.module_types import identity_normalization_fn
 from src.distribution_utilities import ParametricDistribution
 from src.training_utilities import unroll_policy_steps
+from brax.training.agents.ppo import networks as brax_ppo_networks
+from brax.training.agents.ppo.losses import PPONetworkParams as BraxPPONetworkParams
+from brax.training.acting import generate_unroll
 
 # Test Case Import:
 from src.algorithms.ppo.loss_utilities import calculate_gae, loss_function
 from brax.training.agents.ppo.losses import compute_gae, compute_ppo_loss
 
 jax.config.parse_flags_with_absl()
+
+
+def rename_params(new_params, params):
+    for i, key_name in enumerate(params['params'].keys()):
+        new_key_name = f'hidden_{i}'
+        new_params['params'][new_key_name] = params['params'][key_name]
+    return new_params
 
 
 class LossUtilitiesTest(absltest.TestCase):
@@ -105,6 +115,25 @@ class LossUtilitiesTest(absltest.TestCase):
         policy_generator = ppo_networks.make_inference_fn(networks)
         policy_fn = policy_generator([normalization_params, policy_params])
 
+        brax_networks = brax_ppo_networks.make_ppo_networks(
+            observation_size=input_size,
+            action_size=output_size,
+            preprocess_observations_fn=input_normalization_fn,
+            policy_hidden_layer_sizes=layer_sizes,
+            value_hidden_layer_sizes=layer_sizes,
+            activation=activation,
+        )
+        brax_policy_params = {'params': {}}
+        brax_value_params = {'params': {}}
+
+        # Rename the keys to match brax layer naming.
+        brax_policy_params = rename_params(
+            brax_policy_params, policy_params,
+        )
+        brax_value_params = rename_params(
+            brax_value_params, value_params,
+        )
+
         # Unroll Policy Steps:
         num_steps = 10
         batch_size = 32
@@ -143,9 +172,34 @@ class LossUtilitiesTest(absltest.TestCase):
             length=batch_size * num_minibatches // num_envs,
         )
 
+        def brax_f(carry, unused_t):
+            current_state, current_key = carry
+            current_key, next_key = jax.random.split(current_key)
+            next_state, data = generate_unroll(
+                env,
+                current_state,
+                policy_fn,
+                current_key,
+                num_steps,
+                extra_fields=('truncation',)
+            )
+            return (next_state, next_key), data
+
+        _, brax_transitions = jax.lax.scan(
+            brax_f,
+            (state, rng_key),
+            None,
+            length=batch_size * num_minibatches // num_envs,
+        )
+
         params = PPONetworkParams(
             policy_params=policy_params,
             value_params=value_params,
+        )
+
+        brax_params = BraxPPONetworkParams(
+            policy=brax_policy_params,
+            value=brax_value_params,
         )
 
         # Loss Function:
@@ -156,12 +210,28 @@ class LossUtilitiesTest(absltest.TestCase):
             data=transitions,
             rng_key=rng_key,
             clip_coef=0.2,
-            value_coef=0.5,
+            value_coef=0.25,
             entropy_coef=0.01,
             gamma=0.99,
             gae_lambda=0.95,
             normalize_advantages=False,
         )
+
+        # Brax Loss Function:
+        brax_loss, brax_metrics = compute_ppo_loss(
+            params=brax_params,
+            normalizer_params=normalization_params,
+            data=brax_transitions,
+            rng=rng_key,
+            ppo_network=brax_networks,
+            entropy_cost=0.01,
+            discounting=0.99,
+            gae_lambda=0.95,
+            clipping_epsilon=0.2,
+            normalize_advantage=False,
+        )
+
+        np.testing.assert_array_almost_equal(loss, brax_loss)
 
 
 if __name__ == '__main__':

@@ -15,6 +15,7 @@ from src.distribution_utilities import ParametricDistribution
 from src.training_utilities import unroll_policy_steps
 from brax.training.agents.ppo import networks as brax_ppo_networks
 from brax.training.agents.ppo.losses import PPONetworkParams as BraxPPONetworkParams
+from brax.training.acting import generate_unroll
 
 # Test Case Import:
 from src.algorithms.ppo.loss_utilities import calculate_gae, loss_function
@@ -171,19 +172,24 @@ class LossUtilitiesTest(absltest.TestCase):
             length=batch_size * num_minibatches // num_envs,
         )
 
-        brax_transitions = transitions
-        target_dict = brax_transitions.extras
-        target_key = 'state_data'
-        rename_keys = 'state_extras'
+        def brax_f(carry, unused_t):
+            current_state, current_key = carry
+            current_key, next_key = jax.random.split(current_key)
+            next_state, data = generate_unroll(
+                env,
+                current_state,
+                policy_fn,
+                current_key,
+                num_steps,
+                extra_fields=('truncation',)
+            )
+            return (next_state, next_key), data
 
-        def rename_keys_fn(params, target_dict, target_key, rename_keys):
-            for i, key_name in enumerate(target_dict.keys()):
-                if key_name == target_key:
-                    params[rename_keys] = target_dict[key_name]
-            return params
-
-        brax_transitions = rename_keys_fn(
-            brax_transitions, target_dict, target_key, rename_keys,
+        _, brax_transitions = jax.lax.scan(
+            brax_f,
+            (state, rng_key),
+            None,
+            length=batch_size * num_minibatches // num_envs,
         )
 
         params = PPONetworkParams(
@@ -215,7 +221,7 @@ class LossUtilitiesTest(absltest.TestCase):
         brax_loss, brax_metrics = compute_ppo_loss(
             params=brax_params,
             normalizer_params=normalization_params,
-            data=transitions,
+            data=brax_transitions,
             rng=rng_key,
             ppo_network=brax_networks,
             entropy_cost=0.01,
