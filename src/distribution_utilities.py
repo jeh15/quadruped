@@ -30,9 +30,19 @@ class ParametricDistribution():
         rng_key: types.PRNGKey,
     ) -> jnp.ndarray:
         transformed_distribution = self.create_distribution(params=params)
-        sample = transformed_distribution.sample(seed=rng_key)
+        sample = transformed_distribution.distribution.sample(seed=rng_key)
         entropy = transformed_distribution.distribution.entropy()
         forward_log_det_jacobian = self.bijector.forward_log_det_jacobian(
             sample,
         )
         return entropy + forward_log_det_jacobian
+
+    def log_prob(
+        self,
+        params: jnp.ndarray,
+        sample: jnp.ndarray,
+    ) -> jnp.ndarray:
+        transformed_distribution = self.create_distribution(params=params)
+        log_probs = transformed_distribution.distribution.log_prob(sample)
+        log_probs -= self.bijector.forward_log_det_jacobian(sample)
+        return log_probs

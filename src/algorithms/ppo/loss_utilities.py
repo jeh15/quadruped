@@ -55,10 +55,10 @@ def calculate_gae(
 
 def loss_function(
     params: ppo_networks.PPONetworkParams,
-    ppo_networks: ppo_networks.PPONetworks,
     normalization_params: Any,
     data: types.Transition,
     rng_key: types.PRNGKey,
+    ppo_networks: ppo_networks.PPONetworks,
     clip_coef: float = 0.2,
     value_coef: float = 0.5,
     entropy_coef: float = 0.01,
@@ -92,14 +92,16 @@ def loss_function(
     termination_mask *= truncation_mask
 
     # Calculate GAE:
-    vs, advantages = calculate_gae(
-        rewards=rewards,
-        values=values,
-        bootstrap_value=bootstrap_values,
-        truncation_mask=truncation_mask,
-        termination_mask=termination_mask,
-        gamma=gamma,
-        gae_lambda=gae_lambda,
+    vs, advantages = jax.lax.stop_gradient(
+        calculate_gae(
+            rewards=rewards,
+            values=values,
+            bootstrap_value=bootstrap_values,
+            truncation_mask=truncation_mask,
+            termination_mask=termination_mask,
+            gamma=gamma,
+            gae_lambda=gae_lambda,
+        )
     )
     if normalize_advantages:
         advantages = (
@@ -107,8 +109,10 @@ def loss_function(
         )
 
     # Calculate ratios:
-    transformed_distribution = action_distribution.create_distribution(logits)
-    log_probs = transformed_distribution.log_prob(data.extras['policy_data']['raw_action'])
+    log_probs = action_distribution.log_prob(
+        logits,
+        data.extras['policy_data']['raw_action'],
+    )
     log_prob = jnp.sum(log_probs, axis=-1)
     previous_log_prob = data.extras['policy_data']['log_prob']
     log_ratios = log_prob - previous_log_prob

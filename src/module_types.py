@@ -1,6 +1,7 @@
-from typing import Any, Callable, Sequence, Tuple, NamedTuple, Protocol, Mapping
+from typing import Any, Callable, Sequence, Tuple, NamedTuple, Protocol, Mapping, TypeVar
 
 import jax.numpy as jnp
+from brax import envs
 
 Params = Any
 PRNGKey = jnp.ndarray
@@ -12,6 +13,11 @@ Initializer = Callable[..., Any]
 Action = jnp.ndarray
 PolicyData = Mapping[str, Any]
 Metrics = Mapping[str, Any]
+
+State = envs.State
+Env = envs.Env
+
+NetworkType = TypeVar('NetworkType')
 
 
 class Transition(NamedTuple):
@@ -47,3 +53,13 @@ def identity_normalization_fn(
 ) -> jnp.ndarray:
     del normalization_params
     return x
+
+
+class NetworkFactory(Protocol[NetworkType]):
+    def __call__(
+        self,
+        observation_size: int,
+        action_size: int,
+        input_normalization_fn: InputNormalizationFn = identity_normalization_fn,
+    ) -> NetworkType:
+        pass

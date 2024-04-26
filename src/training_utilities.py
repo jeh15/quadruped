@@ -1,14 +1,10 @@
-from typing import Callable, Sequence, Tuple
+from typing import Sequence, Tuple
 
 import jax
 
-from brax import envs
 from src.module_types import Transition
 import src.module_types as types
-
-
-State = envs.State
-Env = envs.Env
+from src.module_types import Env, State
 
 
 def policy_step(
