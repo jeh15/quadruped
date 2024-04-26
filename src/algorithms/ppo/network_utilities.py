@@ -45,7 +45,7 @@ def make_inference_fn(ppo_networks: PPONetworks):
             transformed_distribution = action_distribution.create_distribution(logits)
             base_distribution = transformed_distribution.distribution
             if deterministic:
-                actions = transformed_distribution.mode()
+                actions = action_distribution.mode(logits)
                 policy_data = {}
             else:
                 raw_actions = base_distribution.sample(seed=key)

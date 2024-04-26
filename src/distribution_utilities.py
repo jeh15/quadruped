@@ -46,3 +46,10 @@ class ParametricDistribution():
         log_probs = transformed_distribution.distribution.log_prob(sample)
         log_probs -= self.bijector.forward_log_det_jacobian(sample)
         return log_probs
+    
+    def mode(
+        self,
+        params: jnp.ndarray,
+    ) -> jnp.ndarray:
+        transformed_distribution = self.create_distribution(params=params)
+        return self.bijector.forward(transformed_distribution.distribution.mode())

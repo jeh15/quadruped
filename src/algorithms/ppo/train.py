@@ -33,7 +33,6 @@ _PMAP_AXIS_NAME = 'i'
 
 @flax.struct.dataclass
 class TrainState:
-    tx: optax.GradientTransformation
     opt_state: optax.OptState
     params: PPONetworkParams
     normalization_params: running_statistics.RunningStatisticsState
@@ -48,7 +47,7 @@ def strip_weak_type(pytree):
     def f(leaf):
         leaf = jnp.asarray(leaf)
         return leaf.astype(leaf.dtype)
-    return jax.tree_map(f, pytree)
+    return jax.tree_util.tree_map(f, pytree)
 
 
 """
@@ -59,7 +58,9 @@ def strip_weak_type(pytree):
 
 def train(
     environment: envs.Env,
+    evaluation_environment: Optional[envs.Env],
     num_epochs: int,
+    num_training_steps: int,
     episode_length: int,
     num_policy_steps: int = 10,
     action_repeat: int = 1,
@@ -104,7 +105,8 @@ def train(
     )
 
     # Generate Random Key:
-    key = jax.random.key(seed)
+    # key = jax.random.key(seed)
+    key = jax.random.PRNGKey(seed)
     global_key, local_key = jax.random.split(key)
     del key
     local_key = jax.random.fold_in(local_key, process_id)
@@ -144,7 +146,7 @@ def train(
     # Initialize Network:
     # functools.partial network_factory to capture parameters:
     networks = network_factory(
-        observation_size=env.observation_size,
+        observation_size=env_state.obs.shape[-1],
         action_size=env.action_size,
         input_normalization_fn=normalization_fn,
     )
@@ -188,7 +190,7 @@ def train(
         normalization_params: running_statistics.RunningStatisticsState,
     ):
         opt_state, params, key = carry
-        key, permutation_key, grad_key = jax.random.split(key)
+        key, permutation_key, grad_key = jax.random.split(key, 3)
 
         # Shuffle Data:
         def permute_data(x: jnp.ndarray):
@@ -228,7 +230,7 @@ def train(
                 policy=policy_fn,
                 key=key,
                 num_steps=num_policy_steps,
-                extra_fields=('truncation'),
+                extra_fields=('truncation',),
             )
             return (next_state, subkey), data
 
@@ -262,7 +264,6 @@ def train(
         )
 
         new_train_state = TrainState(
-            tx=train_state.tx,
             opt_state=opt_state,
             params=params,
             normalization_params=normalization_params,
@@ -280,7 +281,7 @@ def train(
             training_step,
             (train_state, state, key),
             None,
-            length=num_steps_per_epoch,
+            length=num_training_steps,
         )
         return train_state, state, loss_metrics
 
@@ -316,8 +317,8 @@ def train(
         policy_params=networks.policy_network.init(policy_key),
         value_params=networks.value_network.init(value_key),
     )
+    # Can't pass optimizer function to device_put_replicated:
     train_state = TrainState(
-        tx=optimizer,
         opt_state=optimizer.init(init_params),
         params=init_params,
         normalization_params=running_statistics.init_state(
@@ -325,22 +326,23 @@ def train(
         ),
         env_steps=0,
     )
+
     train_state = jax.device_put_replicated(
         train_state,
         jax.local_devices()[:local_devices_to_use],
     )
 
     # Setup Evaluation Environment:
-    eval_env = environment
-    eval_randomization_fn = None
     if randomization_fn is not None:
+        eval_randomization_key = jax.random.split(eval_key, num_evaluation_envs)
         eval_randomization_fn = functools.partial(
             randomization_fn,
-            rng=jax.random.split(eval_key, num_evaluation_envs),
+            rng=eval_randomization_key
         )
 
+    # Must be a separate object or JAX tries to resuse JIT from training environment:
     eval_env = wrap(
-        env=eval_env,
+        env=evaluation_environment,
         episode_length=episode_length,
         action_repeat=action_repeat,
         randomization_fn=eval_randomization_fn,

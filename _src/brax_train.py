@@ -10,7 +10,7 @@ from brax.training.agents.ppo import train as ppo
 from brax.training.agents.ppo import networks as ppo_networks
 from brax.io import model, html
 
-import src.envs.barkour as barkour
+import barkour
 
 jax.config.update("jax_enable_x64", True)
 
@@ -32,8 +32,11 @@ def main(argv=None):
         network_factory=make_networks_factory,
         randomization_fn=barkour.domain_randomize, seed=0)
 
-    def progress(num_steps, metrics):
-        print(f'Number of Steps: {num_steps} \t Episode Reward: {metrics["eval/episode_reward"]}')
+    def progress_fn(num_steps, metrics):
+        print(
+            f'Number of Steps: {num_steps} \t' 
+            f'Episode Reward: {metrics["eval/episode_reward"]} \t'
+        )
 
     # Reset environments since internals may be overwritten by tracers from the
     # domain randomization function.
@@ -41,7 +44,7 @@ def main(argv=None):
     eval_env = barkour.BarkourEnv()
     make_inference_fn, params, _ = train_fn(
         environment=env,
-        progress_fn=progress,
+        progress_fn=progress_fn,
         eval_env=eval_env,
     )
 
