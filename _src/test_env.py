@@ -8,7 +8,7 @@ from brax.io import html
 
 import time
 
-import barkour
+import src.envs.barkour as barkour
 import control_utilities
 
 jax.config.update("jax_enable_x64", True)

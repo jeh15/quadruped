@@ -1,3 +1,4 @@
+from typing import Callable
 import time
 
 import jax
@@ -14,7 +15,7 @@ class Evaluator:
     def __init__(
         self,
         env: types.Env,
-        policy: types.Policy,
+        policy_generator: Callable[[types.PolicyParams], types.Policy],
         num_envs: int,
         episode_length: int,
         action_repeat: int,
@@ -26,6 +27,7 @@ class Evaluator:
         env = envs.training.EvalWrapper(env)
 
         def _evaluation_loop(
+            policy_params: types.PolicyParams,
             key: types.PRNGKey,
         ) -> types.State:
             reset_keys = jax.random.split(key, num_envs)
@@ -33,7 +35,7 @@ class Evaluator:
             final_state, _ = unroll_policy_steps(
                 env,
                 initial_state,
-                policy,
+                policy_generator(policy_params),
                 key,
                 episode_length // action_repeat,
             )
@@ -44,13 +46,14 @@ class Evaluator:
 
     def evaluate(
         self,
+        policy_params: types.PolicyParams,
         training_metrics: types.Metrics,
         aggregate_episodes: bool = True,
     ) -> types.Metrics:
         self.key, subkey = jax.random.split(self.key)
 
         start_time = time.time()
-        state = self.evaluation_loop(subkey)
+        state = self.evaluation_loop(policy_params, subkey)
         evaluation_metrics = state.info['eval_metrics']
         evaluation_metrics.active_episodes.block_until_ready()
         epoch_time = time.time() - start_time

@@ -7,7 +7,7 @@ import jax.numpy as jnp
 from brax.io import model, html
 from brax.training.agents.ppo import networks as ppo_networks
 
-import barkour
+import src.envs.barkour as barkour
 
 jax.config.update("jax_enable_x64", True)
 

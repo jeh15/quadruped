@@ -14,7 +14,8 @@ import numpy as np
 from brax import base
 from brax import envs
 from brax.envs.wrappers.training import wrap
-from brax.training.acme import running_statistics
+from brax.training.acme import running_statistics, specs
+from brax.training import pmap
 import src.module_types as types
 from src.algorithms.ppo.network_utilities import PPONetworkParams
 
@@ -22,6 +23,7 @@ import src.algorithms.ppo.network_utilities as ppo_networks
 import src.algorithms.ppo.loss_utilities as loss_utilities
 import src.optimization_utilities as optimization_utilities
 import src.training_utilities as trainining_utilities
+import src.metrics_utilities as metrics_utilities
 
 
 InferenceParams = Tuple[running_statistics.NestedMeanStd, types.Params]
@@ -38,6 +40,10 @@ class TrainState:
     env_steps: jnp.ndarray
 
 
+def unpmap(v):
+    return jax.tree_util.tree_map(lambda x: x[0], v)
+
+
 def strip_weak_type(pytree):
     def f(leaf):
         leaf = jnp.asarray(leaf)
@@ -45,12 +51,9 @@ def strip_weak_type(pytree):
     return jax.tree_map(f, pytree)
 
 
-
 """
     Requires Network Factory with captured parameters.
     Requires Loss Function with captured parameters.
-
-
 """
 
 
@@ -63,25 +66,25 @@ def train(
     num_envs: int = 1,
     num_evaluation_envs: int = 128,
     num_evaluations: int = 1,
-    num_reset_per_evaluation: int = 0,
     deterministic_evaluation: bool = False,
+    reset_per_epoch: bool = False,
     seed: int = 0,
     batch_size: int = 32,
-    num_minibatches: int = 15,
+    num_minibatches: int = 16,
     num_ppo_iterations: int = 4,
     normalize_observations: bool = True,
-    normalize_advantages: bool = False,
     network_factory: types.NetworkFactory[ppo_networks.PPONetworks] = ppo_networks.make_ppo_networks,
     optimizer: optax.GradientTransformation = optax.adam(1e-4),
     loss_function: Callable[..., Tuple[jnp.ndarray, types.Metrics]] =
     loss_utilities.loss_function,
     progress_fn: Callable[[int, types.Metrics], None] = lambda *args: None,
-    policy_params_fn: Callable[..., None] = lambda *args: None,
+    checkpoint_fn: Callable[..., None] = lambda *args: None,
     randomization_fn: Optional[
         Callable[[base.System, jnp.ndarray], Tuple[base.System, base.System]]
     ] = None,
 ):
     assert batch_size * num_minibatches % num_envs == 0
+    training_start_time = time.time()
 
     # JAX Device management:
     process_count = jax.process_count()
@@ -140,18 +143,18 @@ def train(
 
     # Initialize Network:
     # functools.partial network_factory to capture parameters:
-    ppo_networks = network_factory(
+    networks = network_factory(
         observation_size=env.observation_size,
         action_size=env.action_size,
         input_normalization_fn=normalization_fn,
     )
-    make_policy = ppo_networks.make_inference_fn(ppo_networks=ppo_networks)
+    make_policy = ppo_networks.make_inference_fn(ppo_networks=networks)
 
     # Initialize Loss Function:
     # functools.partial loss_function to capture parameters:
     loss_fn = functools.partial(
         loss_function,
-        ppo_networks=ppo_networks,
+        ppo_networks=networks,
     )
 
     gradient_udpate_fn = optimization_utilities.gradient_update_fn(
@@ -282,3 +285,143 @@ def train(
         return train_state, state, loss_metrics
 
     training_epoch = jax.pmap(training_epoch, axis_name=_PMAP_AXIS_NAME)
+
+    def training_epoch_with_metrics(
+        train_state: TrainState,
+        state: envs.State,
+        key: types.PRNGKey,
+    ) -> Tuple[TrainState, envs.State, types.Metrics]:
+        # I would like to get rid of this:
+        nonlocal training_walltime
+        start_time = time.time()
+        train_state, state = strip_weak_type((train_state, state))
+        result = training_epoch(train_state, state, key)
+        train_state, state, metrics = strip_weak_type(result)
+
+        metrics = jax.tree_map(jnp.mean, metrics)
+        jax.tree_util.tree_map(lambda x: x.block_until_ready(), metrics)
+
+        epoch_training_time = time.time() - start_time
+        training_walltime += epoch_training_time
+        steps_per_second = num_steps_per_epoch / epoch_training_time
+        metrics = {
+            'training/steps_per_second': steps_per_second,
+            'training/walltime': training_walltime,
+            **{f'training/{name}': value for name, value in metrics.items()},
+        }
+        return train_state, state, metrics
+
+    # Initialize Params and Train State:
+    init_params = PPONetworkParams(
+        policy_params=networks.policy_network.init(policy_key),
+        value_params=networks.value_network.init(value_key),
+    )
+    train_state = TrainState(
+        tx=optimizer,
+        opt_state=optimizer.init(init_params),
+        params=init_params,
+        normalization_params=running_statistics.init_state(
+            specs.Array(env_state.obs.shape[-1:], jnp.dtype('float32'))
+        ),
+        env_steps=0,
+    )
+    train_state = jax.device_put_replicated(
+        train_state,
+        jax.local_devices()[:local_devices_to_use],
+    )
+
+    # Setup Evaluation Environment:
+    eval_env = environment
+    eval_randomization_fn = None
+    if randomization_fn is not None:
+        eval_randomization_fn = functools.partial(
+            randomization_fn,
+            rng=jax.random.split(eval_key, num_evaluation_envs),
+        )
+
+    eval_env = wrap(
+        env=eval_env,
+        episode_length=episode_length,
+        action_repeat=action_repeat,
+        randomization_fn=eval_randomization_fn,
+    )
+
+    evaluator = metrics_utilities.Evaluator(
+        env=eval_env,
+        policy_generator=functools.partial(
+            make_policy, deterministic=deterministic_evaluation,
+        ),
+        num_envs=num_evaluation_envs,
+        episode_length=episode_length,
+        action_repeat=action_repeat,
+        key=eval_key,
+    )
+
+    # Initialize Metrics:
+    metrics = {}
+    if process_id == 0 and num_evaluations > 1:
+        params = unpmap((
+            train_state.normalization_params,
+            train_state.params.policy_params,
+        ))
+        metrics = evaluator.evaluate(
+            policy_params=params,
+            training_metrics={},
+        )
+        logging.info(metrics)
+        progress_fn(0, metrics)
+
+    training_metrics = {}
+    training_walltime = 0
+    current_step = 0
+
+    # Training Loop:
+    for epoch_iteration in range(num_epochs):
+        # Logging:
+        logging.info(
+            'starting iteration %s %s', epoch_iteration, time.time() - training_start_time,
+        )
+
+        # Epoch Training Iteration:
+        local_key, epoch_key = jax.random.split(local_key)
+        epoch_keys = jax.random.split(epoch_key, local_devices_to_use)
+        (train_state, env_state, training_metrics) = (
+            training_epoch_with_metrics(train_state, env_state, epoch_keys)
+        )
+
+        current_step = int(unpmap(train_state.env_steps))
+
+        # If reset per epoch else Auto Reset:
+        if reset_per_epoch:
+            envs_key = jax.vmap(
+                lambda x, s: jax.random.split(x[0], s),
+                in_axes=(0, None),
+            )(envs_key, envs_key.shape[1])
+            env_state = reset_fn(envs_key)
+
+        if process_id == 0:
+            # Run Evaluation:
+            params = unpmap((
+                train_state.normalization_params,
+                train_state.params.policy_params,
+            ))
+            metrics = evaluator.evaluate(
+                policy_params=params,
+                training_metrics=training_metrics,
+            )
+            logging.info(metrics)
+            progress_fn(epoch_iteration+1, metrics)
+            # Save Checkpoint:
+            checkpoint_fn()
+
+    total_steps = current_step
+
+    # pmap:
+    pmap.assert_is_replicated(train_state)
+    params = unpmap((
+        train_state.normalization_params,
+        train_state.params.policy_params,
+    ))
+    logging.info('total steps: %s', total_steps)
+    pmap.synchronize_hosts()
+    return (make_policy, params, metrics)

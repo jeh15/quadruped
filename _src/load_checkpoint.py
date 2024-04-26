@@ -15,7 +15,7 @@ import control_utilities
 import checkpoint
 import render_utilities
 
-import barkour
+import src.envs.barkour as barkour
 
 jax.config.update('jax_default_device', jax.devices('cpu')[0])
 jax.config.update("jax_enable_x64", True)

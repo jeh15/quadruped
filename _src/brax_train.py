@@ -10,7 +10,7 @@ from brax.training.agents.ppo import train as ppo
 from brax.training.agents.ppo import networks as ppo_networks
 from brax.io import model, html
 
-import barkour
+import src.envs.barkour as barkour
 
 jax.config.update("jax_enable_x64", True)
 

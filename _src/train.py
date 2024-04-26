@@ -19,7 +19,7 @@ import statistics_utilities
 import control_utilities
 import checkpoint
 
-import barkour
+import src.envs.barkour as barkour
 
 jax.config.update("jax_enable_x64", True)
 

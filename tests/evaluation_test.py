@@ -12,7 +12,7 @@ from src.module_types import identity_normalization_fn
 from src.distribution_utilities import ParametricDistribution
 from brax.training.agents.ppo import networks as brax_ppo_networks
 
-from src.metric_utilities import Evaluator
+from src.metrics_utilities import Evaluator
 from brax.training.acting import Evaluator as BraxEvaluator
 
 jax.config.parse_flags_with_absl()
