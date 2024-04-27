@@ -25,7 +25,7 @@ def main(argv=None):
     make_networks_factory = functools.partial(
         ppo_networks.make_ppo_networks,
         policy_layer_sizes=(128, 128, 128, 128),
-        value_layer_sizes=(256, 256),
+        value_layer_sizes=(256, 256, 256, 256, 256),
         activation=nn.tanh,
         kernel_init=jax.nn.initializers.lecun_uniform(),
         action_distribution=ParametricDistribution(

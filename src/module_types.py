@@ -11,6 +11,7 @@ PolicyParams = Tuple[NomralizationParams, Params]
 ActivationFn = Callable[[jnp.ndarray], jnp.ndarray]
 Initializer = Callable[..., Any]
 
+Observation = jnp.ndarray
 Action = jnp.ndarray
 PolicyData = Mapping[str, Any]
 Metrics = Mapping[str, Any]
