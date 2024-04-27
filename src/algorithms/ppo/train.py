@@ -50,12 +50,6 @@ def strip_weak_type(pytree):
     return jax.tree_util.tree_map(f, pytree)
 
 
-"""
-    Requires Network Factory with captured parameters.
-    Requires Loss Function with captured parameters.
-"""
-
-
 def train(
     environment: envs.Env,
     evaluation_environment: Optional[envs.Env],
@@ -216,17 +210,17 @@ def train(
         # Changed key order: (Does this matter?)
         next_key, sgd_key, policy_step_key = jax.random.split(key, 3)
 
-        policy_fn = make_policy([
+        policy_fn = make_policy((
             train_state.normalization_params, train_state.params.policy_params,
-        ])
+        ))
 
         # Generates Episode Data:
         def f(carry, unused_t):
-            state, key = carry
+            current_state, key = carry
             key, subkey = jax.random.split(key)
             next_state, data = trainining_utilities.unroll_policy_steps(
                 env=env,
-                state=state,
+                state=current_state,
                 policy=policy_fn,
                 key=key,
                 num_steps=num_policy_steps,
@@ -334,10 +328,12 @@ def train(
 
     # Setup Evaluation Environment:
     if randomization_fn is not None:
-        eval_randomization_key = jax.random.split(eval_key, num_evaluation_envs)
+        eval_randomization_key = jax.random.split(
+            eval_key, num_evaluation_envs,
+        )
         eval_randomization_fn = functools.partial(
             randomization_fn,
-            rng=eval_randomization_key
+            rng=eval_randomization_key,
         )
 
     # Must be a separate object or JAX tries to resuse JIT from training environment:
