@@ -50,7 +50,7 @@ def calculate_gae(
         rewards
         + gamma * termination_mask * vs_ - values
     ) * truncation_mask
-    return vs, advantages
+    return jax.lax.stop_gradient(vs), jax.lax.stop_gradient(advantages)
 
 
 def loss_function(
@@ -88,32 +88,29 @@ def loss_function(
     # Create masks for truncation and termination:
     rewards = data.reward
     truncation_mask = 1 - data.extras['state_data']['truncation']
-    termination_mask = 1 - data.termination
-    termination_mask *= truncation_mask
+    termination_mask = 1 - data.termination * truncation_mask
 
     # Calculate GAE:
-    vs, advantages = jax.lax.stop_gradient(
-        calculate_gae(
-            rewards=rewards,
-            values=values,
-            bootstrap_value=bootstrap_values,
-            truncation_mask=truncation_mask,
-            termination_mask=termination_mask,
-            gamma=gamma,
-            gae_lambda=gae_lambda,
-        )
+    vs, advantages = calculate_gae(
+        rewards=rewards,
+        values=values,
+        bootstrap_value=bootstrap_values,
+        truncation_mask=truncation_mask,
+        termination_mask=termination_mask,
+        gamma=gamma,
+        gae_lambda=gae_lambda,
     )
+
     if normalize_advantages:
         advantages = (
             (advantages - jnp.mean(advantages)) / (jnp.std(advantages) + 1e-8)
         )
 
     # Calculate ratios:
-    log_probs = action_distribution.log_prob(
+    log_prob = action_distribution.log_prob(
         logits,
         data.extras['policy_data']['raw_action'],
     )
-    log_prob = jnp.sum(log_probs, axis=-1)
     previous_log_prob = data.extras['policy_data']['log_prob']
     log_ratios = log_prob - previous_log_prob
     ratios = jnp.exp(log_ratios)
@@ -133,11 +130,10 @@ def loss_function(
     )
 
     # Entropy Loss:
-    entropys = action_distribution.entropy(
+    entropy = action_distribution.entropy(
         logits,
         rng_key,
     )
-    entropy = jnp.sum(entropys, axis=-1)
     entropy_loss = -entropy_coef * jnp.mean(
         entropy,
     )

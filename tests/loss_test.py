@@ -105,10 +105,6 @@ class LossUtilitiesTest(absltest.TestCase):
             value_layer_sizes=layer_sizes,
             activation=activation,
             kernel_init=kernel_initializer,
-            action_distribution=ParametricDistribution(
-                distribution=distrax.Normal,
-                bijector=distrax.Tanh(),
-            ),
         )
         policy_params = networks.policy_network.init(rng_key)
         value_params = networks.value_network.init(rng_key)
@@ -262,10 +258,6 @@ class LossUtilitiesTest(absltest.TestCase):
             value_layer_sizes=layer_sizes,
             activation=activation,
             kernel_init=kernel_initializer,
-            action_distribution=ParametricDistribution(
-                distribution=distrax.Normal,
-                bijector=distrax.Tanh(),
-            ),
         )
         policy_params = networks.policy_network.init(rng_key)
         value_params = networks.value_network.init(rng_key)

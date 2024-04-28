@@ -5,13 +5,11 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import flax.linen as nn
-import distrax
 
 from brax.io import html
 
 from src.envs import barkour
 from src.algorithms.ppo import network_utilities as ppo_networks
-from src.distribution_utilities import ParametricDistribution
 from src.algorithms.ppo.loss_utilities import loss_function
 from src.algorithms.ppo.train import train
 
@@ -28,10 +26,6 @@ def main(argv=None):
         value_layer_sizes=(256, 256, 256, 256, 256),
         activation=nn.tanh,
         kernel_init=jax.nn.initializers.lecun_uniform(),
-        action_distribution=ParametricDistribution(
-            distribution=distrax.Normal,
-            bijector=distrax.Tanh(),
-        ),
     )
     loss_fn = functools.partial(
         loss_function,
@@ -45,28 +39,33 @@ def main(argv=None):
     env = barkour.BarkourEnv()
     eval_env = barkour.BarkourEnv()
 
-    def progress_fn(iteration, metrics):
+    def progress_fn(num_steps, metrics):
         print(
-            f'Epoch Iteration: {iteration} \t'
-            f'Training Loss: {metrics["training/loss"]} \t'
-            f'Episode Reward: {metrics["eval/episode_reward"]} \t'
-            f'Epoch Time: {metrics["eval/epoch_time"]} \t'
-            f'Training Wall Time: {metrics["training/walltime"]} \t'
-            f'Evaluation Wall Time: {metrics["eval/walltime"]} \t'
+            f'Num Steps: {num_steps} \t'
+            f'Episode Reward: {metrics["eval/episode_reward"]:.3f} \t'
         )
+        if num_steps > 0:
+            print(
+                f'Training Loss: {metrics["training/loss"]:.3f} \t'
+                f'Policy Loss: {metrics["training/policy_loss"]:.3f} \t'
+                f'Value Loss: {metrics["training/value_loss"]:.3f} \t'
+                f'Entropy Loss: {metrics["training/entropy_loss"]:.3f} \t'
+                f'Training Wall Time: {metrics["training/walltime"]:.3f} \t'
+            )
+        print('\n')
 
     train_fn = functools.partial(
         train,
-        num_epochs=100,
-        num_training_steps=40,
+        num_epochs=10,
+        num_training_steps=34,
         episode_length=1000,
-        num_policy_steps=25,
+        num_policy_steps=20,
         action_repeat=1,
         num_envs=8192,
         num_evaluation_envs=128,
         num_evaluations=1,
         deterministic_evaluation=True,
-        reset_per_epoch=True,
+        reset_per_epoch=False,
         seed=0,
         batch_size=256,
         num_minibatches=32,

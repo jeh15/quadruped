@@ -131,10 +131,6 @@ class NetworksTest(absltest.TestCase):
             value_layer_sizes=layer_sizes,
             activation=activation,
             kernel_init=kernel_initializer,
-            action_distribution=ParametricDistribution(
-                distribution=distrax.Normal,
-                bijector=distrax.Tanh(),
-            ),
         )
         policy_generator = ppo_networks.make_inference_fn(networks)
 

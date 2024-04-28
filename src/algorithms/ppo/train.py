@@ -28,6 +28,9 @@ import src.metrics_utilities as metrics_utilities
 
 InferenceParams = Tuple[running_statistics.NestedMeanStd, types.Params]
 
+# jax.config.update("jax_disable_jit", True)
+
+
 _PMAP_AXIS_NAME = 'i'
 
 
@@ -92,10 +95,10 @@ def train(
 
     # Training Loop Iteration Parameters:
     num_steps_per_train_step = (
-        batch_size * num_minibatches * episode_length * action_repeat
+        batch_size * num_minibatches * num_policy_steps * action_repeat
     )
     num_steps_per_epoch = (
-        batch_size * num_minibatches * num_policy_steps * episode_length
+        num_steps_per_train_step * num_training_steps
     )
 
     # Generate Random Key:
@@ -139,18 +142,18 @@ def train(
 
     # Initialize Network:
     # functools.partial network_factory to capture parameters:
-    networks = network_factory(
+    network = network_factory(
         observation_size=env_state.obs.shape[-1],
         action_size=env.action_size,
         input_normalization_fn=normalization_fn,
     )
-    make_policy = ppo_networks.make_inference_fn(ppo_networks=networks)
+    make_policy = ppo_networks.make_inference_fn(ppo_networks=network)
 
     # Initialize Loss Function:
     # functools.partial loss_function to capture parameters:
     loss_fn = functools.partial(
         loss_function,
-        ppo_networks=networks,
+        ppo_networks=network,
     )
 
     gradient_udpate_fn = optimization_utilities.gradient_update_fn(
@@ -194,7 +197,9 @@ def train(
 
         shuffled_data = jax.tree_util.tree_map(permute_data, data)
         (opt_state, params, _), metrics = jax.lax.scan(
-            functools.partial(minibatch_step, normalization_params=normalization_params),
+            functools.partial(
+                minibatch_step, normalization_params=normalization_params,
+            ),
             (opt_state, params, grad_key),
             shuffled_data,
             length=num_minibatches,
@@ -231,7 +236,7 @@ def train(
         (state, _), data = jax.lax.scan(
             f,
             (state, policy_step_key),
-            None,
+            (),
             length=batch_size * num_minibatches // num_envs,
         )
 
@@ -253,7 +258,7 @@ def train(
                 sgd_step, data=data, normalization_params=normalization_params,
             ),
             (train_state.opt_state, train_state.params, sgd_key),
-            None,
+            (),
             length=num_ppo_iterations,
         )
 
@@ -274,7 +279,7 @@ def train(
         (train_state, state, _), loss_metrics = jax.lax.scan(
             training_step,
             (train_state, state, key),
-            None,
+            (),
             length=num_training_steps,
         )
         return train_state, state, loss_metrics
@@ -308,8 +313,8 @@ def train(
 
     # Initialize Params and Train State:
     init_params = PPONetworkParams(
-        policy_params=networks.policy_network.init(policy_key),
-        value_params=networks.value_network.init(value_key),
+        policy_params=network.policy_network.init(policy_key),
+        value_params=network.value_network.init(value_key),
     )
     # Can't pass optimizer function to device_put_replicated:
     train_state = TrainState(
@@ -357,7 +362,7 @@ def train(
 
     # Initialize Metrics:
     metrics = {}
-    if process_id == 0 and num_evaluations > 1:
+    if process_id == 0 and num_evaluations != 0:
         params = unpmap((
             train_state.normalization_params,
             train_state.params.policy_params,
@@ -408,7 +413,7 @@ def train(
                 training_metrics=training_metrics,
             )
             logging.info(metrics)
-            progress_fn(epoch_iteration+1, metrics)
+            progress_fn(current_step, metrics)
             # Save Checkpoint:
             checkpoint_fn()
 
