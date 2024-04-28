@@ -5,11 +5,9 @@ import jax
 import flax
 import flax.struct
 from flax import linen as nn
-import distrax
 
 from src import networks
 from brax.training import distribution as distribution_utilities
-# from src import distribution_utilities
 from src import module_types as types
 from src.module_types import PRNGKey
 
