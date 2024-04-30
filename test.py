@@ -23,15 +23,15 @@ def main(argv=None):
     randomization_fn = barkour.domain_randomize
     make_networks_factory = functools.partial(
         ppo_networks.make_ppo_networks,
-        policy_layer_sizes=(128, 128, 128, 128),
-        value_layer_sizes=(256, 256, 256, 256, 256),
+        policy_layer_sizes=(128,) * 4,
+        value_layer_sizes=(256,) * 5,
         activation=nn.swish,
         kernel_init=jax.nn.initializers.lecun_uniform(),
     )
     loss_fn = functools.partial(
         loss_function,
         clip_coef=0.3,
-        value_coef=0.25,
+        value_coef=0.5,
         entropy_coef=0.01,
         gamma=0.97,
         gae_lambda=0.95,
@@ -59,9 +59,9 @@ def main(argv=None):
     train_fn = functools.partial(
         train,
         num_epochs=20,
-        num_training_steps=34,
+        num_training_steps=20,
         episode_length=1000,
-        num_policy_steps=20,
+        num_policy_steps=25,
         action_repeat=1,
         num_envs=8192,
         num_evaluation_envs=128,
@@ -71,7 +71,7 @@ def main(argv=None):
         seed=0,
         batch_size=256,
         num_minibatches=32,
-        num_ppo_iterations=3,
+        num_ppo_iterations=4,
         normalize_observations=True,
         network_factory=make_networks_factory,
         optimizer=optax.adam(3e-4),

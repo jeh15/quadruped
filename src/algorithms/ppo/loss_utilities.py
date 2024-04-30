@@ -95,9 +95,6 @@ def loss_function(
     # This formulation makes sense:
     # termination_mask = 1 - data.termination
 
-    # Another formulation:
-    # termination_mask = data.termination * (1 - truncation_mask)
-
     # Calculate GAE:
     vs, advantages = calculate_gae(
         rewards=rewards,
