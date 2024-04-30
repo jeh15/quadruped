@@ -14,7 +14,7 @@ class Evaluator:
 
     def __init__(
         self,
-        env: types.Env,
+        env: envs.Env,
         policy_generator: Callable[[types.PolicyParams], types.Policy],
         num_envs: int,
         episode_length: int,
@@ -37,7 +37,7 @@ class Evaluator:
                 initial_state,
                 policy_generator(policy_params),
                 key,
-                episode_length // action_repeat,
+                num_steps=episode_length // action_repeat,
             )
             return final_state
 
@@ -72,7 +72,7 @@ class Evaluator:
         )
         metrics['eval/epoch_time'] = epoch_time
         metrics['eval/steps_per_second'] = self.steps_per_epoch / epoch_time
-        self.walltime += epoch_time
+        self.walltime = self.walltime + epoch_time
         metrics = {
             'eval/walltime': self.walltime,
             **training_metrics,

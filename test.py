@@ -5,6 +5,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import flax.linen as nn
+import optax
 
 from brax.io import html
 
@@ -29,10 +30,10 @@ def main(argv=None):
     )
     loss_fn = functools.partial(
         loss_function,
-        clip_coef=0.2,
-        value_coef=0.5,
+        clip_coef=0.3,
+        value_coef=0.25,
         entropy_coef=0.01,
-        gamma=0.99,
+        gamma=0.97,
         gae_lambda=0.95,
         normalize_advantages=False,
     )
@@ -72,6 +73,7 @@ def main(argv=None):
         num_ppo_iterations=4,
         normalize_observations=True,
         network_factory=make_networks_factory,
+        optimizer=optax.adam(3e-4),
         loss_function=loss_fn,
         progress_fn=progress_fn,
         randomization_fn=randomization_fn,

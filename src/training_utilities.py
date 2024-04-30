@@ -47,14 +47,14 @@ def unroll_policy_steps(
             state,
             policy,
             key,
-            extra_fields,
+            extra_fields=extra_fields,
         )
         return (state, subkey), transition
 
     (final_state, _), transitions = jax.lax.scan(
         f,
         (state, key),
-        xs=None,
+        (),
         length=num_steps,
     )
     return final_state, transitions

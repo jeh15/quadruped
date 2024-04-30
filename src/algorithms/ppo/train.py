@@ -282,6 +282,7 @@ def train(
             (),
             length=num_training_steps,
         )
+        loss_metrics = jax.tree_util.tree_map(jnp.mean, loss_metrics)
         return train_state, state, loss_metrics
 
     training_epoch = jax.pmap(training_epoch, axis_name=_PMAP_AXIS_NAME)
