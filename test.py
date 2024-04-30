@@ -25,7 +25,7 @@ def main(argv=None):
         ppo_networks.make_ppo_networks,
         policy_layer_sizes=(128, 128, 128, 128),
         value_layer_sizes=(256, 256, 256, 256, 256),
-        activation=nn.tanh,
+        activation=nn.swish,
         kernel_init=jax.nn.initializers.lecun_uniform(),
     )
     loss_fn = functools.partial(
@@ -35,13 +35,14 @@ def main(argv=None):
         entropy_coef=0.01,
         gamma=0.97,
         gae_lambda=0.95,
-        normalize_advantages=False,
+        normalize_advantages=True,
     )
     env = barkour.BarkourEnv()
     eval_env = barkour.BarkourEnv()
 
-    def progress_fn(num_steps, metrics):
+    def progress_fn(iteration, num_steps, metrics):
         print(
+            f'Iteration: {iteration} \t'
             f'Num Steps: {num_steps} \t'
             f'Episode Reward: {metrics["eval/episode_reward"]:.3f} \t'
         )
@@ -57,7 +58,7 @@ def main(argv=None):
 
     train_fn = functools.partial(
         train,
-        num_epochs=10,
+        num_epochs=20,
         num_training_steps=34,
         episode_length=1000,
         num_policy_steps=20,
@@ -70,7 +71,7 @@ def main(argv=None):
         seed=0,
         batch_size=256,
         num_minibatches=32,
-        num_ppo_iterations=4,
+        num_ppo_iterations=3,
         normalize_observations=True,
         network_factory=make_networks_factory,
         optimizer=optax.adam(3e-4),

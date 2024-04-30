@@ -64,7 +64,7 @@ def loss_function(
     entropy_coef: float = 0.01,
     gamma: float = 0.99,
     gae_lambda: float = 0.95,
-    normalize_advantages: bool = False,
+    normalize_advantages: bool = True,
 ) -> Tuple[jnp.ndarray, types.Metrics]:
     # Unpack PPO networks:
     action_distribution = ppo_networks.action_distribution
@@ -88,7 +88,15 @@ def loss_function(
     # Create masks for truncation and termination:
     rewards = data.reward
     truncation_mask = 1 - data.extras['state_data']['truncation']
+
+    # This formulation does not make sense...
     termination_mask = 1 - data.termination * truncation_mask
+
+    # This formulation makes sense:
+    # termination_mask = 1 - data.termination
+
+    # Another formulation:
+    # termination_mask = data.termination * (1 - truncation_mask)
 
     # Calculate GAE:
     vs, advantages = calculate_gae(

@@ -373,7 +373,7 @@ def train(
             training_metrics={},
         )
         logging.info(metrics)
-        progress_fn(0, metrics)
+        progress_fn(0, 0, metrics)
 
     training_metrics = {}
     training_walltime = 0
@@ -396,11 +396,11 @@ def train(
         current_step = int(unpmap(train_state.env_steps))
 
         # If reset per epoch else Auto Reset:
+        envs_key = jax.vmap(
+            lambda x, s: jax.random.split(x[0], s),
+            in_axes=(0, None),
+        )(envs_key, envs_key.shape[1])
         if reset_per_epoch:
-            envs_key = jax.vmap(
-                lambda x, s: jax.random.split(x[0], s),
-                in_axes=(0, None),
-            )(envs_key, envs_key.shape[1])
             env_state = reset_fn(envs_key)
 
         if process_id == 0:
@@ -414,7 +414,7 @@ def train(
                 training_metrics=training_metrics,
             )
             logging.info(metrics)
-            progress_fn(current_step, metrics)
+            progress_fn(epoch_iteration+1, current_step, metrics)
             # Save Checkpoint:
             checkpoint_fn()
 
