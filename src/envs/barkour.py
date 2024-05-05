@@ -456,5 +456,52 @@ class BarkourEnv(PipelineEnv):
         camera = camera or 'track'
         return super().render(trajectory, camera=camera)
 
+    def get_observation(
+        self,
+        mj_data: mujoco.MjData,
+        command: np.ndarray,
+        previous_action: np.ndarray,
+        observation_history: np.ndarray,
+    ) -> np.ndarray:
+        # Numpy implementation of the observation function:
+        def rotate(vec: np.ndarray, quat: np.ndarray) -> np.ndarray:
+            if len(vec.shape) != 1:
+                raise ValueError('vec must have no batch dimensions.')
+            s, u = quat[0], quat[1:]
+            r = 2 * (np.dot(u, vec) * u) + (s * s - np.dot(u, u)) * vec
+            r = r + 2 * s * np.cross(u, vec)
+            return r
+
+        def quat_inv(q: np.ndarray) -> np.ndarray:
+            return q * np.array([1, -1, -1, -1])
+
+        base_w = mj_data.qpos[3:7]
+        base_dw = mj_data.qvel[3:6]
+        joint_q = mj_data.qpos[7:]
+
+        inverse_torso_rotation = quat_inv(base_w)
+        local_dw = rotate(base_dw, inverse_torso_rotation)
+
+        new_observation = np.concatenate([
+            np.array([local_dw[2]]) * 0.25,
+            rotate(np.array([0, 0, -1]), inverse_torso_rotation),
+            command * np.array([2.0, 2.0, 0.25]),
+            joint_q - self._default_pose,
+            previous_action,
+        ])
+
+        # clip, noise
+        new_observation = (
+            jnp.clip(new_observation, -100.0, 100.0)
+            + self._obs_noise * np.random.uniform(
+                low=-1, high=1, size=new_observation.shape,
+            )
+        )
+        # stack observations through time
+        observation = np.roll(observation_history, new_observation.size)
+        observation[:new_observation.size] = new_observation
+
+        return observation
+
 
 envs.register_environment('barkour', BarkourEnv)

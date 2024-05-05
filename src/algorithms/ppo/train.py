@@ -1,6 +1,6 @@
 import functools
 import time
-from typing import Callable, Optional, Tuple
+from typing import Any, Callable, Optional, Tuple
 
 from absl import logging
 import flax.struct
@@ -27,9 +27,6 @@ import src.metrics_utilities as metrics_utilities
 
 
 InferenceParams = Tuple[running_statistics.NestedMeanStd, types.Params]
-
-# jax.config.update("jax_disable_jit", True)
-
 
 _PMAP_AXIS_NAME = 'i'
 
@@ -75,11 +72,12 @@ def train(
     optimizer: optax.GradientTransformation = optax.adam(1e-4),
     loss_function: Callable[..., Tuple[jnp.ndarray, types.Metrics]] =
     loss_utilities.loss_function,
-    progress_fn: Callable[[int, types.Metrics], None] = lambda *args: None,
+    progress_fn: Callable[[int, int, types.Metrics], None] = lambda *args: None,
     checkpoint_fn: Callable[..., None] = lambda *args: None,
     randomization_fn: Optional[
         Callable[[base.System, jnp.ndarray], Tuple[base.System, base.System]]
     ] = None,
+    wandb: Optional[Any] = None,
 ):
     assert batch_size * num_minibatches % num_envs == 0
     training_start_time = time.time()
@@ -373,7 +371,12 @@ def train(
             training_metrics={},
         )
         logging.info(metrics)
+        if wandb is not None:
+            wandb.log(metrics)
         progress_fn(0, 0, metrics)
+        if checkpoint_fn is not None:
+            _train_state = unpmap(train_state)
+            checkpoint_fn(iteration=0, train_state=_train_state)
 
     training_metrics = {}
     training_walltime = 0
@@ -414,9 +417,15 @@ def train(
                 training_metrics=training_metrics,
             )
             logging.info(metrics)
+            if wandb is not None:
+                wandb.log(metrics)
             progress_fn(epoch_iteration+1, current_step, metrics)
             # Save Checkpoint:
-            checkpoint_fn()
+            if checkpoint_fn is not None:
+                _train_state = unpmap(train_state)
+                checkpoint_fn(
+                    iteration=epoch_iteration+1, train_state=_train_state,
+                )
 
     total_steps = current_step
 
