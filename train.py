@@ -2,18 +2,17 @@ import os
 import functools
 
 import jax
-import jax.numpy as jnp
 import flax.linen as nn
+import distrax
 import optax
 
 import wandb
 import orbax.checkpoint as ocp
 
-from brax.io import html
-
 from src.envs import barkour
 from src.algorithms.ppo import network_utilities as ppo_networks
 from src.algorithms.ppo.loss_utilities import loss_function
+from src.distribution_utilities import ParametricDistribution
 from src.algorithms.ppo.train import train
 from src.algorithms.ppo import checkpoint_utilities
 
@@ -29,6 +28,7 @@ def main(argv=None):
         value_depth=5,
         activation='nn.swish',
         kernel_init='jax.nn.initializers.lecun_uniform()',
+        action_distribution='ParametricDistribution(distribution=distrax.Normal, bijector=distrax.Tanh())',
     )
     loss_metadata = checkpoint_utilities.loss_metadata(
         clip_coef=0.3,
@@ -74,6 +74,10 @@ def main(argv=None):
         value_layer_sizes=(network_metadata.value_layer_size, ) * network_metadata.value_depth,
         activation=nn.swish,
         kernel_init=jax.nn.initializers.lecun_uniform(),
+        action_distribution=ParametricDistribution(
+            distribution=distrax.Normal,
+            bijector=distrax.Tanh(),
+        ),
     )
     loss_fn = functools.partial(
         loss_function,

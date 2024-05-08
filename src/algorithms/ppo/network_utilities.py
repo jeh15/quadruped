@@ -1,13 +1,14 @@
 from typing import Sequence, Tuple
 
 import jax
+import distrax
 
 import flax
 import flax.struct
 from flax import linen as nn
 
 from src import networks
-from brax.training import distribution as distribution_utilities
+import src.distribution_utilities as distribution_utilities
 from src import module_types as types
 from src.module_types import PRNGKey
 
@@ -44,11 +45,11 @@ def make_inference_fn(ppo_networks: PPONetworks):
                 actions = action_distribution.mode(logits)
                 policy_data = {}
             else:
-                raw_actions = action_distribution.sample_no_postprocessing(
+                raw_actions = action_distribution.base_distribution_sample(
                     logits, key
                 )
                 log_prob = action_distribution.log_prob(logits, raw_actions)
-                actions = action_distribution.postprocess(raw_actions)
+                actions = action_distribution.process_sample(raw_actions)
                 policy_data = {"log_prob": log_prob, "raw_action": raw_actions}
             return actions, policy_data
 
@@ -66,14 +67,13 @@ def make_ppo_networks(
     value_layer_sizes: Sequence[int] = (256, 256),
     activation: networks.ActivationFn = nn.tanh,
     kernel_init: types.Initializer = jax.nn.initializers.lecun_uniform(),
+    action_distribution: distribution_utilities.ParametricDistribution = distribution_utilities
+    .ParametricDistribution(distribution=distrax.Normal, bijector=distrax.Tanh())
 ) -> PPONetworks:
     """Creates the Policy and Value Networks for PPO."""
-    action_distribution = distribution_utilities.NormalTanhDistribution(
-        event_size=action_size,
-    )
     policy_network = networks.make_policy_network(
         input_size=observation_size,
-        output_size=action_distribution.param_size,
+        output_size=2*action_size,
         input_normalization_fn=input_normalization_fn,
         layer_sizes=policy_layer_sizes,
         activation=activation,

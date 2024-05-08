@@ -1,12 +1,12 @@
-from typing import Any, Optional, Sequence, Union
+from typing import Any, Optional, Union
 
-import jax
 import orbax.checkpoint as ocp
 from orbax.checkpoint import CheckpointManager, CheckpointManagerOptions
 from src.algorithms.ppo.train import TrainState
 import optax
 import flax.struct
 import src.module_types as types
+import src.distribution_utilities as distribution
 
 
 @flax.struct.dataclass
@@ -17,6 +17,7 @@ class network_metadata:
     value_depth: int
     activation: Union[types.ActivationFn, str]
     kernel_init: Union[types.Initializer, str]
+    action_distribution: Union[distribution.ParametricDistribution, str]
 
 
 @flax.struct.dataclass
@@ -57,6 +58,7 @@ def empty_network_metadata() -> network_metadata:
         value_depth=0,
         activation='',
         kernel_init='',
+        action_distribution='',
     )
 
 
