@@ -106,10 +106,10 @@ def main(argv=None):
             data.ctrl = ctrl
 
             for _ in range(num_steps):
-                mujoco.mj_step(model, data)
+                mujoco.mj_step(model, data)  # type: ignore
 
             with viewer.lock():
-                viewer.opt.flags[mujoco.mjtVisFlag.mjVIS_CONTACTPOINT] = int(data.time % 2)
+                viewer.opt.flags[mujoco.mjtVisFlag.mjVIS_CONTACTPOINT] = int(data.time % 2)  # type: ignore
 
             viewer.sync()
 

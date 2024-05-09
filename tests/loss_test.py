@@ -4,14 +4,12 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import flax.linen as nn
-import distrax
 
 from brax.envs import fast
 from brax.envs.wrappers.training import wrap
 from src.algorithms.ppo.network_utilities import PPONetworkParams
 import src.algorithms.ppo.network_utilities as ppo_networks
 from src.module_types import identity_normalization_fn
-from src.distribution_utilities import ParametricDistribution
 from src.training_utilities import unroll_policy_steps
 from brax.training.agents.ppo import networks as brax_ppo_networks
 from brax.training.agents.ppo.losses import PPONetworkParams as BraxPPONetworkParams

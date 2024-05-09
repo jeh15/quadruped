@@ -4,8 +4,8 @@ import jax
 import numpy as np
 import distrax
 
-import brax.training.distribution
-import src.distribution_utilities
+from brax.training.distribution import NormalTanhDistribution
+from src.distribution_utilities import ParametricDistribution
 
 jax.config.parse_flags_with_absl()
 
@@ -21,13 +21,13 @@ class DistributionTest(absltest.TestCase):
         var = 1.0
 
         # Brax Distribution:
-        brax_distribution = brax.training.distribution.NormalTanhDistribution(
+        brax_distribution = NormalTanhDistribution(
             event_size=shape,
             min_std=std,
         )
 
         # Distrax Distribution:
-        distrax_distribution = src.distribution_utilities.ParametricDistribution(
+        distrax_distribution = ParametricDistribution(
             distribution=distrax.Normal,
             bijector=distrax.Tanh(),
             min_std=std,
@@ -39,10 +39,9 @@ class DistributionTest(absltest.TestCase):
         brax_log_prob = brax_distribution.log_prob(test_input, brax_raw_actions)
         brax_postprocessed_actions = brax_distribution.postprocess(brax_raw_actions)
 
-        distrax_distribution = distrax_distribution.create_distribution(test_input)
-        distrax_raw_actions = distrax_distribution.distribution.sample(seed=rng_key)
-        distrax_postprocessed_actions, distrax_log_probs = distrax_distribution.sample_and_log_prob(seed=rng_key)
-        distrax_log_prob = np.sum(distrax_log_probs, axis=-1)
+        distrax_raw_actions = distrax_distribution.base_distribution_sample(test_input, rng_key)
+        distrax_log_prob = distrax_distribution.log_prob(test_input, distrax_raw_actions)
+        distrax_postprocessed_actions = distrax_distribution.process_sample(distrax_raw_actions)
 
         # Tests:
         np.testing.assert_array_almost_equal(brax_raw_actions, distrax_raw_actions)

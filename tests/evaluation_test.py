@@ -63,7 +63,6 @@ class MetricUtilitiesTest(absltest.TestCase):
         policy_params = networks.policy_network.init(rng_key)
         value_params = networks.value_network.init(rng_key)
         policy_generator = ppo_networks.make_inference_fn(networks)
-        policy_fn = policy_generator([normalization_params, policy_params])
 
         brax_networks = brax_ppo_networks.make_ppo_networks(
             observation_size=input_size,
@@ -93,7 +92,7 @@ class MetricUtilitiesTest(absltest.TestCase):
 
         evaluator = Evaluator(
             env=env,
-            policy=policy_fn,
+            policy_generator=policy_generator,
             num_envs=num_envs,
             episode_length=num_steps,
             action_repeat=1,
@@ -110,7 +109,7 @@ class MetricUtilitiesTest(absltest.TestCase):
         )
 
         # Evaluation:
-        metrics = evaluator.evaluate({})
+        metrics = evaluator.evaluate((normalization_params, policy_params), {})
         brax_metrics = brax_evaluator.run_evaluation((normalization_params, brax_policy_params), {})
 
         np.testing.assert_array_almost_equal(
