@@ -1,0 +1,114 @@
+<mujoco model="barkour_leg">
+  <compiler angle="radian" autolimits="true"/>
+
+  <option iterations="1" ls_iterations="5">
+    <flag eulerdamp="disable"/>
+  </option>
+
+  <default>
+    <default class="bkvb">
+      <geom contype="0" conaffinity="0" type="mesh"/>
+      <default class="bkvb/collision">
+        <geom group="3" contype="0" conaffinity="1"/>
+        <default class="bkvb/collision/foot">
+          <geom type="sphere" size="0.0175" pos="-0.21425 -0.0779806 0" rgba="1 0 0 1" solimp="0.015 1 0.031" friction="0.8 0.02 0.01"/>
+        </default>
+      </default>
+
+      <!-- hide sites by default -->
+      <site group="5"/>
+      <default class="bkvb/vicon">
+        <!-- show vicon markers with a small sphere -->
+        <site group="0"/>
+      </default>
+
+      <joint damping="0.024" armature="0.011"/>
+      <general forcerange="-18 18" biastype="affine" gainprm="50 0 0" biasprm="0 -50 -0.5"/>
+      <default class="bkvb/abduction">
+        <joint range="-1.0472 1.0472"/>
+        <general ctrlrange="-0.9472 0.9472"/>
+        <geom rgba="0.980392 0.713726 0.00392157 1" mesh="abduction"/>
+      </default>
+      <default class="bkvb/hip">
+        <joint range="-1.54706 3.02902"/>
+        <general ctrlrange="-1.44706 2.92902"/>
+      </default>
+      <default class="bkvb/knee">
+        <joint range="0 2.44346"/>
+        <general ctrlrange="0.1 2.34346"/>
+      </default>
+      <default class="bkvb/foot">
+        <site pos="-0.21425 -0.0779806 0" quat="0.664463 0.664463 -0.241845 -0.241845"/>
+        <geom rgba="0.231373 0.380392 0.705882 1" mesh="foot"/>
+      </default>
+      <default class="bkvb/lower_leg">
+        <geom rgba="0.615686 0.811765 0.929412 1" mesh="lower_leg"/>
+      </default>
+      <default class="bkvb/upper_leg">
+        <geom rgba="0.615686 0.811765 0.929412 1" mesh="upper_leg"/>
+      </default>
+      <default class="bkvb/upper_leg_left">
+        <geom rgba="0.972549 0.529412 0.00392157 1" mesh="upper_leg_left"/>
+      </default>
+      <default class="bkvb/upper_leg_right">
+        <geom rgba="0.513726 0.737255 0.407843 1" mesh="upper_leg_right"/>
+      </default>
+      <default class="bkvb/torso">
+        <geom rgba="0.8 0.74902 0.913725 1"/>
+      </default>
+    </default>
+  </default>
+
+  <asset>
+    <mesh name="camera_cover" file="assets/camera_cover.stl"/>
+    <mesh name="neck" file="assets/neck.stl"/>
+    <mesh name="intel_realsense_depth_camera_d435" file="assets/intel_realsense_depth_camera_d435.stl"/>
+    <mesh name="handle" file="assets/handle.stl"/>
+    <mesh name="torso" file="assets/torso.stl"/>
+    <mesh name="abduction" file="assets/abduction.stl"/>
+    <mesh name="upper_leg" file="assets/upper_leg.stl"/>
+    <mesh name="upper_leg_left" file="assets/upper_leg_left.stl"/>
+    <mesh name="upper_leg_right" file="assets/upper_leg_right.stl"/>
+    <mesh name="lower_leg" file="assets/lower_leg.stl"/>
+    <mesh name="foot" file="assets/foot.stl"/>
+  </asset>
+
+  <worldbody>
+    <body name="fixed_base" pos="0.0 0.0 0.5" childclass="bkvb">
+      <body name="leg_front_left" pos="0 0 0" quat="1 -1 -1 1">
+        <inertial pos="0.00547726 -0.000288034 -0.0602191" quat="0.999837 0.0103892 -0.0143715 -0.00325656" mass="0.787"
+          diaginertia="0.00143831 0.00117023 0.00100011"/>
+        <joint name="abduction_front_left" class="bkvb/abduction"/>
+        <geom class="bkvb/abduction" pos="0 0.000111373 0.0029" quat="1 1 0 0"/>
+        <body name="upper_leg_front_left" pos="0.03085 0 -0.065" quat="0 -1 0 1">
+          <inertial pos="-0.0241397 0.00402429 -0.0453038" quat="0.0673193 0.647966 -0.00518142 0.75867" mass="1.155"
+            diaginertia="0.00562022 0.00519471 0.0012633"/>
+          <joint name="hip_front_left" class="bkvb/hip"/>
+          <geom class="bkvb/upper_leg" pos="0.0679 0.000111373 0.03085" quat="1 1 1 -1"/>
+          <geom class="bkvb/upper_leg_left" pos="0 0 -0.05075" quat="0 0 1 0"/>
+          <body name="lower_leg_front_left" pos="-0.19 0 -0.069575" quat="0 0 1 0">
+            <inertial pos="-0.0895493 -0.0301957 -3.02082e-08" quat="-0.101465 0.699789 0.101465 0.699789"
+              mass="0.171238" diaginertia="0.00137406 0.00135746 3.05521e-05"/>
+            <joint name="knee_front_left" class="bkvb/knee"/>
+            <geom class="bkvb/foot" pos="-0.0649838 0.178542 0" quat="0.819152 0 0 -0.573576"/>
+            <geom class="bkvb/lower_leg" pos="-0.0649838 0.178542 0" quat="0.819152 0 0 -0.573576"/>
+            <geom class="bkvb/collision/foot"/>
+            <site name="foot_front_left" class="bkvb/foot"/>
+          </body>
+        </body>
+      </body>
+    </body>
+  </worldbody>
+
+  <actuator>
+    <general name="abduction_front_left" class="bkvb/abduction" joint="abduction_front_left"/>
+    <general name="hip_front_left" class="bkvb/hip" joint="hip_front_left"/>
+    <general name="knee_front_left" class="bkvb/knee" joint="knee_front_left"/>
+  </actuator>
+
+  <sensor>
+    <jointpos joint="abduction_front_left" name="abduction_front_left_pos"/>
+    <jointpos joint="hip_front_left" name="hip_front_left_pos"/>
+    <jointpos joint="knee_front_left" name="knee_front_left_pos"/>
+  </sensor>
+</mujoco>
