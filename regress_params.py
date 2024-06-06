@@ -54,6 +54,15 @@ def main(argv=None):
     init_fn = jax.jit(pipeline.init)
     step_fn = jax.jit(pipeline.step)
 
+    # Run initial comparison
+    state = init_fn(sys, q_measured[0], qd_measured[0])
+    q_history_init = []
+    qd_history_init = []
+    for i in range(control_history.shape[0]):
+        state = step_fn(sys, state, control_history[i])
+        q_history_init.append(state.q)
+        qd_history_init.append(state.qd)
+
     # init_vmap = jax.vmap(pipeline.init, in_axes=(None, 0, 0))
     # init_fn = jax.jit(init_vmap)
 
@@ -151,17 +160,90 @@ def main(argv=None):
 
     print(f'Time taken: {time.time() - start_time}')
 
+    # Run regressed params
+    state = init_fn(sys, q_measured[0], qd_measured[0])
+    q_history = []
+    qd_history = []
+    for i in range(control_history.shape[0]):
+        state = step_fn(sys, state, control_history[i])
+        q_history.append(state.q)
+        qd_history.append(state.qd)
+
     param_history = np.asarray(param_history)
     loss_history = np.asarray(loss_history)
+    q_history = np.asarray(q_history)
+    qd_history = np.asarray(qd_history)
+    q_history_init = np.asarray(q_history_init)
+    qd_history_init = np.asarray(qd_history_init)
 
-    fig, ax = plt.subplots(2, 1)
-    ax[0].plot(param_history[:, 0], color='lightsteelblue')
-    ax[0].plot(param_history[:, 1], color='cornflowerblue')
-    ax[0].plot(param_history[:, 2], color='royalblue')
-    ax[0].hlines(target_param, 0, param_history.shape[0], color='r')
-    ax[1].plot(loss_history)
+    fig, ax = plt.subplots(2, 1, constrained_layout=True, figsize=(10, 10))
+    ax[0].plot(param_history[:, 0], color='orange', label='Abduction', linewidth=3.0)
+    ax[0].plot(param_history[:, 1], color='cornflowerblue', label='Hip', linewidth=3.0)
+    ax[0].plot(param_history[:, 2], color='lightcoral', label='Knee', linewidth=3.0)
+    ax[0].hlines(target_param, 0, param_history.shape[0], color='black', linestyle='--', label='Target', linewidth=3.0)
+    ax[0].legend()
+    ax[0].set_title('Friction Regression')
+    ax[0].set_xlabel('Iterations')
+    ax[0].set_ylabel('Friction Parameter')
+
+    ax[1].plot(loss_history, linewidth=3.0)
+    ax[1].set_title('Loss')
+    ax[1].set_xlabel('Iterations')
+    ax[1].set_ylabel('Loss')
 
     plt.savefig('regress_params.png')
+
+    fig, ax = plt.subplots(2, 1, constrained_layout=True, figsize=(10, 10))
+    fig.suptitle('Regressed Comparison')
+
+    ax[0].plot(q_measured[:, 0], color='orange', linestyle='--', linewidth=3.0)
+    ax[0].plot(q_measured[:, 1], color='cornflowerblue', linestyle='--', linewidth=3.0)
+    ax[0].plot(q_measured[:, 2],  color='lightcoral', linestyle='--', linewidth=3.0)
+    ax[0].plot(q_history[:, 0], color='orange', label='Abduction', linewidth=3.0)
+    ax[0].plot(q_history[:, 1], color='cornflowerblue', label='Hip', linewidth=3.0)
+    ax[0].plot(q_history[:, 2], color='lightcoral', label='Knee', linewidth=3.0)
+    ax[0].legend()
+    ax[0].set_title('Position')
+    ax[0].set_ylabel('Position')
+
+    ax[1].plot(qd_measured[:, 0], color='orange', linestyle='--', linewidth=3.0)
+    ax[1].plot(qd_measured[:, 1], color='cornflowerblue', linestyle='--', linewidth=3.0)
+    ax[1].plot(qd_measured[:, 2], color='lightcoral', linestyle='--', linewidth=3.0)
+    ax[1].plot(qd_history[:, 0], color='orange', label='Abduction', linewidth=3.0)
+    ax[1].plot(qd_history[:, 1], color='cornflowerblue', label='Hip', linewidth=3.0)
+    ax[1].plot(qd_history[:, 2], color='lightcoral', label='Knee', linewidth=3.0)
+    ax[1].legend()
+    ax[1].set_title('Velocity')
+    ax[1].set_xlabel('Time')
+    ax[1].set_ylabel('Velocity')
+
+    plt.savefig('regressed.png')
+
+    fig, ax = plt.subplots(2, 1, constrained_layout=True, figsize=(10, 10))
+    fig.suptitle('Initial Comparison')
+
+    ax[0].plot(q_measured[:, 0], color='orange', linestyle='--', linewidth=3.0)
+    ax[0].plot(q_measured[:, 1], color='cornflowerblue', linestyle='--', linewidth=3.0)
+    ax[0].plot(q_measured[:, 2],  color='lightcoral', linestyle='--', linewidth=3.0)
+    ax[0].plot(q_history_init[:, 0], color='orange', label='Abduction', linewidth=3.0)
+    ax[0].plot(q_history_init[:, 1], color='cornflowerblue', label='Hip', linewidth=3.0)
+    ax[0].plot(q_history_init[:, 2], color='lightcoral', label='Knee', linewidth=3.0)
+    ax[0].legend()
+    ax[0].set_title('Position')
+    ax[0].set_ylabel('Position')
+
+    ax[1].plot(qd_measured[:, 0], color='orange', linestyle='--', linewidth=3.0)
+    ax[1].plot(qd_measured[:, 1], color='cornflowerblue', linestyle='--', linewidth=3.0)
+    ax[1].plot(qd_measured[:, 2], color='lightcoral', linestyle='--', linewidth=3.0)
+    ax[1].plot(qd_history_init[:, 0], color='orange', label='Abduction', linewidth=3.0)
+    ax[1].plot(qd_history_init[:, 1], color='cornflowerblue', label='Hip', linewidth=3.0)
+    ax[1].plot(qd_history_init[:, 2], color='lightcoral', label='Knee', linewidth=3.0)
+    ax[1].legend()
+    ax[1].set_title('Velocity')
+    ax[1].set_xlabel('Time')
+    ax[1].set_ylabel('Velocity')
+
+    plt.savefig('initial.png')
 
 
 if __name__ == '__main__':

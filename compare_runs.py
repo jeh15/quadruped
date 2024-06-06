@@ -28,13 +28,15 @@ def main(argv=None):
 
     # Plot the data:
     fig, ax = plt.subplots(2, 1)
-    ax[0].plot(q_false[:, 0], label='Abduction', color='red')
-    ax[0].plot(q_false[:, 1], label='Hip', color='red')
-    ax[0].plot(q_false[:, 2], label='Knee', color='red')
+    fig.tight_layout()
+    ax[0].plot(q_false[:, 0], , color='red')
+    ax[0].plot(q_false[:, 1], , color='red')
+    ax[0].plot(q_false[:, 2], , color='red')
     ax[0].plot(q_true[:, 0], label='Abduction', color='blue')
     ax[0].plot(q_true[:, 1], label='Hip', color='blue')
     ax[0].plot(q_true[:, 2], label='Knee', color='blue')
     ax[0].set_title('Positions')
+    ax[0].y_label('Position')
     ax[0].legend()
 
     ax[1].plot(qd_false[:, 0], label='Abduction', color='red')
@@ -44,6 +46,8 @@ def main(argv=None):
     ax[1].plot(qd_true[:, 1], label='Hip', color='blue')
     ax[1].plot(qd_true[:, 2], label='Knee', color='blue')
     ax[1].set_title('Velocities')
+    ax[1].x_label('Time')
+    ax[1].y_label('Velocity')
     ax[1].legend()
 
     plt.show()
