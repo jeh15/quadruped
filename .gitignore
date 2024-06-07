@@ -237,3 +237,6 @@ examples/jax/jax-llm/proteins-base/
 
 # Orbax Checkpoints
 checkpoints/*
+
+# Portable Network Graphics
+*.png
