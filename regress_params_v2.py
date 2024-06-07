@@ -8,6 +8,7 @@ import jax.numpy as jnp
 import numpy as np
 
 import flax.struct
+import optax
 
 import brax
 from brax.io import mjcf
@@ -42,6 +43,11 @@ def main(argv=None):
 
     friction_param = sys.dof_damping
     target_param = 0.5239
+
+    # Initialize the parameter and optimizer:
+    solver = optax.adam(learning_rate=1e-3)
+    params = jnp.array(friction_param)
+    opt_state = solver.init(params)
 
     with open('train_params.pkl', 'rb') as f:
         [state_history, control_history] = pickle.load(f)
@@ -195,20 +201,18 @@ def main(argv=None):
             friction_gradient = grad.dof_damping
 
             # Update the parameters:
-            learning_rate = 1e-3
-            gradient_descent = lambda x, dx: x - learning_rate * dx
-
-            friction_param = jax.tree.map(
-                gradient_descent, friction_param, friction_gradient,
+            updates, opt_state = solver.update(
+                friction_gradient, opt_state, params,
             )
-            friction_param = jnp.clip(friction_param, 0.01, 1.0)
+            params = optax.apply_updates(params, updates)
+            params = jnp.clip(params, 0.01, 1.0)
 
-            param_history.append(friction_param)
+            param_history.append(params)
             loss_history.append(loss)
 
             # Update the system:
             sys = sys.replace(
-                dof_damping=friction_param,
+                dof_damping=params,
             )
 
         # Print the loss:
