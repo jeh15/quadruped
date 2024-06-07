@@ -1,4 +1,4 @@
 {
     "ros.distro": "iron",
-    "debugpy.debugJustMyCode": false
+    "debugpy.debugJustMyCode": true
 }
