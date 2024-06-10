@@ -11,7 +11,7 @@ import flax.struct
 import optax
 
 import brax
-from brax.io import mjcf
+from brax.io import mjcf, html
 from brax.mjx import pipeline
 
 import matplotlib.pyplot as plt
@@ -100,19 +100,6 @@ def main(argv=None):
     vmap_step_fn = jax.vmap(pipeline.step, in_axes=(None, 0, 0))
     step_fn = jax.jit(vmap_step_fn)
 
-    # Run initial comparison of random trial:
-    random_idx = jax.random.randint(subkey, (), minval=0, maxval=num_trials-1)
-    q_initial_trial = q_measured[:, random_idx]
-    qd_initial_trial = qd_measured[:, random_idx]
-    ctrl_initial_trial = control_history[:, random_idx]
-    state = jax.jit(pipeline.init)(sys, q_initial_trial[0], qd_initial_trial[0])
-    q_history_init = []
-    qd_history_init = []
-    for i in range(control_history.shape[0]):
-        state = jax.jit(pipeline.step)(sys, state, ctrl_initial_trial[i])
-        q_history_init.append(state.q)
-        qd_history_init.append(state.qd)
-
     # Test different loss functions: (Consecutive rollout, Random VMAP rollout)
     # History rollout:
     def loss_function(
@@ -169,7 +156,7 @@ def main(argv=None):
     grad_function = jax.value_and_grad(loss_fn, allow_int=True)
     grad_fn = jax.jit(grad_function)
 
-    num_learning_iterations = 100
+    num_learning_iterations = 25
     param_history = []
     loss_history = []
     start_time = time.time()
@@ -201,11 +188,17 @@ def main(argv=None):
             friction_gradient = grad.dof_damping
 
             # Update the parameters:
-            updates, opt_state = solver.update(
+            def update_solver(friction_gradient, opt_state, params):
+                updates, opt_state = solver.update(
+                    friction_gradient, opt_state, params,
+                )
+                params = optax.apply_updates(params, updates)
+                params = jnp.clip(params, 0.01, 1.0)
+                return params, opt_state
+
+            params, opt_state = update_solver(
                 friction_gradient, opt_state, params,
             )
-            params = optax.apply_updates(params, updates)
-            params = jnp.clip(params, 0.01, 1.0)
 
             param_history.append(params)
             loss_history.append(loss)
@@ -220,23 +213,20 @@ def main(argv=None):
 
     print(f'Time taken: {time.time() - start_time}')
 
-    # Run initial comparison
-    state = init_fn(sys, q_measured[0], qd_measured[0])
+    # Run initial comparison of random trial:
+    random_idx = jax.random.randint(subkey, (), minval=0, maxval=num_trials-1)
+    q_initial_trial = q_measured[:, random_idx]
+    qd_initial_trial = qd_measured[:, random_idx]
+    ctrl_initial_trial = control_history[:, random_idx]
+    state = jax.jit(pipeline.init)(sys, q_initial_trial[0], qd_initial_trial[0])
     q_history_init = []
     qd_history_init = []
+    prior_state_history = []
     for i in range(control_history.shape[0]):
-        state = step_fn(sys, state, control_history[i])
+        state = jax.jit(pipeline.step)(sys, state, ctrl_initial_trial[i])
+        prior_state_history.append(state)
         q_history_init.append(state.q)
         qd_history_init.append(state.qd)
-
-    # Run regressed params
-    state = init_fn(sys, q_measured[0], qd_measured[0])
-    q_history = []
-    qd_history = []
-    for i in range(control_history.shape[0]):
-        state = step_fn(sys, state, control_history[i])
-        q_history.append(state.q)
-        qd_history.append(state.qd)
 
     # Run random trial with regressed params:
     q_test = q_measured[:, random_idx]
@@ -245,8 +235,10 @@ def main(argv=None):
     state = jax.jit(pipeline.init)(sys, q_test[0], qd_test[0])
     q_history = []
     qd_history = []
+    posterior_state_history = []
     for i in range(control_history.shape[0]):
         state = jax.jit(pipeline.step)(sys, state, ctrl_test[i])
+        posterior_state_history.append(state)
         q_history.append(state.q)
         qd_history.append(state.qd)
 
@@ -325,6 +317,37 @@ def main(argv=None):
     ax[1].set_ylabel('Velocity')
 
     plt.savefig('initial.png')
+
+    # Create Visualization:
+    html_string = html.render(
+        sys,
+        prior_state_history,
+        height="100vh",
+        colab=False,
+    )
+
+    html_path = os.path.join(
+        os.path.dirname(__file__),
+        'visualization/prior.html',
+    )
+
+    with open(html_path, 'w') as f:
+        f.writelines(html_string)
+
+    html_string = html.render(
+        sys,
+        posterior_state_history,
+        height="100vh",
+        colab=False,
+    )
+
+    html_path = os.path.join(
+        os.path.dirname(__file__),
+        'visualization/posterior.html',
+    )
+
+    with open(html_path, 'w') as f:
+        f.writelines(html_string)
 
 
 if __name__ == '__main__':
