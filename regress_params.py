@@ -11,7 +11,7 @@ import flax.struct
 import optax
 
 import brax
-from brax.io import mjcf
+from brax.io import mjcf, html
 from brax.mjx import pipeline
 
 import matplotlib.pyplot as plt
@@ -41,13 +41,9 @@ def main(argv=None):
         actuator_biasprm=sys.actuator_biasprm.at[:, 1].set(-35.0),
     )
 
+    initial_params = sys.dof_damping
     friction_param = sys.dof_damping
-    target_param = 0.5239
-
-    # Initialize the parameter and optimizer:
-    solver = optax.adam(learning_rate=1e-3)
-    params = jnp.array(friction_param)
-    opt_state = solver.init(params)
+    target_param = 5.2  # 0.5239
 
     with open('train_params.pkl', 'rb') as f:
         [state_history, control_history] = pickle.load(f)
@@ -80,18 +76,13 @@ def main(argv=None):
     )
 
     # Axis order: (batch, trial, minibatch, dof)
-    q_batch = np.swapaxes(q_batch, 1, 2)
-    qd_batch = np.swapaxes(qd_batch, 1, 2)
-    ctrl_batch = np.swapaxes(ctrl_batch, 1, 2)
+    q_batch = jnp.asarray(np.swapaxes(q_batch, 1, 2))
+    qd_batch = jnp.asarray(np.swapaxes(qd_batch, 1, 2))
+    ctrl_batch = jnp.asarray(np.swapaxes(ctrl_batch, 1, 2))
 
     # Shuffle Data:
     key = jax.random.PRNGKey(42)
     key, subkey = jax.random.split(key)
-
-    # Use same key to preserve order:
-    q_train = jax.random.permutation(subkey, q_batch, axis=0)
-    qd_train = jax.random.permutation(subkey, qd_batch, axis=0)
-    ctrl_train = jax.random.permutation(subkey, ctrl_batch, axis=0)
 
     # VMAP and Jit the pipeline functions:
     vmap_init_fn = jax.vmap(pipeline.init, in_axes=(None, 0, 0))
@@ -100,18 +91,18 @@ def main(argv=None):
     vmap_step_fn = jax.vmap(pipeline.step, in_axes=(None, 0, 0))
     step_fn = jax.jit(vmap_step_fn)
 
-    # Run initial comparison of random trial:
-    random_idx = jax.random.randint(subkey, (), minval=0, maxval=num_trials-1)
-    q_initial_trial = q_measured[:, random_idx]
-    qd_initial_trial = qd_measured[:, random_idx]
-    ctrl_initial_trial = control_history[:, random_idx]
-    state = jax.jit(pipeline.init)(sys, q_initial_trial[0], qd_initial_trial[0])
-    q_history_init = []
-    qd_history_init = []
-    for i in range(control_history.shape[0]):
-        state = jax.jit(pipeline.step)(sys, state, ctrl_initial_trial[i])
-        q_history_init.append(state.q)
-        qd_history_init.append(state.qd)
+    # Initialize the parameter and optimizer:
+    num_learning_iterations = 50
+    transition_steps = num_learning_iterations * minibatch_size
+    schedule_fn = optax.polynomial_schedule(
+        init_value=1e-2,
+        end_value=1e-4,
+        power=2,
+        transition_steps=transition_steps,
+    )
+    solver = optax.adam(learning_rate=1e-2)
+    params = jnp.array(friction_param)
+    opt_state = solver.init(params)
 
     # Test different loss functions: (Consecutive rollout, Random VMAP rollout)
     # History rollout:
@@ -169,84 +160,114 @@ def main(argv=None):
     grad_function = jax.value_and_grad(loss_fn, allow_int=True)
     grad_fn = jax.jit(grad_function)
 
-    num_learning_iterations = 100
     param_history = []
     loss_history = []
     start_time = time.time()
-    for i in range(num_learning_iterations):
-        # Shuffle Data and use same key to preserve order:
-        key, subkey = jax.random.split(subkey)
-        q_train = jax.random.permutation(subkey, q_batch, axis=0)
-        qd_train = jax.random.permutation(subkey, qd_batch, axis=0)
-        ctrl_train = jax.random.permutation(subkey, ctrl_batch, axis=0)
-        for j in range(num_batches):
-            # Get the minibatch:
-            q = q_train[j]
-            qd = qd_train[j]
-            ctrl = jnp.swapaxes(ctrl_train[j], 0, 1)
-            batch = minibatch(
-                q, qd, ctrl,
-            )
-            states = init_fn(
-                sys,
-                batch.q[:, 0],
-                batch.qd[:, 0],
-            )
 
-            loss, grad = grad_fn(
-                sys, states, batch,
-            )
+    def update_solver(gradient, opt_state, params):
+        updates, opt_state = solver.update(
+            gradient, opt_state, params,
+        )
+        params = optax.apply_updates(params, updates)
+        params = jnp.clip(params, 0.01, 100.0)
+        return params, opt_state
 
-            # Extract the gradients:
-            friction_gradient = grad.dof_damping
+    def inner_loop(carry, xs):
+        sys, opt_state, params = carry
+        batch = xs
 
-            # Update the parameters:
-            updates, opt_state = solver.update(
-                friction_gradient, opt_state, params,
-            )
-            params = optax.apply_updates(params, updates)
-            params = jnp.clip(params, 0.01, 1.0)
+        states = init_fn(
+            sys,
+            batch.q[:, 0],
+            batch.qd[:, 0],
+        )
 
-            param_history.append(params)
-            loss_history.append(loss)
+        loss, grad = grad_fn(
+            sys, states, batch,
+        )
 
-            # Update the system:
-            sys = sys.replace(
-                dof_damping=params,
-            )
+        # Extract the gradients:
+        gradient = grad.dof_damping
 
-        # Print the loss:
-        print(f'Iteration: {i}, Loss: {loss}')
+        # Update the parameters:
+        params, opt_state = update_solver(
+            gradient, opt_state, params,
+        )
+
+        # Update the system:
+        sys = sys.replace(
+            dof_damping=params,
+        )
+
+        return (sys, opt_state, params), (loss, params)
+
+    def outer_loop(carry, unused_t, data):
+        sys, opt_state, params, key = carry
+
+        # Shuffle data:
+        key, subkey = jax.random.split(key)
+        q = jax.random.permutation(subkey, data.q, axis=0)
+        qd = jax.random.permutation(subkey, data.qd, axis=0)
+        ctrl = jax.random.permutation(subkey, data.ctrl, axis=0)
+        ctrl = jnp.swapaxes(ctrl, 1, 2)
+        shuffled_data = jax.tree.map(
+            lambda x, y, z: minibatch(x, y, z), q, qd, ctrl,
+        )
+
+        (sys, opt_state, params), (loss, param_history) = jax.lax.scan(
+            f=inner_loop,
+            init=(sys, opt_state, params),
+            xs=shuffled_data,
+            length=num_batches,
+        )
+
+        return (sys, opt_state, params, subkey), (loss, param_history)
+
+    # Training Loop:
+    data = minibatch(q_batch, qd_batch, ctrl_batch)
+    (sys, opt_state, params, _), (loss_history, param_history) = jax.lax.scan(
+        f=functools.partial(outer_loop, data=data),
+        init=(sys, opt_state, params, subkey),
+        xs=(),
+        length=num_learning_iterations,
+    )
+    loss_history = np.asarray(loss_history.flatten())
+    param_history = np.reshape(param_history, (-1, 3))
 
     print(f'Time taken: {time.time() - start_time}')
 
-    # Run initial comparison
-    state = init_fn(sys, q_measured[0], qd_measured[0])
+    # Run initial comparison of random trial:
+    sys = sys.replace(
+        dof_damping=initial_params,
+    )
+    random_idx = jax.random.randint(subkey, (), minval=0, maxval=num_trials-1)
+    q_initial_trial = q_measured[:, random_idx]
+    qd_initial_trial = qd_measured[:, random_idx]
+    ctrl_initial_trial = control_history[:, random_idx]
+    state = jax.jit(pipeline.init)(sys, q_initial_trial[0], qd_initial_trial[0])
     q_history_init = []
     qd_history_init = []
+    prior_state_history = []
     for i in range(control_history.shape[0]):
-        state = step_fn(sys, state, control_history[i])
+        state = jax.jit(pipeline.step)(sys, state, ctrl_initial_trial[i])
+        prior_state_history.append(state)
         q_history_init.append(state.q)
         qd_history_init.append(state.qd)
 
-    # Run regressed params
-    state = init_fn(sys, q_measured[0], qd_measured[0])
-    q_history = []
-    qd_history = []
-    for i in range(control_history.shape[0]):
-        state = step_fn(sys, state, control_history[i])
-        q_history.append(state.q)
-        qd_history.append(state.qd)
-
     # Run random trial with regressed params:
+    sys = sys.replace(
+        dof_damping=params,
+    )
     q_test = q_measured[:, random_idx]
     qd_test = qd_measured[:, random_idx]
     ctrl_test = control_history[:, random_idx]
     state = jax.jit(pipeline.init)(sys, q_test[0], qd_test[0])
     q_history = []
     qd_history = []
+    posterior_state_history = []
     for i in range(control_history.shape[0]):
         state = jax.jit(pipeline.step)(sys, state, ctrl_test[i])
+        posterior_state_history.append(state)
         q_history.append(state.q)
         qd_history.append(state.qd)
 
@@ -272,7 +293,7 @@ def main(argv=None):
     ax[1].set_xlabel('Iterations')
     ax[1].set_ylabel('Loss')
 
-    plt.savefig('regress_params.png')
+    plt.savefig('regress_params.pdf')
 
     fig, ax = plt.subplots(2, 1, constrained_layout=True, figsize=(10, 5))
     fig.suptitle('Regressed Comparison')
@@ -298,7 +319,7 @@ def main(argv=None):
     ax[1].set_xlabel('Time')
     ax[1].set_ylabel('Velocity')
 
-    plt.savefig('regressed.png')
+    plt.savefig('regressed.pdf')
 
     fig, ax = plt.subplots(2, 1, constrained_layout=True, figsize=(10, 5))
     fig.suptitle('Initial Comparison')
@@ -324,7 +345,37 @@ def main(argv=None):
     ax[1].set_xlabel('Time')
     ax[1].set_ylabel('Velocity')
 
-    plt.savefig('initial.png')
+    plt.savefig('initial.pdf')
+
+    # Generate Visualizations:
+    html_string = html.render(
+        sys,
+        prior_state_history,
+        height="100vh",
+        colab=False,
+    )
+    html_path = os.path.join(
+        os.path.dirname(__file__),
+        "visualization/prior.html",
+    )
+
+    with open(html_path, "w") as f:
+        f.writelines(html_string)
+
+    html_string = html.render(
+        sys,
+        posterior_state_history,
+        height="100vh",
+        colab=False,
+    )
+
+    html_path = os.path.join(
+        os.path.dirname(__file__),
+        "visualization/posterior.html",
+    )
+
+    with open(html_path, "w") as f:
+        f.writelines(html_string)
 
 
 if __name__ == '__main__':

@@ -28,8 +28,10 @@ def main(argv=None):
     )
 
     # Change Parameters to regress:
+    original_params = 0.5239
+    test_params = 5.2
     sys = sys.replace(
-        dof_damping=sys.dof_damping.at[:].set(0.5239),
+        dof_damping=sys.dof_damping.at[:].set(test_params),
     )
 
     # Random Initial State Generator:
