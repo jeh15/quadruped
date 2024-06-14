@@ -162,7 +162,6 @@ def main(argv=None):
 
     param_history = []
     loss_history = []
-    start_time = time.time()
 
     def update_solver(gradient, opt_state, params):
         updates, opt_state = solver.update(
@@ -225,16 +224,16 @@ def main(argv=None):
 
     # Training Loop:
     data = minibatch(q_batch, qd_batch, ctrl_batch)
+    start_time = time.time()
     (sys, opt_state, params, _), (loss_history, param_history) = jax.lax.scan(
         f=functools.partial(outer_loop, data=data),
         init=(sys, opt_state, params, subkey),
         xs=(),
         length=num_learning_iterations,
     )
+    print(f'Time taken: {time.time() - start_time}')
     loss_history = np.asarray(loss_history.flatten())
     param_history = np.reshape(param_history, (-1, 3))
-
-    print(f'Time taken: {time.time() - start_time}')
 
     # Run initial comparison of random trial:
     sys = sys.replace(
