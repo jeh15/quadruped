@@ -33,7 +33,7 @@ def main(argv=None):
     )
 
     training_metadata = checkpoint_utilities.training_metadata(
-        num_epochs=20,
+        num_epochs=50,
         num_training_steps=20,
         horizon_length=loss_metadata.horizon_length,
         episode_length=1000,
@@ -104,7 +104,7 @@ def main(argv=None):
         if num_steps > 0:
             print(
                 f'Grad Norm: {metrics["training/grad_norm"]:.3f} \t'
-                f'Param Norm: {metrics["training/param_norm"]:.3f} \t'
+                f'Param Norm: {metrics["training/params_norm"]:.3f} \t'
                 f'Training Wall Time: {metrics["training/walltime"]:.3f} \t'
             )
         print('\n')

@@ -314,7 +314,7 @@ def train(
         # Epoch Training Iteration:
         local_key, epoch_key = jax.random.split(local_key)
         epoch_keys = jax.random.split(epoch_key, local_devices_to_use)
-        (train_state, env_state, training_metrics, local_key) = (
+        (train_state, env_state, training_metrics, _) = (
             training_epoch_with_metrics(train_state, env_state, epoch_keys)
         )
 
