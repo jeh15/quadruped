@@ -1,3 +1,4 @@
+from absl import app
 import os
 import functools
 
@@ -24,17 +25,17 @@ def main(argv=None):
     network_metadata = checkpoint_utilities.network_metadata(
         policy_layer_size=128,
         policy_depth=4,
-        activation='nn.swish',
-        kernel_init='jax.nn.initializers.lecun_uniform()',
+        activation='nn.elu',
+        kernel_init='jax.nn.initializers.orthogonal(0.01)',
         action_distribution='ParametricDistribution(distribution=distrax.Normal, bijector=distrax.Tanh())',
     )
     loss_metadata = checkpoint_utilities.loss_metadata(
-        horizon_length=25,
+        horizon_length=32,
     )
 
     training_metadata = checkpoint_utilities.training_metadata(
-        num_epochs=50,
-        num_training_steps=20,
+        num_epochs=20,
+        num_training_steps=25,
         horizon_length=loss_metadata.horizon_length,
         episode_length=1000,
         action_repeat=1,
@@ -45,7 +46,7 @@ def main(argv=None):
         reset_per_epoch=False,
         seed=0,
         normalize_observations=True,
-        optimizer='optax.chain(optax.clip(1.0),optax.clip_by_global_norm(1e9),optax.adam(learning_rate=learning_rate,b1=0.7,b2=0.95))',
+        optimizer='optax.chain(optax.clip_by_global_norm(1e9), optax.clip(1.0),optax.adam(learning_rate=learning_rate,b1=0.7,b2=0.95))',
         learning_rate='optax.exponential_decay(init_value=1e-4,transition_steps=1,decay_rate=0.997)',
         use_float64=False,
     )
@@ -64,8 +65,8 @@ def main(argv=None):
     make_networks_factory = functools.partial(
         apg_networks.make_apg_networks,
         policy_layer_sizes=(network_metadata.policy_layer_size, ) * network_metadata.policy_depth,
-        activation=nn.swish,
-        kernel_init=jax.nn.initializers.lecun_uniform(),
+        activation=nn.elu,
+        kernel_init=jax.nn.initializers.orthogonal(0.01),
         action_distribution=ParametricDistribution(
             distribution=distrax.Normal,
             bijector=distrax.Tanh(),
@@ -83,8 +84,8 @@ def main(argv=None):
         decay_rate=0.997
     )
     optimizer = optax.chain(
-        optax.clip(1.0),
         optax.clip_by_global_norm(1e9),
+        optax.clip(1.0),
         optax.adam(
             learning_rate=learning_rate,
             b1=0.7,
@@ -165,4 +166,4 @@ def main(argv=None):
 
 
 if __name__ == '__main__':
-    main()
+    app.run(main)

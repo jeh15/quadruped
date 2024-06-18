@@ -12,7 +12,6 @@ from brax.base import Motion, Transform
 from brax.envs.base import PipelineEnv, State
 from brax.io import mjcf
 
-from etils import epath
 from ml_collections import config_dict
 import mujoco
 
@@ -134,7 +133,7 @@ class BarkourEnv(PipelineEnv):
         )
         sys = mjcf.load(self.filepath)
         self._dt = 0.02  # this environment is 50 fps
-        sys = sys.tree_replace({'opt.timestep': 0.004, 'dt': 0.004})
+        sys = sys.tree_replace({'opt.timestep': 0.004})
 
         # override menagerie params for smoother policy
         sys = sys.replace(

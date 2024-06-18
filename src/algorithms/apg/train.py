@@ -118,9 +118,6 @@ def train(
     reset_fn = jax.jit(jax.vmap(env.reset))
     step_fn = jax.jit(jax.vmap(env.step))
     envs_key = jax.random.split(env_key, (local_devices_to_use, num_envs // process_count))
-    # envs_key = jnp.reshape(
-    #     envs_key, (local_devices_to_use, -1) + envs_key.shape[1:],
-    # )
     env_state = reset_fn(envs_key)
 
     # Initialize Normalization Function:
@@ -154,13 +151,24 @@ def train(
         return_grads=True,
     )
 
+    loss_grad = jax.grad(loss_fn, has_aux=True)
+    def clip_by_global_norm(grads):
+        g_norm = optax.global_norm(grads)
+        max_gradient_norm = 1e9
+        trigger = g_norm < max_gradient_norm
+        return jax.tree.map(
+            lambda t: jnp.where(trigger, t, (t / g_norm) * max_gradient_norm),
+            grads,
+        )
+
     def minibatch_step(
         carry,
-        epoch_step_index: int,
+        unused_t,
     ):
         (opt_state, normalization_params, params, state, key) = carry
 
         key, subkey = jax.random.split(key)
+        # Gradient Update Function computes mean before clipping Brax Clips then computes mean.
         (_, data), params, opt_state, grads = gradient_udpate_fn(
             params,
             normalization_params,
@@ -168,6 +176,13 @@ def train(
             subkey,
             opt_state=opt_state,
         )
+
+        # Brax way:
+        # grads, data = loss_grad(params, normalization_params, state, subkey)
+        # grads = clip_by_global_norm(grads)
+        # grads = jax.lax.pmean(grads, axis_name=_PMAP_AXIS_NAME)
+        # params_update, opt_state = optimizer.update(grads, opt_state)
+        # params = optax.apply_updates(params, params_update)
 
         # Update Normalization:
         normalization_params = running_statistics.update(
@@ -304,6 +319,9 @@ def train(
     training_walltime = 0
     current_step = 0
 
+    local_key, epoch_key = jax.random.split(local_key)
+    epoch_keys = jax.random.split(epoch_key, local_devices_to_use)
+    
     # Training Loop:
     for epoch_iteration in range(num_epochs):
         # Logging:
@@ -312,20 +330,18 @@ def train(
         )
 
         # Epoch Training Iteration:
-        local_key, epoch_key = jax.random.split(local_key)
-        epoch_keys = jax.random.split(epoch_key, local_devices_to_use)
-        (train_state, env_state, training_metrics, _) = (
+        (train_state, env_state, training_metrics, epoch_keys) = (
             training_epoch_with_metrics(train_state, env_state, epoch_keys)
         )
 
         current_step = int(unpmap(train_state.env_steps))
 
         # If reset per epoch else Auto Reset:
-        envs_key = jax.vmap(
-            lambda x, s: jax.random.split(x[0], s),
-            in_axes=(0, None),
-        )(envs_key, envs_key.shape[1])
         if reset_per_epoch:
+            envs_key = jax.vmap(
+                lambda x, s: jax.random.split(x[0], s),
+                in_axes=(0, None),
+            )(envs_key, envs_key.shape[1])
             env_state = reset_fn(envs_key)
 
         if process_id == 0:
