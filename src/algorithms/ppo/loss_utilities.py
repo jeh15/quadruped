@@ -90,10 +90,10 @@ def loss_function(
     truncation_mask = 1 - data.extras['state_data']['truncation']
 
     # This formulation does not make sense...
-    termination_mask = 1 - data.termination * truncation_mask
+    # termination_mask = (1 - data.termination) * truncation_mask
 
-    # This formulation makes sense:
-    # termination_mask = 1 - data.termination
+    # This formulation makes sense: (This performed better in my experiments)
+    termination_mask = 1 - data.termination
 
     # Calculate GAE:
     vs, advantages = calculate_gae(
