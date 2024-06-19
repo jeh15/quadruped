@@ -61,13 +61,13 @@ def main(argv=None):
     )
 
     # Start Wandb and save metadata:
-    # run = wandb.init(
-    #     config={
-    #         'network_metadata': network_metadata,
-    #         'loss_metadata': loss_metadata,
-    #         'training_metadata': training_metadata,
-    #     },
-    # )
+    run = wandb.init(
+        config={
+            'network_metadata': network_metadata,
+            'loss_metadata': loss_metadata,
+            'training_metadata': training_metadata,
+        },
+    )
 
     # Initialize Functions with Params:
     randomization_fn = barkour.domain_randomize
@@ -120,7 +120,7 @@ def main(argv=None):
     manager_options = checkpoint_utilities.default_checkpoint_options()
     checkpoint_direrctory = os.path.join(
         os.path.dirname(__file__),
-        f"checkpoints/gb_ppo",
+        f"checkpoints/{run.name}",
     )
     manager = ocp.CheckpointManager(
         directory=checkpoint_direrctory,
@@ -165,7 +165,7 @@ def main(argv=None):
         progress_fn=progress_fn,
         randomization_fn=randomization_fn,
         checkpoint_fn=checkpoint_fn,
-        wandb=None,
+        wandb=run,
     )
 
     policy_generator, params, metrics = train_fn(
