@@ -61,7 +61,6 @@ def policy_loss_function(
     state: envs.State,
     static_rng_key: types.PRNGKey,
     rng_key: types.PRNGKey,
-    initial_params: types.PolicyParams,
     make_policy: Callable[..., Any],
     gb_ppo_networks: gb_ppo_networks.GBPPONetworks,
     rollout_fn: Callable[..., Any],
@@ -78,10 +77,10 @@ def policy_loss_function(
     value_apply = gb_ppo_networks.value_network.apply
 
     # Split Key:
-    new_rng_key, entropy_key = jax.random.split(rng_key, 2)
+    new_rng_key, entropy_key, rollout_key = jax.random.split(rng_key, 3)
 
     # Generate Episode Data: (Use same RNG Key for same rollout)
-    policy_fn = make_policy((normalization_params, initial_params))
+    policy_fn = make_policy((normalization_params, policy_params))
     def f(carry, unused_t):
         current_state, key = carry
         key, subkey = jax.random.split(key)
@@ -94,7 +93,7 @@ def policy_loss_function(
 
     (state, _), data = jax.lax.scan(
         f,
-        (state, static_rng_key),
+        (state, rollout_key),
         (),
         length=rollout_length,
     )
@@ -122,6 +121,7 @@ def policy_loss_function(
 
     # This formulation does not make sense...
     termination_mask = (1 - tld_data.termination) * truncation_mask
+    # termination_mask = 1 - tld_data.termination
 
     # Calculate GAE:
     _, advantages = calculate_gae(
@@ -207,6 +207,7 @@ def value_loss_function(
 
     # This formulation does not make sense...
     termination_mask = (1 - data.termination) * truncation_mask
+    # termination_mask = 1 - data.termination
 
     # Calculate GAE:
     vs, _ = calculate_gae(
@@ -221,6 +222,7 @@ def value_loss_function(
 
     # Value Loss:
     target_values = jax.lax.stop_gradient(vs)
+    # target_values = vs
     value_loss = value_coef * jnp.mean(
         jnp.square(target_values - values),
     )

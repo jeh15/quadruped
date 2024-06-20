@@ -33,7 +33,7 @@ def main(argv=None):
     )
     loss_metadata = checkpoint_utilities.loss_metadata(
         clip_coef=0.3,
-        value_coef=0.5,
+        value_coef=1.0,
         entropy_coef=0.01,
         gamma=0.97,
         gae_lambda=0.95,
@@ -52,7 +52,7 @@ def main(argv=None):
         deterministic_evaluation=True,
         reset_per_epoch=False,
         seed=0,
-        batch_size=256,
+        batch_size=32,
         num_minibatches=32,
         num_ppo_iterations=4,
         normalize_observations=True,
