@@ -283,40 +283,40 @@ def train(
             ),
             init=(train_state.policy_opt_state, train_state.policy_params, policy_key, initial_state),
             xs=(),
-            length=num_ppo_iterations,
+            length=1,
         )
 
         # Use Extra Data for Critic:
-        policy_fn = make_policy((
-            train_state.normalization_params, policy_params,
-        ))
+        # policy_fn = make_policy((
+        #     train_state.normalization_params, policy_params,
+        # ))
 
         # Generate additional Episode Data for Critic:
-        def f(carry, unused_t):
-            current_state, key = carry
-            key, subkey = jax.random.split(key)
-            next_state, data = trainining_utilities.unroll_policy_steps(
-                env=env,
-                state=current_state,
-                policy=policy_fn,
-                key=key,
-                num_steps=horizon_length,
-                extra_fields=('truncation',),
-            )
-            return (next_state, subkey), data
+        # def f(carry, unused_t):
+        #     current_state, key = carry
+        #     key, subkey = jax.random.split(key)
+        #     next_state, data = trainining_utilities.unroll_policy_steps(
+        #         env=env,
+        #         state=current_state,
+        #         policy=policy_fn,
+        #         key=key,
+        #         num_steps=horizon_length,
+        #         extra_fields=('truncation',),
+        #     )
+        #     return (next_state, subkey), data
 
-        (_, _), unroll_data = jax.lax.scan(
-            f,
-            (initial_state, rollout_key),
-            (),
-            length=256 * 32 // num_envs,
-        )
+        # (_, _), unroll_data = jax.lax.scan(
+        #     f,
+        #     (initial_state, rollout_key),
+        #     (),
+        #     length=256 * 32 // num_envs,
+        # )
 
-        # # Swap leading dimensions: (T, B, ...) -> (B, T, ...)
-        unroll_data = jax.tree.map(lambda x: jnp.swapaxes(x, 1, 2), unroll_data)
-        data = jax.tree.map(
-            lambda x: jnp.reshape(x, (-1,) + x.shape[2:]), unroll_data,
-        )
+        # Swap leading dimensions: (T, B, ...) -> (B, T, ...)
+        # unroll_data = jax.tree.map(lambda x: jnp.swapaxes(x, 1, 2), unroll_data)
+        # data = jax.tree.map(
+        #     lambda x: jnp.reshape(x, (-1,) + x.shape[2:]), unroll_data,
+        # )
 
         # # Combined Data: (Grab last data from PPO Policy Loop)
         # data = jax.tree.map(
@@ -324,7 +324,7 @@ def train(
         # )
 
         # Get only last data:
-        # data = jax.tree_map(lambda x: x[-1], data)
+        data = jax.tree.map(lambda x: x[-1], data)
 
         # Update Normalization:
         normalization_params = running_statistics.update(
@@ -374,7 +374,7 @@ def train(
             (),
             length=num_training_steps,
         )
-        metrics = jax.tree.map(jnp.mean, metrics)
+        # metrics = jax.tree.map(jnp.mean, metrics)
         return train_state, state, metrics
 
     training_epoch = jax.pmap(training_epoch, axis_name=_PMAP_AXIS_NAME)

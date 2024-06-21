@@ -51,7 +51,7 @@ def calculate_gae(
         rewards
         + gamma * termination_mask * vs_ - values
     ) * truncation_mask
-    return jax.lax.stop_gradient(vs), jax.lax.stop_gradient(advantages)
+    return vs, advantages
 
 
 def policy_loss_function(
@@ -93,7 +93,7 @@ def policy_loss_function(
 
     (state, _), data = jax.lax.scan(
         f,
-        (state, rollout_key),
+        (state, static_rng_key),
         (),
         length=rollout_length,
     )
@@ -103,7 +103,7 @@ def policy_loss_function(
     bld_data = jax.tree.map(lambda x: jnp.reshape(x, (-1,) + x.shape[2:]), data)
 
     # Reorder data: (B, T, ...) -> (T, B, ...) (tld = time leading dimension)
-    tld_data = jax.tree_util.tree_map(lambda x: jnp.swapaxes(x, 0, 1), bld_data)
+    tld_data = jax.tree.map(lambda x: jnp.swapaxes(x, 0, 1), bld_data)
 
     logits = policy_apply(
         normalization_params, policy_params, tld_data.observation,
@@ -120,8 +120,8 @@ def policy_loss_function(
     truncation_mask = 1 - tld_data.extras['state_data']['truncation']
 
     # This formulation does not make sense...
-    termination_mask = (1 - tld_data.termination) * truncation_mask
-    # termination_mask = 1 - tld_data.termination
+    # termination_mask = (1 - tld_data.termination) * truncation_mask
+    termination_mask = 1 - tld_data.termination
 
     # Calculate GAE:
     _, advantages = calculate_gae(
@@ -139,23 +139,25 @@ def policy_loss_function(
             (advantages - jnp.mean(advantages)) / (jnp.std(advantages) + 1e-8)
         )
 
-    # Calculate ratios:
-    log_prob = action_distribution.log_prob(
-        logits,
-        tld_data.extras['policy_data']['raw_action'],
-    )
-    previous_log_prob = tld_data.extras['policy_data']['log_prob']
-    log_ratios = log_prob - previous_log_prob
-    ratios = jnp.exp(log_ratios)
+    # # Calculate ratios: Does nothing with current implementation:
+    # log_prob = action_distribution.log_prob(
+    #     logits,
+    #     tld_data.extras['policy_data']['raw_action'],
+    # )
+    # previous_log_prob = tld_data.extras['policy_data']['log_prob']
+    # log_ratios = log_prob - previous_log_prob
+    # ratios = jnp.exp(log_ratios)
 
-    # Policy Loss:
-    unclipped_loss = ratios * advantages
-    clipped_loss = advantages * jnp.clip(
-        ratios,
-        1.0 - clip_coef,
-        1.0 + clip_coef,
-    )
-    policy_loss = -jnp.mean(jnp.minimum(unclipped_loss, clipped_loss))
+    # # Policy Loss:
+    # unclipped_loss = ratios * advantages
+    # clipped_loss = advantages * jnp.clip(
+    #     ratios,
+    #     1.0 - clip_coef,
+    #     1.0 + clip_coef,
+    # )
+    # policy_loss = -jnp.mean(jnp.minimum(unclipped_loss, clipped_loss))
+
+    policy_loss = -jnp.mean(advantages)
 
     # Entropy Loss:
     entropy = action_distribution.entropy(
@@ -173,9 +175,10 @@ def policy_loss_function(
         bld_data,
         new_rng_key,
         {
-        "total_loss": loss,
-        "policy_loss": policy_loss,
-        "entropy_loss": entropy_loss,
+            "total_loss": loss,
+            "policy_loss": policy_loss,
+            "entropy_loss": entropy_loss,
+            "ppo_loss": policy_loss,
         },
     )
 
@@ -206,8 +209,8 @@ def value_loss_function(
     truncation_mask = 1 - data.extras['state_data']['truncation']
 
     # This formulation does not make sense...
-    termination_mask = (1 - data.termination) * truncation_mask
-    # termination_mask = 1 - data.termination
+    # termination_mask = (1 - data.termination) * truncation_mask
+    termination_mask = 1 - data.termination
 
     # Calculate GAE:
     vs, _ = calculate_gae(

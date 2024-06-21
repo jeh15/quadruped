@@ -165,7 +165,7 @@ def main(argv=None):
         progress_fn=progress_fn,
         randomization_fn=randomization_fn,
         checkpoint_fn=checkpoint_fn,
-        wandb=run,
+        wandb=None,
     )
 
     policy_generator, params, metrics = train_fn(
@@ -173,7 +173,7 @@ def main(argv=None):
         evaluation_environment=eval_env,
     )
 
-    # wandb.finish()
+    wandb.finish()
 
 
 if __name__ == '__main__':
