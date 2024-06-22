@@ -165,7 +165,7 @@ def main(argv=None):
         progress_fn=progress_fn,
         randomization_fn=randomization_fn,
         checkpoint_fn=checkpoint_fn,
-        wandb=None,
+        wandb=run,
     )
 
     policy_generator, params, metrics = train_fn(

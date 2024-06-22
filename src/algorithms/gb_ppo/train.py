@@ -242,11 +242,7 @@ def train(
     ) -> Tuple[Tuple[TrainState, envs.State, types.PRNGKey], types.Metrics]:
         train_state, initial_state, key = carry
 
-        next_key, static_key, policy_key, rollout_key, sgd_key = jax.random.split(key, 5)
-
-        # policy_fn = make_policy((
-        #     train_state.normalization_params, train_state.policy_params,
-        # ))
+        next_key, rollout_key, sgd_key = jax.random.split(key, 3)
 
         # Compute PPO Policy Loss: (Check this...) -- Probably should be a static state for rollout
         # Should the params be static? -- No because no gradients through rollout
@@ -255,76 +251,86 @@ def train(
         # List of things...
         # 1. Static State / Static Key -> No learning...
         # 2. Static State / Dynamic Key -> No learning...
-        def ppo_policy_loop(
-            carry,
-            unused_t,
-            value_params: types.Params,
-            normalization_params: running_statistics.RunningStatisticsState,
-            initial_state: envs.State,
-        ):
-            opt_state, policy_params, key, state = carry
-            (_, (state, data, new_rng_key, policy_metrics)), policy_params, policy_opt_state = policy_gradient_update_fn(
-                policy_params,
-                value_params,
-                normalization_params,
-                initial_state,
-                static_key,
-                key,
-                opt_state=opt_state,
-            )
-            return (policy_opt_state, policy_params, new_rng_key, state), (data, policy_metrics)
+        # def ppo_policy_loop(
+        #     carry,
+        #     unused_t,
+        #     value_params: types.Params,
+        #     normalization_params: running_statistics.RunningStatisticsState,
+        #     initial_state: envs.State,
+        # ):
+        #     opt_state, policy_params, key, state = carry
+        #     (_, (state, data, new_rng_key, policy_metrics)), policy_params, policy_opt_state = policy_gradient_update_fn(
+        #         policy_params,
+        #         value_params,
+        #         normalization_params,
+        #         initial_state,
+        #         static_key,
+        #         key,
+        #         opt_state=opt_state,
+        #     )
+        #     return (policy_opt_state, policy_params, new_rng_key, state), (data, policy_metrics)
         
-        (policy_opt_state, policy_params, _, state), (data, policy_metrics) = jax.lax.scan(
-            f=functools.partial(
-                ppo_policy_loop,
-                value_params=train_state.target_value_params,
-                normalization_params=train_state.normalization_params,
-                initial_state=initial_state,
-            ),
-            init=(train_state.policy_opt_state, train_state.policy_params, policy_key, initial_state),
-            xs=(),
-            length=1,
-        )
+        # (policy_opt_state, policy_params, _, state), (data, policy_metrics) = jax.lax.scan(
+        #     f=functools.partial(
+        #         ppo_policy_loop,
+        #         value_params=train_state.value_params,
+        #         normalization_params=train_state.normalization_params,
+        #         initial_state=initial_state,
+        #     ),
+        #     init=(train_state.policy_opt_state, train_state.policy_params, policy_key, initial_state),
+        #     xs=(),
+        #     length=1,
+        # )
+
+        (_, (state, data, _, policy_metrics)), policy_params, policy_opt_state = policy_gradient_update_fn(
+                train_state.policy_params,
+                train_state.value_params,
+                train_state.normalization_params,
+                initial_state,
+                key,
+                opt_state=train_state.policy_opt_state,
+            )
+
 
         # Use Extra Data for Critic:
-        # policy_fn = make_policy((
-        #     train_state.normalization_params, policy_params,
-        # ))
+        policy_fn = make_policy((
+            train_state.normalization_params, policy_params,
+        ))
 
         # Generate additional Episode Data for Critic:
-        # def f(carry, unused_t):
-        #     current_state, key = carry
-        #     key, subkey = jax.random.split(key)
-        #     next_state, data = trainining_utilities.unroll_policy_steps(
-        #         env=env,
-        #         state=current_state,
-        #         policy=policy_fn,
-        #         key=key,
-        #         num_steps=horizon_length,
-        #         extra_fields=('truncation',),
-        #     )
-        #     return (next_state, subkey), data
+        def f(carry, unused_t):
+            current_state, key = carry
+            key, subkey = jax.random.split(key)
+            next_state, data = trainining_utilities.unroll_policy_steps(
+                env=env,
+                state=current_state,
+                policy=policy_fn,
+                key=key,
+                num_steps=horizon_length,
+                extra_fields=('truncation',),
+            )
+            return (next_state, subkey), data
 
-        # (_, _), unroll_data = jax.lax.scan(
-        #     f,
-        #     (initial_state, rollout_key),
-        #     (),
-        #     length=256 * 32 // num_envs,
-        # )
+        (_, _), unroll_data = jax.lax.scan(
+            f,
+            (initial_state, rollout_key),
+            (),
+            length=256 * 32 // num_envs,
+        )
 
         # Swap leading dimensions: (T, B, ...) -> (B, T, ...)
-        # unroll_data = jax.tree.map(lambda x: jnp.swapaxes(x, 1, 2), unroll_data)
-        # data = jax.tree.map(
-        #     lambda x: jnp.reshape(x, (-1,) + x.shape[2:]), unroll_data,
-        # )
+        unroll_data = jax.tree.map(lambda x: jnp.swapaxes(x, 1, 2), unroll_data)
+        data = jax.tree.map(
+            lambda x: jnp.reshape(x, (-1,) + x.shape[2:]), unroll_data,
+        )
 
-        # # Combined Data: (Grab last data from PPO Policy Loop)
+        # Combined Data: (Grab last data from PPO Policy Loop)
         # data = jax.tree.map(
         #     lambda x, y: jnp.concatenate((x[-1], y), axis=0), data, unroll_data,
         # )
 
         # Get only last data:
-        data = jax.tree.map(lambda x: x[-1], data)
+        # data = jax.tree.map(lambda x: x[-1], data)
 
         # Update Normalization:
         normalization_params = running_statistics.update(
@@ -374,7 +380,6 @@ def train(
             (),
             length=num_training_steps,
         )
-        # metrics = jax.tree.map(jnp.mean, metrics)
         return train_state, state, metrics
 
     training_epoch = jax.pmap(training_epoch, axis_name=_PMAP_AXIS_NAME)

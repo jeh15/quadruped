@@ -59,13 +59,12 @@ def policy_loss_function(
     value_params: types.Params,
     normalization_params: Any,
     state: envs.State,
-    static_rng_key: types.PRNGKey,
     rng_key: types.PRNGKey,
     make_policy: Callable[..., Any],
     gb_ppo_networks: gb_ppo_networks.GBPPONetworks,
     rollout_fn: Callable[..., Any],
     rollout_length: int,
-    clip_coef: float = 0.2,
+    clip_coef = 0.3,
     entropy_coef: float = 0.01,
     gamma: float = 0.99,
     gae_lambda: float = 0.95,
@@ -93,7 +92,7 @@ def policy_loss_function(
 
     (state, _), data = jax.lax.scan(
         f,
-        (state, static_rng_key),
+        (state, rollout_key),
         (),
         length=rollout_length,
     )
@@ -139,24 +138,6 @@ def policy_loss_function(
             (advantages - jnp.mean(advantages)) / (jnp.std(advantages) + 1e-8)
         )
 
-    # # Calculate ratios: Does nothing with current implementation:
-    # log_prob = action_distribution.log_prob(
-    #     logits,
-    #     tld_data.extras['policy_data']['raw_action'],
-    # )
-    # previous_log_prob = tld_data.extras['policy_data']['log_prob']
-    # log_ratios = log_prob - previous_log_prob
-    # ratios = jnp.exp(log_ratios)
-
-    # # Policy Loss:
-    # unclipped_loss = ratios * advantages
-    # clipped_loss = advantages * jnp.clip(
-    #     ratios,
-    #     1.0 - clip_coef,
-    #     1.0 + clip_coef,
-    # )
-    # policy_loss = -jnp.mean(jnp.minimum(unclipped_loss, clipped_loss))
-
     policy_loss = -jnp.mean(advantages)
 
     # Entropy Loss:
@@ -178,7 +159,6 @@ def policy_loss_function(
             "total_loss": loss,
             "policy_loss": policy_loss,
             "entropy_loss": entropy_loss,
-            "ppo_loss": policy_loss,
         },
     )
 
