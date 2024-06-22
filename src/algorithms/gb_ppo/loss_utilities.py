@@ -68,7 +68,7 @@ def policy_loss_function(
     entropy_coef: float = 0.01,
     gamma: float = 0.99,
     gae_lambda: float = 0.95,
-    normalize_advantages: bool = True,
+    normalize_advantages: bool = False,
 ) -> Tuple[jnp.ndarray, Tuple[envs.State, types.Transition, types.Metrics]]:
     # Unpack GBPPO networks:
     action_distribution = gb_ppo_networks.action_distribution
@@ -138,7 +138,7 @@ def policy_loss_function(
             (advantages - jnp.mean(advantages)) / (jnp.std(advantages) + 1e-8)
         )
 
-    policy_loss = -jnp.mean(advantages)
+    policy_loss = -jnp.sum(advantages)
 
     # Entropy Loss:
     entropy = action_distribution.entropy(

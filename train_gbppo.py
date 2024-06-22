@@ -37,7 +37,7 @@ def main(argv=None):
         entropy_coef=0.01,
         gamma=0.97,
         gae_lambda=0.95,
-        normalize_advantages=True,
+        normalize_advantages=False,
     )
     training_metadata = checkpoint_utilities.training_metadata(
         num_epochs=20,
