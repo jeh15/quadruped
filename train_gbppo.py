@@ -40,7 +40,7 @@ def main(argv=None):
         normalize_advantages=False,
     )
     training_metadata = checkpoint_utilities.training_metadata(
-        num_epochs=20,
+        num_epochs=50,
         num_training_steps=20,
         episode_length=1000,
         horizon_length=25,
