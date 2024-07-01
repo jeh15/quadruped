@@ -306,6 +306,20 @@ class BarkourEnv(PipelineEnv):
         }
         reward = jnp.clip(sum(rewards.values()) * self.dt, 0.0, 10000.0)
 
+        # If contact triggered:
+        # impact_window = 5
+        # impact_counter = first_contact * impact_counter
+        # impact_filter = first_contact * (impact_counter < impact_window)
+        # impact_counter += 1
+        # impact_mask = (1 - impact_filter)
+  
+        # filtered_rewards = {
+        #     k: v * self.reward_config.rewards.scales[k] for k, v in filtered_rewards.items()
+        # }
+        # filtered_reward = jnp.clip(sum(filtered_rewards.values()) * self.dt, 0.0, 10000.0)
+
+
+
         # state management
         state.info['kick'] = kick
         state.info['last_act'] = action

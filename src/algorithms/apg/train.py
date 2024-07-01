@@ -268,6 +268,7 @@ def train(
     )
 
     # Setup Evaluation Environment:
+    eval_randomization_fn = None
     if randomization_fn is not None:
         eval_randomization_key = jax.random.split(
             eval_key, num_evaluation_envs,

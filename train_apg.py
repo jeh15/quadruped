@@ -10,7 +10,7 @@ import optax
 import wandb
 import orbax.checkpoint as ocp
 
-from src.envs import barkour
+from src.envs import inverted_pendulum
 from src.algorithms.apg import network_utilities as apg_networks
 from src.algorithms.apg.loss_utilities import loss_function
 from src.distribution_utilities import ParametricDistribution
@@ -61,7 +61,7 @@ def main(argv=None):
     )
 
     # Initialize Functions with Params:
-    randomization_fn = barkour.domain_randomize
+    randomization_fn = None
     make_networks_factory = functools.partial(
         apg_networks.make_apg_networks,
         policy_layer_sizes=(network_metadata.policy_layer_size, ) * network_metadata.policy_depth,
@@ -93,8 +93,8 @@ def main(argv=None):
         ),
     )
 
-    env = barkour.BarkourEnv()
-    eval_env = barkour.BarkourEnv()
+    env = inverted_pendulum.InvertedPendulum()
+    eval_env = inverted_pendulum.InvertedPendulum()
 
     def progress_fn(iteration, num_steps, metrics):
         print(
