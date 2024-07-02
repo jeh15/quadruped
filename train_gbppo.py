@@ -10,7 +10,7 @@ import optax
 import wandb
 import orbax.checkpoint as ocp
 
-from src.envs import barkour
+from src.envs import inverted_pendulum
 from src.algorithms.gb_ppo import network_utilities as gb_ppo_networks
 from src.algorithms.gb_ppo.loss_utilities import policy_loss_function, value_loss_function
 from src.distribution_utilities import ParametricDistribution
@@ -42,7 +42,7 @@ def main(argv=None):
     training_metadata = checkpoint_utilities.training_metadata(
         num_epochs=50,
         num_training_steps=20,
-        episode_length=1000,
+        episode_length=200,
         horizon_length=25,
         tau=0.005,
         action_repeat=1,
@@ -70,7 +70,7 @@ def main(argv=None):
     )
 
     # Initialize Functions with Params:
-    randomization_fn = barkour.domain_randomize
+    randomization_fn = None
     make_networks_factory = functools.partial(
         gb_ppo_networks.make_gb_ppo_networks,
         policy_layer_sizes=(network_metadata.policy_layer_size, ) * network_metadata.policy_depth,
@@ -97,8 +97,8 @@ def main(argv=None):
         gae_lambda=loss_metadata.gae_lambda,
     )
 
-    env = barkour.BarkourEnv()
-    eval_env = barkour.BarkourEnv()
+    env = inverted_pendulum.InvertedPendulum()
+    eval_env = inverted_pendulum.InvertedPendulum()
 
     def progress_fn(iteration, num_steps, metrics):
         print(

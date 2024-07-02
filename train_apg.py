@@ -30,14 +30,14 @@ def main(argv=None):
         action_distribution='ParametricDistribution(distribution=distrax.Normal, bijector=distrax.Tanh())',
     )
     loss_metadata = checkpoint_utilities.loss_metadata(
-        horizon_length=32,
+        horizon_length=25,
     )
 
     training_metadata = checkpoint_utilities.training_metadata(
         num_epochs=20,
         num_training_steps=25,
         horizon_length=loss_metadata.horizon_length,
-        episode_length=1000,
+        episode_length=200,
         action_repeat=1,
         num_envs=1024,
         num_evaluation_envs=128,
