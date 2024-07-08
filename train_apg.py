@@ -1,4 +1,4 @@
-from absl import app
+from absl import app, flags
 import os
 import functools
 
@@ -19,6 +19,11 @@ from src.algorithms.apg import checkpoint_utilities
 
 jax.config.update("jax_enable_x64", True)
 
+FLAGS = flags.FLAGS
+flags.DEFINE_string(
+    'tag', None, 'Tag used for wandb grouping (e.g. Environment Name).', short_name='t',
+)
+
 
 def main(argv=None):
     # Metadata:
@@ -34,7 +39,7 @@ def main(argv=None):
     )
 
     training_metadata = checkpoint_utilities.training_metadata(
-        num_epochs=20,
+        num_epochs=50,
         num_training_steps=25,
         horizon_length=loss_metadata.horizon_length,
         episode_length=200,
@@ -53,6 +58,9 @@ def main(argv=None):
 
     # Start Wandb and save metadata:
     run = wandb.init(
+        project='algorithms',
+        group='apg',
+        tags=[FLAGS.tag],
         config={
             'network_metadata': network_metadata,
             'loss_metadata': loss_metadata,

@@ -1,4 +1,4 @@
-from absl import app
+from absl import app, flags
 import os
 import functools
 
@@ -18,6 +18,11 @@ from src.algorithms.gb_ppo.train import train
 from src.algorithms.gb_ppo import checkpoint_utilities
 
 jax.config.update("jax_enable_x64", True)
+
+FLAGS = flags.FLAGS
+flags.DEFINE_string(
+    'tag', None, 'Tag used for wandb grouping (e.g. Environment Name).', short_name='t',
+)
 
 
 def main(argv=None):
@@ -62,6 +67,9 @@ def main(argv=None):
 
     # Start Wandb and save metadata:
     run = wandb.init(
+        project='algorithms',
+        group='gb_ppo',
+        tags=[FLAGS.tag],
         config={
             'network_metadata': network_metadata,
             'loss_metadata': loss_metadata,

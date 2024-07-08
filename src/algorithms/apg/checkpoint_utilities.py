@@ -62,6 +62,7 @@ def empty_training_metadata() -> training_metadata:
     return training_metadata(
         num_epochs=0,
         num_training_steps=0,
+        horizon_length=0,
         episode_length=0,
         action_repeat=0,
         num_envs=0,
@@ -72,6 +73,8 @@ def empty_training_metadata() -> training_metadata:
         seed=0,
         normalize_observations=False,
         optimizer='',
+        learning_rate='',
+        use_float64=True,
     )
 
 

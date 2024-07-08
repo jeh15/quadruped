@@ -2,9 +2,12 @@ import os
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 
+from brax import envs
 from brax.io import mjcf
 from brax.envs.base import PipelineEnv, State
+import mujoco
 
 # Environment:
 class InvertedPendulum(PipelineEnv):
@@ -83,12 +86,6 @@ class InvertedPendulum(PipelineEnv):
         # Calculate Reward:
         reward = jnp.cos(th)
 
-        # metrics = {
-        #     'rewards': reward,
-        #     'observation': observation,
-        # }
-        # state.metrics.update(metrics)
-
         # Update State object:
         state = state.replace(
             pipeline_state=pipeline_state, obs=observation, reward=reward, done=done,
@@ -98,3 +95,13 @@ class InvertedPendulum(PipelineEnv):
     def get_observation(self, pipeline_state: State) -> jnp.ndarray:
         # Observation: [x, th, dx, dth]
         return jnp.concatenate([pipeline_state.q, pipeline_state.qd])
+
+    def mujoco_get_observation(
+        self,
+        mj_data: mujoco.MjData,
+    ) -> np.ndarray:
+        # Numpy implementation of the observation function:
+        return np.concatenate([mj_data.qpos, mj_data.qvel])
+
+
+envs.register_environment('inverted_pendulum', InvertedPendulum)
