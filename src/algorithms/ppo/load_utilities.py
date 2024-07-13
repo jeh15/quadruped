@@ -18,7 +18,11 @@ def load_policy(checkpoint_name: str, environment: Env):
     # Load Metadata:
     checkpoint_direrctory = os.path.join(
         os.path.dirname(
-            os.path.dirname(__file__),
+            os.path.dirname(
+                os.path.dirname(
+                    os.path.dirname(__file__),
+                ),
+            ),
         ),
         f"checkpoints/{checkpoint_name}",
     )
