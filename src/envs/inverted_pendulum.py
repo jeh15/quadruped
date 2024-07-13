@@ -6,6 +6,7 @@ import jax.numpy as jnp
 from brax.io import mjcf
 from brax.envs.base import PipelineEnv, State
 
+
 # Environment:
 class InvertedPendulum(PipelineEnv):
     """ Environment for training Cart Pole balancing """

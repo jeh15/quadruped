@@ -1,0 +1,27 @@
+<mujoco model="double integrator">
+    <compiler inertiafromgeom="true"/>
+
+    <option iterations="1" ls_iterations="5">
+        <flag eulerdamp="disable"/>
+    </option>
+
+    <default>
+        <joint armature="0" damping="1"/>
+        <geom contype="0" conaffinity="0" friction="1 0.1 0.1"/>
+    </default>
+
+    <worldbody>
+        <light diffuse=".5 .5 .5" pos="0 0 3" dir="0 0 -1"/>
+        <body name="body" pos="0 0 0">
+            <joint name="x_slider" type="slide" axis="1 0 0" pos="0 0 0"/>
+            <joint name="y_slider" type="slide" axis="0 1 0" pos="0 0 0"/>
+            <geom name="body_geom" pos="0 0 0" quat="1 0 1 0" size="0.1 0.1" type="capsule"/>
+        </body>
+    </worldbody>
+
+    <actuator>
+        <motor ctrllimited="true" ctrlrange="-3 3" gear="1" joint="x_slider" name="x_motor"/>
+        <motor ctrllimited="true" ctrlrange="-3 3" gear="1" joint="y_slider" name="y_motor"/>
+    </actuator>
+
+</mujoco>
