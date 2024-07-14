@@ -38,12 +38,16 @@ def main(argv=None):
 
     num_steps = 1000
     states = []
-    for _ in range(num_steps):
+    print(f"Food Patch: {state.info['food_patch']}")
+    print(f"Initial Position: {state.pipeline_state.q}")
+    for i in range(num_steps):
         action_rng, key = jax.random.split(key)
         action, _ = inference_fn(state.obs, action_rng)
         state = step_fn(state, action)
         states.append(state.pipeline_state)
-        print("Reward:", state.reward)
+        if i % 50 == 0:
+            print(f"Reward: {state.reward}")
+            print(f"Observation: {state.obs}")
 
     states = list(map(lambda x: x.replace(contact=None), states))
 

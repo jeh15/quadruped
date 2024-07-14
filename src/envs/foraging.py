@@ -42,9 +42,12 @@ class Foraging(PipelineEnv):
         self.mass = self.sys.body_mass[self.body_idx]
 
         # Constants: (TODO: Move to config and domain randomization):
+        self.reward_scale = 0.001
         self.energy_cap = 10.0
-        self.metabolic_rate = 0.01
-        self.work_scale = 10.0
+        self.metabolic_rate = -0.02
+        self.work_scale = 0.0
+        self.kinetic_energy_scale = 0.0
+        self.foraging_scale = 1.0
         self.foraging_rate = 1.0
         self.food_patch_x = 2.0
         self.food_patch_y = 2.0
@@ -54,13 +57,13 @@ class Foraging(PipelineEnv):
         key, q_key, qd_key, food_patch_key = jax.random.split(rng, 4)
 
         # q structure: [x y]
-        q_init = jax.random.uniform(q_key, (2,), minval=-0.5, maxval=0.5)
+        q_init = jax.random.uniform(q_key, (2,), minval=-4.0, maxval=4.0)
 
         # qd structure: [dx dy]
         qd_init = jax.random.uniform(qd_key, (2,), minval=-0.0, maxval=0.0)
 
         # Food Patch:
-        # food_patch_q = jax.random.uniform(food_patch_key, (2,), minval=-5.0, maxval=5.0)
+        # food_patch_q = jax.random.uniform(food_patch_key, (2,), minval=-4.0, maxval=4.0)
         food_patch_q = jnp.array([self.food_patch_x, self.food_patch_y])
 
         # Initialize State:
@@ -88,6 +91,8 @@ class Foraging(PipelineEnv):
             'energy_state': jnp.array([self.energy_cap]),
             'work': 0.0,
             'kinetic_energy': 0.0,
+            'metabolic_rate': self.metabolic_rate,
+            'foraging_reward': 0.0,
         }
 
         state = State(
@@ -111,43 +116,58 @@ class Foraging(PipelineEnv):
         # Extract States:
         x, y = pipeline_state.q
 
-        # Calculate Energy State:
-        energy_state, work, kinetic_energy = self._calculate_energy_state(
-            pipeline_state, state.info,
+        # Foraging Patch:
+        # foraging = (
+        #     ((x - state.info['food_patch'][0]) ** 2 + (y - state.info['food_patch'][1]) ** 2) < (self.food_patch_r ** 2)
+        # )
+        # foraged_energy = foraging * self.foraging_rate
+        # energy_state += foraged_energy
+
+        energy_rewards = {
+            'energy_state': state.info['energy_state'],
+            'work': self.work_scale * self._work_reward(pipeline_state, state.info),
+            'kinetic_energy': (
+                self.kinetic_energy_scale * self._kinetic_energy_reward(pipeline_state)
+            ),
+            'metabolic_rate': self.metabolic_rate,
+            'foraging_reward': (
+                self.foraging_scale * self._foraging_reward(pipeline_state, state.info)
+            ),
+        }
+
+        # Reward:
+        energy_state = jnp.clip(
+            sum(energy_rewards.values()), -jnp.inf, self.energy_cap,
         )
 
-        # Foraging Patch:
-        foraging = (
-            (x - state.info['food_patch'][0]) ** 2 + (y - state.info['food_patch'][1]) ** 2 < self.food_patch_r ** 2
-        )
-        foraged_energy = foraging * self.foraging_rate
-        energy_state = jnp.clip(
-            energy_state + foraged_energy, -jnp.inf, self.energy_cap,
-        )
+        # Unbound Reward:
+        reward = self.reward_scale * energy_state[0]
+
+        # Bounded Reward:
+        # normalized_reward = (energy_state - self.energy_cap) ** 2
+        # unscaled_reward = jnp.exp(-normalized_reward / 0.25)
+        # reward = self.reward_scale * unscaled_reward[0]
 
         # Terminate if outside the range:
         outside_x = jnp.abs(x) > 5.0
         outside_y = jnp.abs(y) > 5.0
-        depleted_energy = (energy_state < 0.0)[0]
+        depleted_energy = energy_state[0] < 0.0
         done = outside_x | outside_y | depleted_energy
         done = jnp.float64(done) if jax.config.x64_enabled else jnp.float32(done)
 
-        # Calculate Reward:
-        rewards = energy_state
-        reward = jnp.sum(rewards)
-
         # Update State Info:
         state.info['energy_state'] = energy_state
-        state.info['work'] = work
-        state.info['kinetic_energy'] = kinetic_energy
+        state.info['work'] = energy_rewards['work']
+        state.info['kinetic_energy'] = energy_rewards['kinetic_energy']
         state.info['previous_state']['q'] = pipeline_state.q
         state.info['previous_state']['qd'] = pipeline_state.qd
         state.info['food_patch'] = state.info['food_patch']
 
         # Track Metrics:
-        state.metrics['energy_state'] = state.info['energy_state']
-        state.metrics['work'] = state.info['work']
-        state.metrics['kinetic_energy'] = state.info['kinetic_energy']
+        # state.metrics['energy_state'] = state.info['energy_state']
+        # state.metrics['work'] = state.info['work']
+        # state.metrics['kinetic_energy'] = state.info['kinetic_energy']
+        state.metrics.update(energy_rewards)
 
         # Update State object:
         state = state.replace(
@@ -158,9 +178,9 @@ class Foraging(PipelineEnv):
         )
         return state
 
-    def _calculate_energy_state(
+    def _energy_rewards(
         self, pipeline_state: State, state_info: Dict[str, Any],
-    ) -> Tuple[jnp.ndarray, jnp.ndarray, jnp.ndarray]:
+    ) -> Tuple[jnp.ndarray, jnp.ndarray]:
         q, qd = pipeline_state.q, pipeline_state.qd
 
         # Acceleration and Displacement:
@@ -172,15 +192,47 @@ class Foraging(PipelineEnv):
 
         # Energy Calculations:
         kinetic_energy = 0.5 * jnp.dot(velocity, velocity)
-        work = self.work_scale * (
-            self.mass * acceleration * displacement
+        work = self.mass * acceleration * displacement
+
+        return work, kinetic_energy
+
+    def _work_reward(
+        self, pipeline_state: State, state_info: Dict[str, Any],
+    ) -> jnp.ndarray:
+        q, qd = pipeline_state.q, pipeline_state.qd
+
+        # Acceleration and Displacement:
+        acceleration = jnp.linalg.norm(
+            (qd - state_info['previous_state']['qd']) / self.step_dt,
+        )
+        displacement = jnp.linalg.norm(q - state_info['previous_state']['q'])
+
+        return self.mass * acceleration * displacement
+
+    def _kinetic_energy_reward(
+        self, pipeline_state: State,
+    ) -> jnp.ndarray:
+        qd = pipeline_state.qd
+
+        # Magnitude of Velocity:
+        velocity = jnp.linalg.norm(qd)
+
+        return 0.5 * jnp.dot(velocity, velocity)
+
+    def _foraging_reward(
+        self, pipeline_state: State, state_info: Dict[str, Any],
+    ) -> jnp.ndarray:
+        x, y = pipeline_state.q
+
+        # Continuous Reward:
+        foraging_reward = jnp.exp(
+            -1 * (
+                (x - state_info['food_patch'][0]) ** 2
+                + (y - state_info['food_patch'][1]) ** 2
+            )
         )
 
-        # Subtract energy due to work and metabolic rate:
-        energy_state = state_info['energy_state'] - work
-        energy_state -= self.metabolic_rate
-
-        return energy_state, work, kinetic_energy
+        return foraging_reward
 
     def get_observation(
         self, pipeline_state: State, state_info: Dict[str, Any],

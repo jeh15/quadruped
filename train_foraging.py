@@ -18,15 +18,16 @@ from src.algorithms.ppo.train import train
 from src.algorithms.ppo import checkpoint_utilities
 
 jax.config.update("jax_enable_x64", True)
+wandb.require("core")
 
 
 def main(argv=None):
     # Metadata:
     network_metadata = checkpoint_utilities.network_metadata(
-        policy_layer_size=16,
-        value_layer_size=32,
-        policy_depth=4,
-        value_depth=5,
+        policy_layer_size=128 // 4,
+        value_layer_size=256 // 4,
+        policy_depth=3,
+        value_depth=4,
         activation='nn.swish',
         kernel_init='jax.nn.initializers.lecun_uniform()',
         action_distribution='ParametricDistribution(distribution=distrax.Normal, bijector=distrax.Tanh())',
@@ -40,19 +41,19 @@ def main(argv=None):
         normalize_advantages=True,
     )
     training_metadata = checkpoint_utilities.training_metadata(
-        num_epochs=100,
+        num_epochs=10,
         num_training_steps=20,
         episode_length=1000,
         num_policy_steps=25,
         action_repeat=1,
-        num_envs=32,
+        num_envs=8192,
         num_evaluation_envs=1,
         num_evaluations=1,
         deterministic_evaluation=True,
         reset_per_epoch=False,
         seed=0,
-        batch_size=16,
-        num_minibatches=2,
+        batch_size=256,
+        num_minibatches=32,
         num_ppo_iterations=4,
         normalize_observations=True,
         optimizer='optax.adam(3e-4)',
@@ -165,7 +166,7 @@ def main(argv=None):
         evaluation_environment=eval_env,
     )
 
-    wandb.finish()
+    run.finish()
 
 
 if __name__ == '__main__':
