@@ -11,44 +11,13 @@ from src.algorithms.ppo.load_utilities import load_policy
 
 jax.config.update("jax_enable_x64", True)
 
-FLAGS = flags.FLAGS
-flags.DEFINE_string(
-    'checkpoint_name', None, 'Desired checkpoint folder name to load.', short_name='c',
-)
-
 
 def main(argv=None):
     # Load from Env:
-    env_config = foraging.ForagingConfig(
-        survival_reward=0.0,
-        reward_scale=0.001,
-        energy_cap=10.0,
-        metabolic_rate=-0.02,
-        work_scale=0.0,
-        kinetic_energy_scale=0.0,
-        foraging_scale=1.0,
-        energy_capped=True,
-        static_location=True,
-        food_patch=False,
-        foraging_rate=1.0,
-        food_patch_x=2.0,
-        food_patch_y=2.0,
-        food_patch_r=1.0,
-    )
-    env = foraging.Foraging(
-        config=env_config, filename='double_integrator/foraging_scene.xml',
-    )
+    env = foraging.Foraging(filename='double_integrator/foraging_scene.xml')
 
     reset_fn = jax.jit(env.reset)
     step_fn = jax.jit(env.step)
-
-    # Load Policy:
-    make_policy, params = load_policy(
-        checkpoint_name=FLAGS.checkpoint_name,
-        environment=env,
-    )
-    inference_function = make_policy(params)
-    inference_fn = jax.jit(inference_function)
 
     # Initialize Simulation:
     key = jax.random.key(0)
@@ -59,8 +28,7 @@ def main(argv=None):
     print(f"Food Patch: {state.info['food_patch']}")
     print(f"Initial Position: {state.pipeline_state.q}")
     for i in range(num_steps):
-        action_rng, key = jax.random.split(key)
-        action, _ = inference_fn(state.obs, action_rng)
+        action = jnp.array([0.5, -0.5])
         state = step_fn(state, action)
         states.append(state.pipeline_state)
         if i % 50 == 0:
@@ -78,7 +46,7 @@ def main(argv=None):
     )
     html_path = os.path.join(
         os.path.dirname(__file__),
-        "visualization/foraging.html",
+        "visualization/test.html",
     )
 
     with open(html_path, 'w') as f:

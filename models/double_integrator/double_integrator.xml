@@ -20,8 +20,8 @@
     </worldbody>
 
     <actuator>
-        <motor ctrllimited="true" ctrlrange="-3 3" gear="1" joint="x_slider" name="x_motor"/>
-        <motor ctrllimited="true" ctrlrange="-3 3" gear="1" joint="y_slider" name="y_motor"/>
+        <motor ctrllimited="true" ctrlrange="-3 3" gear="100" joint="x_slider" name="x_motor"/>
+        <motor ctrllimited="true" ctrlrange="-3 3" gear="100" joint="y_slider" name="y_motor"/>
     </actuator>
 
 </mujoco>

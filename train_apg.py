@@ -10,7 +10,7 @@ import optax
 import wandb
 import orbax.checkpoint as ocp
 
-from src.envs import inverted_pendulum
+from src.envs import foraging
 from src.algorithms.apg import network_utilities as apg_networks
 from src.algorithms.apg.loss_utilities import loss_function
 from src.distribution_utilities import ParametricDistribution
@@ -18,12 +18,30 @@ from src.algorithms.apg.train import train
 from src.algorithms.apg import checkpoint_utilities
 
 jax.config.update("jax_enable_x64", True)
+wandb.require("core")
 
 
 def main(argv=None):
+    env_config = foraging.ForagingConfig(
+        survival_reward=0.0,
+        reward_scale=0.001,
+        energy_cap=10.0,
+        metabolic_rate=-0.02,
+        work_scale=0.0,
+        kinetic_energy_scale=-1e-1,
+        foraging_scale=1.0,
+        energy_capped=False,
+        static_location=False,
+        food_patch=False,
+        foraging_rate=1.0,
+        food_patch_x=2.0,
+        food_patch_y=2.0,
+        food_patch_r=1.0,
+    )
+
     # Metadata:
     network_metadata = checkpoint_utilities.network_metadata(
-        policy_layer_size=128,
+        policy_layer_size=32,
         policy_depth=4,
         activation='nn.elu',
         kernel_init='jax.nn.initializers.orthogonal(0.01)',
@@ -37,7 +55,7 @@ def main(argv=None):
         num_epochs=20,
         num_training_steps=25,
         horizon_length=loss_metadata.horizon_length,
-        episode_length=200,
+        episode_length=1000,
         action_repeat=1,
         num_envs=1024,
         num_evaluation_envs=128,
@@ -53,7 +71,11 @@ def main(argv=None):
 
     # Start Wandb and save metadata:
     run = wandb.init(
+        project='imsi',
+        group='double_integrator',
+        tags=['apg'],
         config={
+            'enviroment_metadata': env_config,
             'network_metadata': network_metadata,
             'loss_metadata': loss_metadata,
             'training_metadata': training_metadata,
@@ -93,8 +115,8 @@ def main(argv=None):
         ),
     )
 
-    env = inverted_pendulum.InvertedPendulum()
-    eval_env = inverted_pendulum.InvertedPendulum()
+    env = foraging.Foraging(config=env_config)
+    eval_env = foraging.Foraging(config=env_config)
 
     def progress_fn(iteration, num_steps, metrics):
         print(
@@ -162,7 +184,7 @@ def main(argv=None):
         evaluation_environment=eval_env,
     )
 
-    wandb.finish()
+    run.finish()
 
 
 if __name__ == '__main__':

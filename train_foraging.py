@@ -22,14 +22,49 @@ wandb.require("core")
 
 
 def main(argv=None):
+    # Environment Metadata:
+    # env_config = foraging.ForagingConfig(
+    #     survival_reward=0.0,
+    #     reward_scale=0.001,
+    #     energy_cap=10.0,
+    #     metabolic_rate=-0.02,
+    #     work_scale=0.0,
+    #     kinetic_energy_scale=-1e-1,
+    #     foraging_scale=1.0,
+    #     energy_capped=False,
+    #     static_location=False,
+    #     food_patch=False,
+    #     foraging_rate=1.0,
+    #     food_patch_x=2.0,
+    #     food_patch_y=2.0,
+    #     food_patch_r=1.0,
+    # )
+
+    env_config = foraging.ForagingConfig(
+        survival_reward=0.0,
+        reward_scale=0.001,
+        energy_cap=10.0,
+        metabolic_rate=-0.1,
+        work_scale=0.0,
+        kinetic_energy_scale=0.0,
+        foraging_scale=1.0,
+        energy_capped=False,
+        static_location=False,
+        food_patch=False,
+        foraging_rate=1.0,
+        food_patch_x=2.0,
+        food_patch_y=2.0,
+        food_patch_r=1.0,
+    )
+
     # Metadata:
     network_metadata = checkpoint_utilities.network_metadata(
-        policy_layer_size=128 // 4,
-        value_layer_size=256 // 4,
+        policy_layer_size=128,
+        value_layer_size=256,
         policy_depth=3,
         value_depth=4,
         activation='nn.swish',
-        kernel_init='jax.nn.initializers.lecun_uniform()',
+        kernel_init='jax.nn.initializers.orthogonal(0.01)',
         action_distribution='ParametricDistribution(distribution=distrax.Normal, bijector=distrax.Tanh())',
     )
     loss_metadata = checkpoint_utilities.loss_metadata(
@@ -41,13 +76,13 @@ def main(argv=None):
         normalize_advantages=True,
     )
     training_metadata = checkpoint_utilities.training_metadata(
-        num_epochs=10,
+        num_epochs=20,
         num_training_steps=20,
         episode_length=1000,
         num_policy_steps=25,
         action_repeat=1,
         num_envs=8192,
-        num_evaluation_envs=1,
+        num_evaluation_envs=128,
         num_evaluations=1,
         deterministic_evaluation=True,
         reset_per_epoch=False,
@@ -64,6 +99,7 @@ def main(argv=None):
         project='imsi',
         group='double_integrator',
         config={
+            'enviroment_metadata': env_config,
             'network_metadata': network_metadata,
             'loss_metadata': loss_metadata,
             'training_metadata': training_metadata,
@@ -77,7 +113,7 @@ def main(argv=None):
         policy_layer_sizes=(network_metadata.policy_layer_size, ) * network_metadata.policy_depth,
         value_layer_sizes=(network_metadata.value_layer_size, ) * network_metadata.value_depth,
         activation=nn.swish,
-        kernel_init=jax.nn.initializers.lecun_uniform(),
+        kernel_init=jax.nn.initializers.orthogonal(0.01),
         action_distribution=ParametricDistribution(
             distribution=distrax.Normal,
             bijector=distrax.Tanh(),
@@ -92,8 +128,8 @@ def main(argv=None):
         gae_lambda=loss_metadata.gae_lambda,
         normalize_advantages=loss_metadata.normalize_advantages,
     )
-    env = foraging.Foraging()
-    eval_env = foraging.Foraging()
+    env = foraging.Foraging(config=env_config)
+    eval_env = foraging.Foraging(config=env_config)
 
     def progress_fn(iteration, num_steps, metrics):
         print(
@@ -153,7 +189,7 @@ def main(argv=None):
         num_ppo_iterations=training_metadata.num_ppo_iterations,
         normalize_observations=training_metadata.normalize_observations,
         network_factory=make_networks_factory,
-        optimizer=optax.adam(3e-4),
+        optimizer=eval(training_metadata.optimizer),
         loss_function=loss_fn,
         progress_fn=progress_fn,
         randomization_fn=randomization_fn,

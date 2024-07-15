@@ -21,6 +21,8 @@
       <camera name="default" pos="0.846 -1.465 0.916" xyaxes="0.866 0.500 0.000 -0.171 0.296 0.940"/>
       <geom name="floor" size="0 0 0.05" type="plane" material="groundplane"/>
       <geom name="foraging_target" pos="2 2 0" size="1.0 0.01" type="cylinder"/>
+      <geom name="x_axis" pos="0 0 0" size="10.0 0.01 0.01" type="box"/>
+      <geom name="y_axis" pos="0 0 0" size="0.01 10.0 0.01" type="box"/>
     </worldbody>
   
   </mujoco>
