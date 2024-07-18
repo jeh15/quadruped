@@ -401,11 +401,11 @@ def train(
         current_step = int(unpmap(train_state.env_steps))
 
         # If reset per epoch else Auto Reset:
-        envs_key = jax.vmap(
-            lambda x, s: jax.random.split(x[0], s),
-            in_axes=(0, None),
-        )(envs_key, envs_key.shape[1])
         if reset_per_epoch:
+            envs_key = jax.vmap(
+                lambda x, s: jax.random.split(x[0], s),
+                in_axes=(0, None),
+            )(envs_key, envs_key.shape[1])
             env_state = reset_fn(envs_key)
 
         if process_id == 0:
