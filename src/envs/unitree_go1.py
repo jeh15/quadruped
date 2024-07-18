@@ -1,7 +1,8 @@
-from typing import Any, List, Sequence
+from typing import Any
 from absl import app
 import os
 
+import flax.serialization
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -12,7 +13,7 @@ import flax.serialization
 from brax import base
 from brax import envs
 from brax import math
-from brax.base import Motion, Transform
+from brax.base import Motion, Transform, System
 from brax.envs.base import PipelineEnv, State
 from brax.io import mjcf, html
 
@@ -27,16 +28,55 @@ class RewardConfig:
     # Rewards:
     tracking_linear_velocity: float = 1.5
     tracking_angular_velocity: float = 0.8
+    feet_air_time: float = 0.2
     # Penalties / Regularization Terms:
     linear_z_velocity: float = -2.0
     angular_xy_velocity: float = -0.05
     orientation: float = -5.0
-    torque: float = -1e-4
+    torque: float = -2e-4
     action_rate: float = -0.01
     stand_still: float = -0.5
     termination: float = -1.0
-    slip: float = -0.1
+    foot_slip: float = -0.1
+    # Hyperparameter for exponential kernel:
     kernel_sigma: float = 0.25
+
+
+def domain_randomize(sys: System, rng: PRNGKey) -> tuple[System, System]:
+    @jax.vmap
+    def randomize_parameters(rng):
+        key, subkey = jax.random.split(rng)
+        # friction
+        friction = jax.random.uniform(subkey, (1,), minval=0.6, maxval=1.4)
+        friction = sys.geom_friction.at[:, 0].set(friction)
+
+        # actuator
+        key, subkey = jax.random.split(subkey)
+        gain_range = (-5, 5)
+        param = jax.random.uniform(
+            subkey, (1,), minval=gain_range[0], maxval=gain_range[1]
+        ) + sys.actuator_gainprm[:, 0]
+        gain = sys.actuator_gainprm.at[:, 0].set(param)
+        bias = sys.actuator_biasprm.at[:, 1].set(-param)
+
+        return friction, gain, bias
+
+    friction, gain, bias = randomize_parameters(rng)
+
+    in_axes = jax.tree.map(lambda x: None, sys)
+    in_axes = in_axes.tree_replace({
+        'geom_friction': 0,
+        'actuator_gainprm': 0,
+        'actuator_biasprm': 0,
+    })
+
+    sys = sys.tree_replace({
+        'geom_friction': friction,
+        'actuator_gainprm': gain,
+        'actuator_biasprm': bias,
+    })  # type: ignore
+
+    return sys, in_axes
 
 
 class UnitreeGo1Env(PipelineEnv):
@@ -64,10 +104,19 @@ class UnitreeGo1Env(PipelineEnv):
         self.step_dt = 0.02
         sys = sys.tree_replace({'opt.timestep': 0.004})
 
+        sys = sys.replace(
+            dof_damping=sys.dof_damping.at[6:].set(0.5239),
+            actuator_gainprm=sys.actuator_gainprm.at[:, 0].set(35.0),
+            actuator_biasprm=sys.actuator_biasprm.at[:, 1].set(-35.0),
+        )
+
         n_frames = kwargs.pop('n_frames', int(self.step_dt / sys.opt.timestep))
         super().__init__(sys, backend='mjx', n_frames=n_frames)
 
-        self.reward_config = flax.serialization.to_state_dict(config)
+        self.kernel_sigma = config.kernel_sigma
+        config_dict = flax.serialization.to_state_dict(config)
+        del config_dict['kernel_sigma']
+        self.reward_config = config_dict
 
         self.trunk_idx = mujoco.mj_name2id(
             sys.mj_model, mujoco.mjtObj.mjOBJ_BODY.value, 'trunk'
@@ -109,7 +158,7 @@ class UnitreeGo1Env(PipelineEnv):
         self.history_length = 15
         self.num_observations = 31
 
-    def sample_command(self, rng: jax.Array) -> jax.Array:
+    def sample_command(self, rng: PRNGKey) -> jax.Array:
         lin_vel_x = [-0.6, 1.5]  # min max [m/s]
         lin_vel_y = [-0.8, 0.8]  # min max [m/s]
         ang_vel_yaw = [-0.7, 0.7]  # min max [rad/s]
@@ -127,7 +176,7 @@ class UnitreeGo1Env(PipelineEnv):
         new_cmd = jnp.array([lin_vel_x[0], lin_vel_y[0], ang_vel_yaw[0]])
         return new_cmd
 
-    def reset(self, rng: jax.Array) -> State:  # pytype: disable=signature-mismatch
+    def reset(self, rng: PRNGKey) -> State:  # pytype: disable=signature-mismatch
         rng, key = jax.random.split(rng)
 
         pipeline_state = self.pipeline_init(self.init_q, self.init_qd)
@@ -135,7 +184,7 @@ class UnitreeGo1Env(PipelineEnv):
         state_info = {
             'rng': rng,
             'previous_action': jnp.zeros(12),
-            'last_vel': jnp.zeros(12),
+            'previous_velocity': jnp.zeros(12),
             'command': self.sample_command(key),
             'last_contact': jnp.zeros(4, dtype=bool),
             'feet_air_time': jnp.zeros(4),
@@ -216,17 +265,17 @@ class UnitreeGo1Env(PipelineEnv):
 
         # reward
         rewards = {
-            'tracking_lin_vel': (
+            'tracking_linear_velocity': (
                 self._reward_tracking_lin_vel(state.info['command'], x, xd)
             ),
-            'tracking_ang_vel': (
+            'tracking_angular_velocity': (
                 self._reward_tracking_ang_vel(state.info['command'], x, xd)
             ),
-            'lin_vel_z': self._reward_lin_vel_z(xd),
-            'ang_vel_xy': self._reward_ang_vel_xy(xd),
+            'linear_z_velocity': self._reward_lin_vel_z(xd),
+            'angular_xy_velocity': self._reward_ang_vel_xy(xd),
             'orientation': self._reward_orientation(x),
             # pytype: disable=attribute-error
-            'torques': self._reward_torques(pipeline_state.qfrc_actuator),
+            'torque': self._reward_torques(pipeline_state.qfrc_actuator),
             'action_rate': self._reward_action_rate(action, state.info['previous_action']),
             'stand_still': self._reward_stand_still(
                 state.info['command'], joint_angles,
@@ -237,14 +286,21 @@ class UnitreeGo1Env(PipelineEnv):
                 state.info['command'],
             ),
             'foot_slip': self._reward_foot_slip(pipeline_state, contact_filt_cm),
-            'termination': self._reward_termination(done, state.info['step']),
+            'termination': jnp.float64(
+                self._reward_termination(done, state.info['step'])
+            ) if jax.config.x64_enabled else jnp.float32(
+                self._reward_termination(done, state.info['step'])
+            ),
+        }
+        rewards = {
+            k: v * self.reward_config[k] for k, v in rewards.items()
         }
         reward = jnp.clip(sum(rewards.values()) * self.step_dt, 0.0, 10000.0)
 
         # state management
         state.info['kick'] = kick
         state.info['previous_action'] = action
-        state.info['last_vel'] = joint_vel
+        state.info['previous_velocity'] = joint_vel
         state.info['feet_air_time'] *= ~contact_filt_mm
         state.info['last_contact'] = contact
         state.info['rewards'] = rewards
@@ -336,10 +392,10 @@ class UnitreeGo1Env(PipelineEnv):
         return jnp.sqrt(jnp.sum(jnp.square(torques))) + jnp.sum(jnp.abs(torques))
 
     def _reward_action_rate(
-        self, act: jax.Array, previous_action: jax.Array
+        self, action: jax.Array, previous_action: jax.Array
     ) -> jax.Array:
         # Penalize changes in actions
-        return jnp.sum(jnp.square(act - previous_action))
+        return jnp.sum(jnp.square(action - previous_action))
 
     def _reward_tracking_lin_vel(
         self, commands: jax.Array, x: Transform, xd: Motion
@@ -348,7 +404,7 @@ class UnitreeGo1Env(PipelineEnv):
         local_vel = math.rotate(xd.vel[0], math.quat_inv(x.rot[0]))
         lin_vel_error = jnp.sum(jnp.square(commands[:2] - local_vel[:2]))
         lin_vel_reward = jnp.exp(
-            -lin_vel_error / self.reward_config['kernel_sigma']
+            -lin_vel_error / self.kernel_sigma
         )
         return lin_vel_reward
 
@@ -358,7 +414,7 @@ class UnitreeGo1Env(PipelineEnv):
         # Tracking of angular velocity commands (yaw)
         base_ang_vel = math.rotate(xd.ang[0], math.quat_inv(x.rot[0]))
         ang_vel_error = jnp.square(commands[2] - base_ang_vel[2])
-        return jnp.exp(-ang_vel_error / self.reward_config['kernel_sigma'])
+        return jnp.exp(-ang_vel_error / self.kernel_sigma)
 
     def _reward_feet_air_time(
         self, air_time: jax.Array, first_contact: jax.Array, commands: jax.Array

@@ -10,7 +10,7 @@ import optax
 import wandb
 import orbax.checkpoint as ocp
 
-from src.envs import barkour
+from src.envs import unitree_go1
 from src.algorithms.ppo import network_utilities as ppo_networks
 from src.algorithms.ppo.loss_utilities import loss_function
 from src.distribution_utilities import ParametricDistribution
@@ -21,6 +21,22 @@ jax.config.update("jax_enable_x64", True)
 
 
 def main(argv=None):
+    # Config:
+    reward_config = unitree_go1.RewardConfig(
+        tracking_linear_velocity=1.5,
+        tracking_angular_velocity=0.8,
+        feet_air_time=0.2,
+        linear_z_velocity=-2.0,
+        angular_xy_velocity=-0.05,
+        orientation=-5.0,
+        torque=-2e-4,
+        action_rate=-0.01,
+        stand_still=-0.5,
+        termination=-1.0,
+        foot_slip=-0.1,
+        kernel_sigma=0.25,
+    )
+
     # Metadata:
     network_metadata = checkpoint_utilities.network_metadata(
         policy_layer_size=128,
@@ -40,12 +56,12 @@ def main(argv=None):
         normalize_advantages=True,
     )
     training_metadata = checkpoint_utilities.training_metadata(
-        num_epochs=20,
+        num_epochs=25,
         num_training_steps=20,
         episode_length=1000,
         num_policy_steps=25,
         action_repeat=1,
-        num_envs=8192,
+        num_envs=4096,
         num_evaluation_envs=128,
         num_evaluations=1,
         deterministic_evaluation=True,
@@ -60,7 +76,10 @@ def main(argv=None):
 
     # Start Wandb and save metadata:
     run = wandb.init(
+        project='unitree',
+        group='ppo',
         config={
+            'reward_config': reward_config,
             'network_metadata': network_metadata,
             'loss_metadata': loss_metadata,
             'training_metadata': training_metadata,
@@ -68,7 +87,7 @@ def main(argv=None):
     )
 
     # Initialize Functions with Params:
-    randomization_fn = barkour.domain_randomize
+    randomization_fn = unitree_go1.domain_randomize
     make_networks_factory = functools.partial(
         ppo_networks.make_ppo_networks,
         policy_layer_sizes=(network_metadata.policy_layer_size, ) * network_metadata.policy_depth,
@@ -89,8 +108,8 @@ def main(argv=None):
         gae_lambda=loss_metadata.gae_lambda,
         normalize_advantages=loss_metadata.normalize_advantages,
     )
-    env = barkour.BarkourEnv()
-    eval_env = barkour.BarkourEnv()
+    env = unitree_go1.UnitreeGo1Env(config=reward_config)
+    eval_env = unitree_go1.UnitreeGo1Env(config=reward_config)
 
     def progress_fn(iteration, num_steps, metrics):
         print(

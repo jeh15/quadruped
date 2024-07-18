@@ -1,3 +1,4 @@
+from typing import Optional
 import os
 
 import jax
@@ -14,7 +15,7 @@ from src.algorithms.ppo.network_utilities import PPONetworkParams
 from src.algorithms.ppo.train import TrainState
 
 
-def load_policy(checkpoint_name: str, environment: Env):
+def load_policy(checkpoint_name: str, environment: Env, restore_iteration: Optional[int] = None):
     # Load Metadata:
     checkpoint_direrctory = os.path.join(
         os.path.dirname(
@@ -38,6 +39,7 @@ def load_policy(checkpoint_name: str, environment: Env):
 
     metadata = checkpoint_utilities.load_checkpoint(
         manager=manager,
+        restore_iteration=restore_iteration,
         network_metadata=checkpoint_utilities.empty_network_metadata(),
         loss_metadata=checkpoint_utilities.empty_loss_metadata(),
         training_metadata=checkpoint_utilities.empty_training_metadata(),
@@ -73,7 +75,7 @@ def load_policy(checkpoint_name: str, environment: Env):
         policy_params=network.policy_network.init(key),
         value_params=network.value_network.init(key),
     )
-    
+
     train_state = TrainState(
         opt_state=optimizer.init(init_params),
         params=init_params,
