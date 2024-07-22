@@ -6,7 +6,7 @@ import jax.numpy as jnp
 
 from brax.io import html
 
-from src.envs import unitree_go1
+from src.envs import walter
 from src.algorithms.ppo.load_utilities import load_policy
 
 jax.config.update("jax_enable_x64", True)
@@ -22,7 +22,7 @@ flags.DEFINE_integer(
 
 def main(argv=None):
     # Load from Env:
-    env = unitree_go1.UnitreeGo1Env()
+    env = walter.WalterEnv()
     reset_fn = jax.jit(env.reset)
     step_fn = jax.jit(env.step)
 
@@ -38,7 +38,7 @@ def main(argv=None):
     # Initialize Simulation:
     key = jax.random.key(0)
     state = reset_fn(key)
-    state.info['command'] = jnp.array([1.0, 0.0, 0.0])
+    state.info['command'] = jnp.array([1.0, 0.0])
 
     num_steps = 1000
     states = []

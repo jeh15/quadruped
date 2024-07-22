@@ -10,7 +10,7 @@ import optax
 import wandb
 import orbax.checkpoint as ocp
 
-from src.envs import unitree_go1
+from src.envs import walter
 from src.algorithms.ppo import network_utilities as ppo_networks
 from src.algorithms.ppo.loss_utilities import loss_function
 from src.distribution_utilities import ParametricDistribution
@@ -18,14 +18,14 @@ from src.algorithms.ppo.train import train
 from src.algorithms.ppo import checkpoint_utilities
 
 jax.config.update("jax_enable_x64", True)
+wandb.require('core')
 
 
 def main(argv=None):
     # Config:
-    reward_config = unitree_go1.RewardConfig(
+    reward_config = walter.RewardConfig(
         tracking_linear_velocity=1.5,
         tracking_angular_velocity=0.8,
-        feet_air_time=0.2,
         linear_z_velocity=-2.0,
         angular_xy_velocity=-0.05,
         orientation=-5.0,
@@ -33,7 +33,7 @@ def main(argv=None):
         action_rate=-0.01,
         stand_still=-0.5,
         termination=-1.0,
-        foot_slip=-0.1,
+        slip=0.0,
         kernel_sigma=0.25,
     )
 
@@ -56,7 +56,7 @@ def main(argv=None):
         normalize_advantages=True,
     )
     training_metadata = checkpoint_utilities.training_metadata(
-        num_epochs=25,
+        num_epochs=10,
         num_training_steps=20,
         episode_length=1000,
         num_policy_steps=25,
@@ -76,7 +76,7 @@ def main(argv=None):
 
     # Start Wandb and save metadata:
     run = wandb.init(
-        project='unitree',
+        project='walter',
         group='ppo',
         config={
             'reward_config': reward_config,
@@ -87,7 +87,7 @@ def main(argv=None):
     )
 
     # Initialize Functions with Params:
-    randomization_fn = unitree_go1.domain_randomize
+    randomization_fn = None
     make_networks_factory = functools.partial(
         ppo_networks.make_ppo_networks,
         policy_layer_sizes=(network_metadata.policy_layer_size, ) * network_metadata.policy_depth,
@@ -108,8 +108,8 @@ def main(argv=None):
         gae_lambda=loss_metadata.gae_lambda,
         normalize_advantages=loss_metadata.normalize_advantages,
     )
-    env = unitree_go1.UnitreeGo1Env(config=reward_config)
-    eval_env = unitree_go1.UnitreeGo1Env(config=reward_config)
+    env = walter.WalterEnv(config=reward_config)
+    eval_env = walter.WalterEnv(config=reward_config)
 
     def progress_fn(iteration, num_steps, metrics):
         print(
@@ -182,7 +182,7 @@ def main(argv=None):
         evaluation_environment=eval_env,
     )
 
-    wandb.finish()
+    run.finish()
 
 
 if __name__ == '__main__':
