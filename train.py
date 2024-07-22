@@ -44,7 +44,7 @@ def main(argv=None):
         policy_depth=4,
         value_depth=5,
         activation='nn.swish',
-        kernel_init='jax.nn.initializers.lecun_uniform()',
+        kernel_init='jax.nn.initializers.orthogonal(0.01)',
         action_distribution='ParametricDistribution(distribution=distrax.Normal, bijector=distrax.Tanh())',
     )
     loss_metadata = checkpoint_utilities.loss_metadata(
@@ -56,7 +56,7 @@ def main(argv=None):
         normalize_advantages=True,
     )
     training_metadata = checkpoint_utilities.training_metadata(
-        num_epochs=10,
+        num_epochs=25,
         num_training_steps=20,
         episode_length=1000,
         num_policy_steps=25,
@@ -93,7 +93,7 @@ def main(argv=None):
         policy_layer_sizes=(network_metadata.policy_layer_size, ) * network_metadata.policy_depth,
         value_layer_sizes=(network_metadata.value_layer_size, ) * network_metadata.value_depth,
         activation=nn.swish,
-        kernel_init=jax.nn.initializers.lecun_uniform(),
+        kernel_init=jax.nn.initializers.orthogonal(0.01),
         action_distribution=ParametricDistribution(
             distribution=distrax.Normal,
             bijector=distrax.Tanh(),
