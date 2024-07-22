@@ -31,13 +31,13 @@
                 <geom mesh="thigh_mesh"/>
             </default> 
             <default class="walter/hip_joint">
-                <joint type="hinge" axis="0 0 1" armature="0.02" damping="2"/>
+                <joint type="hinge" axis="0 0 1" armature="0.0019764" damping="2"/>
             </default>
             <default class="walter/shin">
                 <geom mesh="shin_mesh"/>
             </default>
             <default class="walter/knee_joint">
-                <joint type="hinge" axis="0 0 1" armature="0.02" damping="2"/>
+                <joint type="hinge" axis="0 0 1" armature="0.0070953" damping="2"/>
             </default>
             <default class="walter/wheel">
                 <geom mesh="wheel_mesh"/>
@@ -61,8 +61,7 @@
         <!-- Rear Body Section -->
         <body name="body" pos="0 0 0.4">
             <freejoint name="body_joint"/>
-            <!-- TODO: Add correct inertia -->
-            <inertial pos="0 -0.05 0.03" mass="0.20157" diaginertia="0.0005212 0.000114 0.0005585"/>
+            <inertial pos="-0.166 0 -0.004" mass="9.995" diaginertia="0.029 0.109 0.112"/>
             <geom class="walter/body"/>
 
             <!-- Back left thigh -->
@@ -90,7 +89,6 @@
                 </body>
             </body>
 
-            
             <!-- Back right thigh -->
             <body name="br_thigh" pos="-0.274 -0.075 -0.0325" quat="1 1 0 0">
                 <inertial pos="0 -0.05 0.03" mass="0.20157" diaginertia="0.0005212 0.000114 0.0005585"/>
@@ -116,12 +114,9 @@
                 </body>
             </body>
 
-
-
             <!-- Front Body Section -->
             <body name="head" pos="0.01 0 0">
-                <!-- TODO: Add correct inertia -->
-                <inertial pos="0 -0.05 0.03" mass="0.20157" diaginertia="0.0005212 0.000114 0.0005585"/>
+                <inertial pos="0.111 0 0.007" mass="5.012" diaginertia="0.016 0.023 0.024"/>
                 <joint name="head_joint" type="hinge" axis="1 0 0" stiffness="0.05" range="-0.5 0.5"/>
                 <geom type="mesh" mesh="head_mesh"/>
 
