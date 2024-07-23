@@ -1,0 +1,16 @@
+program: train_foraging.py
+name: architecture_sweep
+method: random
+metric:
+  goal: maximize
+  name: eval/episode_reward
+parameters:
+  policy_layer_size:
+    values: [32, 64, 128, 256]
+  policy_depth:
+    values: [1, 2, 3]
+  value_layer_size:
+    values: [32, 64, 128, 256]
+  value_depth:
+    values: [1, 2, 3]
+run_cap: 20

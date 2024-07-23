@@ -1,6 +1,8 @@
-from absl import app
+from absl import app, flags
 import os
 import functools
+import yaml
+from pathlib import Path
 
 import jax
 import flax.linen as nn
@@ -20,26 +22,21 @@ from src.algorithms.ppo import checkpoint_utilities
 jax.config.update("jax_enable_x64", True)
 wandb.require("core")
 
+FLAGS = flags.FLAGS
+flags.DEFINE_string(
+    'orbax_multihost',
+    '--experimental_orbax_use_distributed_process_id=True',
+    'Enable multihost mode for orbax',
+)
 
-def main(argv=None):
+
+def train_main(argv=None):
+    run = wandb.init(
+        project='imsi',
+        group='architecture_sweep',
+    )
+
     # Environment Metadata:
-    # env_config = foraging.ForagingConfig(
-    #     survival_reward=0.0,
-    #     reward_scale=0.001,
-    #     energy_cap=10.0,
-    #     metabolic_rate=-0.02,
-    #     work_scale=0.0,
-    #     kinetic_energy_scale=-1e-1,
-    #     foraging_scale=1.0,
-    #     energy_capped=False,
-    #     static_location=False,
-    #     food_patch=False,
-    #     foraging_rate=1.0,
-    #     food_patch_x=2.0,
-    #     food_patch_y=2.0,
-    #     food_patch_r=1.0,
-    # )
-
     env_config = foraging.ForagingConfig(
         survival_reward=0.0,
         reward_scale=0.001,
@@ -93,6 +90,12 @@ def main(argv=None):
         normalize_observations=True,
         optimizer='optax.adam(3e-4)',
     )
+
+    # Update run config:
+    run.config['enviroment_metadata'] = env_config
+    run.config['network_metadata'] = network_metadata
+    run.config['loss_metadata'] = loss_metadata
+    run.config['training_metadata'] = training_metadata
 
     # Start Wandb and save metadata:
     run = wandb.init(
@@ -203,6 +206,12 @@ def main(argv=None):
     )
 
     run.finish()
+
+
+def main(argv=None):
+    config = yaml.safe_load(Path('config.yaml').read_text())
+    sweep_id = wandb.sweep(sweep=config, project='imsi')
+    wandb.agent(sweep_id, function=train_main)
 
 
 if __name__ == '__main__':
