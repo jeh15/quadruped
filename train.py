@@ -31,7 +31,9 @@ def main(argv=None):
         orientation=-5.0,
         torque=-2e-4,
         action_rate=-0.01,
+        limb_regularization=-0.5,
         stand_still=-0.5,
+        wheel_air_time=-1.0,
         termination=-1.0,
         slip=0.0,
         kernel_sigma=0.25,
@@ -44,7 +46,7 @@ def main(argv=None):
         policy_depth=4,
         value_depth=5,
         activation='nn.swish',
-        kernel_init='jax.nn.initializers.orthogonal(0.01)',
+        kernel_init='jax.nn.initializers.lecun_uniform()',
         action_distribution='ParametricDistribution(distribution=distrax.Normal, bijector=distrax.Tanh())',
     )
     loss_metadata = checkpoint_utilities.loss_metadata(
@@ -93,7 +95,7 @@ def main(argv=None):
         policy_layer_sizes=(network_metadata.policy_layer_size, ) * network_metadata.policy_depth,
         value_layer_sizes=(network_metadata.value_layer_size, ) * network_metadata.value_depth,
         activation=nn.swish,
-        kernel_init=jax.nn.initializers.orthogonal(0.01),
+        kernel_init=jax.nn.initializers.lecun_uniform(),
         action_distribution=ParametricDistribution(
             distribution=distrax.Normal,
             bijector=distrax.Tanh(),

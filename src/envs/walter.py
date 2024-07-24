@@ -33,7 +33,9 @@ class RewardConfig:
     orientation: float = -5.0
     torque: float = -2e-4
     action_rate: float = -0.01
+    limb_regularization: float = -0.5
     stand_still: float = -0.5
+    wheel_air_time: float = -0.2
     termination: float = -1.0
     slip: float = 0.0
     # Hyperparameter for exponential kernel:
@@ -63,15 +65,31 @@ class WalterEnv(PipelineEnv):
 
         self.step_dt = 0.02
         n_frames = kwargs.pop('n_frames', int(self.step_dt/sys.opt.timestep))
+
+        # Indices for the limbs and wheels relative to actuators:
+        self.limb_idx = jnp.array([0, 1, 4, 5, 8, 9, 12, 13])
+        self.wheel_idx = jnp.array([2, 3, 6, 7, 10, 11, 14, 15])
+
+        # Replace Leg Components:
+        sys = sys.replace(
+            dof_damping=sys.dof_damping.at[6:].set(0.5239),
+            actuator_gainprm=sys.actuator_gainprm.at[self.limb_idx, 0].set(35.0),
+            actuator_biasprm=sys.actuator_biasprm.at[self.limb_idx, 1].set(-35.0),
+        )
+
+        # Replace Wheel Components:
+        sys = sys.replace(
+            dof_damping=sys.dof_damping.at[6:].set(0.5239),
+            actuator_gainprm=sys.actuator_gainprm.at[self.wheel_idx, 0].set(35.0),
+            actuator_biasprm=sys.actuator_biasprm.at[self.wheel_idx, 1].set(-35.0),
+        )
+
         super().__init__(sys, backend='mjx', n_frames = n_frames)
 
         # Setting the initial state
         self._init_q = jnp.array(sys.mj_model.keyframe('home').qpos)
         self.default_pose = jnp.array(sys.mj_model.keyframe('home').qpos)[7:]
         self.default_ctrl = jnp.array(sys.mj_model.keyframe('home').ctrl)
-        # Indices for the limbs and wheels relative to actuators:
-        self.limb_idx = jnp.array([0, 1, 4, 5, 8, 9, 12, 13])
-        self.wheel_idx = jnp.array([2, 3, 6, 7, 10, 11, 14, 15])
         # Indices for the limbs to the pose:
         self.limb_idx_wrt_pose = jnp.array([0, 1, 4, 5, 9, 10, 13, 14])
         self.actuated_idx = sys.actuator.q_id
@@ -132,17 +150,17 @@ class WalterEnv(PipelineEnv):
             for shin_body in shin_bodies
         ]
         self.shin_body_ids = jnp.array(shin_body_ids)
-        self.limb_ids = jnp.concatenate([self.thigh_body_ids, self.shin_body_ids])
+        self.limb_ids = jnp.sort(jnp.concatenate([self.thigh_body_ids, self.shin_body_ids]))
 
         self.wheel_radius = 0.0565
 
         # Control Scales:
         self._action_scale = 0.3
-        self._torque_scale = 0.3
+        self._torque_scale = 1.0
 
     def sample_command(self, rng: PRNGKey) -> jax.Array:
-        linear_forward_velocity = [-0.6, 1.5]
-        angular_velocity = [-0.7, 0.7]
+        linear_forward_velocity = [-1.5, 1.5]
+        angular_velocity = [-1.5, 1.5]
 
         _, forward_velocity_key, angular_velocity_key = jax.random.split(rng, 3)
 
@@ -253,6 +271,7 @@ class WalterEnv(PipelineEnv):
         xd = pipeline_state.xd
         joint_angles = pipeline_state.q[7:]
         actuated_joints = pipeline_state.q[self.actuated_idx]
+        joint_velocities = pipeline_state.qd[6:]
 
         # Wheel Contact:
         wheel_q = pipeline_state.site_xpos[self.wheel_site_ids]
@@ -282,7 +301,12 @@ class WalterEnv(PipelineEnv):
             'orientation': self._reward_orientation(x),
             'torque': self._reward_torque(pipeline_state.qfrc_actuator),
             'action_rate': self._reward_action_rate(action, state.info['previous_action']),
-            'stand_still': self._reward_stand_still(state.info['command'], joint_angles),
+            'limb_regularization': self._reward_limb_regularization(joint_angles),
+            'stand_still': self._reward_stand_still(state.info['command'], joint_velocities),
+            'wheel_air_time': self._reward_wheel_air_time(
+                state.info['wheel_air_time'],
+                first_contact,
+            ),
             'termination': jnp.float64(
                 self._reward_termination(done, state.info['step'])
             ) if jax.config.x64_enabled else jnp.float32(
@@ -293,7 +317,7 @@ class WalterEnv(PipelineEnv):
         rewards = {
             k: v * self.reward_config[k] for k, v in rewards.items()
         }
-        reward = jnp.clip(sum(rewards.values()), -jnp.inf, jnp.inf)
+        reward = jnp.clip(sum(rewards.values()) * self.step_dt, 0.0, 1000.0)
         
         # State Info:
         state.info['previous_state']['q'] = pipeline_state.q
@@ -400,22 +424,39 @@ class WalterEnv(PipelineEnv):
         return lin_vel_reward
 
     def _reward_tracking_angular_velocity(
-        self, commands: jax.Array, x: Transform, xd: Motion
+        self,
+        commands: jax.Array,
+        x: Transform,
+        xd: Motion,
     ) -> jax.Array:
         # Tracking of angular velocity commands (yaw)
         base_ang_vel = math.rotate(xd.ang[0], math.quat_inv(x.rot[0]))
-        ang_vel_error = jnp.square(commands[2] - base_ang_vel[2])
+        ang_vel_error = jnp.square(commands[-1] - base_ang_vel[2])
         return jnp.exp(-ang_vel_error / self.kernel_sigma)
 
+    def _reward_limb_regularization(
+        self,
+        joint_angles: jax.Array,
+    ) -> jax.Array:
+        # Regularize Limb Movement:
+        return jnp.sum(jnp.abs(joint_angles[self.limb_ids - 2] - self.default_pose[self.limb_ids - 2]))
+    
     def _reward_stand_still(
         self,
         commands: jax.Array,
-        joint_angles: jax.Array,
+        joint_velocities: jax.Array,
     ) -> jax.Array:
-        # Penalize motion at zero commands
-        return jnp.sum(jnp.abs(joint_angles - self.default_pose)) * (
-            math.normalize(commands[0])[1] < 0.1
+        # Minimize Movement:
+        return jnp.sum(jnp.abs(joint_velocities - jnp.zeros_like(joint_velocities))) * (
+            math.normalize(commands)[1] < 0.1
         )
+
+    def _reward_wheel_air_time(
+        self,
+        air_time: jax.Array,
+        first_contact: jax.Array,
+    ) -> jax.Array:
+        return jnp.sum((air_time) * first_contact)
 
     def _reward_slip(
         self, pipeline_state: base.State, contact_filt: jax.Array

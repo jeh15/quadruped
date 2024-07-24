@@ -92,15 +92,15 @@ def main(argv=None):
                     print(f"Joystick {event.instance_id} disconnected")
 
             for joystick in joysticks.values():
-                forward_command = -1 * joystick.get_axis(1)
-                rotation_command = -1 * joystick.get_axis(2)
+                forward_command = -1.75 * joystick.get_axis(1)
+                rotation_command = -1.75 * joystick.get_axis(0)
 
                 # Filter and Clip Command:
                 command = np.array([
                     forward_command, rotation_command,
                 ])
                 command = np.where(np.abs(command) < 0.1, 0.0, command)
-                command = np.clip(command, -0.75, 0.75)
+                command = np.clip(command, -1.75, 1.75)
 
             step_time = time.time()
             action_rng, key = jax.random.split(key)

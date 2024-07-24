@@ -38,11 +38,12 @@ def main(argv=None):
     # Initialize Simulation:
     key = jax.random.key(0)
     state = reset_fn(key)
-    state.info['command'] = jnp.array([1.0, 0.0])
 
     num_steps = 1000
     states = []
+    rewards = 0
     for i in range(num_steps):
+        state.info['command'] = jnp.array([1.0, 0.0])
         key, subkey = jax.random.split(key)
         action, _ = inference_fn(state.obs, subkey)
         state = step_fn(state, action)

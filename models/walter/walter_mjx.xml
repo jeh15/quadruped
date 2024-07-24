@@ -45,13 +45,13 @@
         </default>
 
         <default class="knee_actuator">
-            <position kp="100" kv="10" forcerange="-16 16"/>
+            <position kp="100" forcerange="-16 16"/>
         </default>
         <default class="hip_actuator">
-            <position kp="300" kv="1" forcerange="-15 15"/> 
+            <position kp="300" forcerange="-15 15"/> 
         </default>
         <default class="wheel_actuator">
-            <general gear="2" forcerange="-2.8 2.8"/>
+            <general gear="2" forcerange="-4.9 4.9"/>
         </default>
     </default>
 
