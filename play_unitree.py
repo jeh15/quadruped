@@ -74,10 +74,12 @@ def main(argv=None):
         'stance': {
             'length': [],
             'average': 0,
+            'indicies': [],
         },
         'flight': {
             'length': [],
             'average': 0,
+            'indicies': [],
         },
     }
 
@@ -86,18 +88,21 @@ def main(argv=None):
         initial_mode = 'stance' if contacts[0, foot.value] else 'flight'
         previous_mode = initial_mode
         mode_length = 0
-        for contact in contacts[1:, foot.value]:
+        for idx, contact in enumerate(contacts[1:, foot.value]):
             current_mode = 'stance' if contact else 'flight'
             if current_mode == previous_mode:
                 mode_length += 1
             else:
+                start_idx = idx - mode_length
                 gait[foot.name]['timing'].append(previous_mode)
                 gait[foot.name][previous_mode]['length'].append(mode_length)
+                gait[foot.name][previous_mode]['indicies'].append(start_idx)
                 mode_length = 0
             previous_mode = current_mode
         # Remove trivial first element and calculate average:
         gait[foot.name]['timing'] = gait[foot.name]['timing'][1:]
         gait[foot.name][initial_mode]['length'] = gait[foot.name][initial_mode]['length'][1:]
+        gait[foot.name][initial_mode]['indicies'] = gait[foot.name][initial_mode]['indicies'][1:]
         gait[foot.name]['stance']['average'] = np.mean(
             gait[foot.name]['stance']['length'],
         )
