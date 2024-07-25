@@ -1,8 +1,10 @@
 from absl import app, flags
 import os
+from enum import Enum
 
 import jax
 import jax.numpy as jnp
+import numpy as np
 
 from brax.io import html
 
@@ -41,12 +43,67 @@ def main(argv=None):
     state.info['command'] = jnp.array([1.0, 0.0, 0.0])
 
     num_steps = 1000
+    steady_state_ratio = 0.8
     states = []
+    contacts = []
     for i in range(num_steps):
+        state.info['command'] = jnp.array([1.0, 0.0, 0.0])
         key, subkey = jax.random.split(key)
         action, _ = inference_fn(state.obs, subkey)
         state = step_fn(state, action)
         states.append(state.pipeline_state)
+        # Get Steady State:
+        steady_state_condition = (
+            (i > int((1.0-steady_state_ratio) * num_steps))
+            & (i <= int(steady_state_ratio * num_steps))
+        )
+        if steady_state_condition:
+            contacts.append(state.info['last_contact'])
+
+    contacts = np.asarray(contacts)
+
+    class Feet(Enum):
+        front_left = 0
+        hind_left = 1
+        front_right = 2
+        hind_right = 3
+
+    gait = {}
+    mode = {
+        'timing': [],
+        'stance': {
+            'length': [],
+            'average': 0,
+        },
+        'flight': {
+            'length': [],
+            'average': 0,
+        },
+    }
+
+    for foot in Feet:
+        gait.update({foot.name: mode})
+        initial_mode = 'stance' if contacts[0, foot.value] else 'flight'
+        previous_mode = initial_mode
+        mode_length = 0
+        for contact in contacts[1:, foot.value]:
+            current_mode = 'stance' if contact else 'flight'
+            if current_mode == previous_mode:
+                mode_length += 1
+            else:
+                gait[foot.name]['timing'].append(previous_mode)
+                gait[foot.name][previous_mode]['length'].append(mode_length)
+                mode_length = 0
+            previous_mode = current_mode
+        # Remove trivial first element and calculate average:
+        gait[foot.name]['timing'] = gait[foot.name]['timing'][1:]
+        gait[foot.name][initial_mode]['length'] = gait[foot.name][initial_mode]['length'][1:]
+        gait[foot.name]['stance']['average'] = np.mean(
+            gait[foot.name]['stance']['length'],
+        )
+        gait[foot.name]['flight']['average'] = np.mean(
+            gait[foot.name]['flight']['length'],
+        )
 
     html_string = html.render(
         sys=env.sys.tree_replace({'opt.timestep': env.step_dt}),
