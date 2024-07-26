@@ -31,8 +31,10 @@ class RewardConfig:
     linear_z_velocity: float = -2.0
     angular_xy_velocity: float = -0.05
     orientation: float = -5.0
-    torque: float = -2e-4
-    action_rate: float = -0.01
+    limb_torque: float = -2e-4
+    wheel_torque: float = -2e-4
+    action_rate_limb: float = -0.01
+    action_rate_wheel: float = -0.01
     limb_regularization: float = -0.5
     stand_still: float = -0.5
     wheel_air_time: float = -0.2
@@ -48,6 +50,7 @@ class WalterEnv(PipelineEnv):
         self,
         filename: str = 'walter/scene.xml',
         config: RewardConfig = RewardConfig(),
+        wheel_only: bool = False,
         **kwargs,
     ):
         # Load the MJCF file
@@ -64,11 +67,15 @@ class WalterEnv(PipelineEnv):
         sys = mjcf.load(self.filepath)
 
         self.step_dt = 0.02
+        self.wheel_only = wheel_only
         n_frames = kwargs.pop('n_frames', int(self.step_dt/sys.opt.timestep))
 
         # Indices for the limbs and wheels relative to actuators:
         self.limb_idx = jnp.array([0, 1, 4, 5, 8, 9, 12, 13])
         self.wheel_idx = jnp.array([2, 3, 6, 7, 10, 11, 14, 15])
+        # Indices for the limbs and wheels relative to the qfrc:
+        self.limb_qfrc = jnp.array([6, 7, 10, 11, 15, 16, 19, 20])
+        self.wheel_qfrc = jnp.array([8, 9, 12, 13, 17, 18, 21, 22])
 
         # Replace Leg Components:
         sys = sys.replace(
@@ -249,6 +256,10 @@ class WalterEnv(PipelineEnv):
     def step(self, state: State, action: jax.Array) -> State:
         key, subkey, cmd_key = jax.random.split(state.info['rng_key'], 3)
 
+        # Learn only wheel control:
+        if self.wheel_only:
+            action = action.at[self.limb_idx].set(0.0)
+
         # Perform a forward physics step
         position_targets = self.default_pose[self.limb_ids-2] + action[self.limb_idx] * self._action_scale
         torque_targets = action[self.wheel_idx] * self._torque_scale
@@ -299,8 +310,18 @@ class WalterEnv(PipelineEnv):
             'linear_z_velocity': self._reward_linear_z_velocity(xd),
             'angular_xy_velocity': self._reward_angular_xy_velocity(xd),
             'orientation': self._reward_orientation(x),
-            'torque': self._reward_torque(pipeline_state.qfrc_actuator),
-            'action_rate': self._reward_action_rate(action, state.info['previous_action']),
+            'limb_torque': self._reward_torque(
+                pipeline_state.qfrc_actuator[self.limb_qfrc],
+            ),
+            'wheel_torque': self._reward_torque(
+                pipeline_state.qfrc_actuator[self.wheel_qfrc],
+            ),
+            'action_rate_limb': self._reward_action_rate(
+                action[self.limb_idx], state.info['previous_action'][self.limb_idx]
+            ),
+            'action_rate_wheel': self._reward_action_rate(
+                action[self.wheel_idx], state.info['previous_action'][self.wheel_idx],
+            ),
             'limb_regularization': self._reward_limb_regularization(joint_angles),
             'stand_still': self._reward_stand_still(state.info['command'], joint_velocities),
             'wheel_air_time': self._reward_wheel_air_time(
@@ -536,7 +557,6 @@ def main(argv=None):
 
     env = WalterEnv()
 
-    state = jax.jit(env.reset)(key)
     reset_fn = jax.jit(env.reset)
     step_fn = jax.jit(env.step)
 

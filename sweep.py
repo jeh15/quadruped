@@ -1,6 +1,8 @@
-from absl import app
+from absl import app, flags
 import os
 import functools
+import yaml
+from pathlib import Path
 
 import jax
 import flax.linen as nn
@@ -20,8 +22,20 @@ from src.algorithms.ppo import checkpoint_utilities
 jax.config.update("jax_enable_x64", True)
 wandb.require('core')
 
+FLAGS = flags.FLAGS
+flags.DEFINE_string(
+    'orbax_multihost',
+    '--experimental_orbax_use_distributed_process_id=True',
+    'Enable multihost mode for orbax',
+)
 
-def main(argv=None):
+
+def train_main(argv=None):
+    run = wandb.init(
+        project='walter',
+        group='parameter_sweep',
+    )
+
     # Config:
     reward_config = walter.RewardConfig(
         tracking_linear_velocity=1.5,
@@ -30,9 +44,9 @@ def main(argv=None):
         angular_xy_velocity=-0.05,
         orientation=-5.0,
         limb_torque=-2e-4,
-        wheel_torque=-1e-4,
+        wheel_torque=wandb.config.wheel_torque,
         action_rate_limb=-0.01,
-        action_rate_wheel=-0.01,
+        action_rate_wheel=wandb.config.action_rate_wheel,
         limb_regularization=-0.5,
         stand_still=-0.5,
         wheel_air_time=-1.0,
@@ -45,8 +59,8 @@ def main(argv=None):
     network_metadata = checkpoint_utilities.network_metadata(
         policy_layer_size=128,
         value_layer_size=256,
-        policy_depth=6,
-        value_depth=7,
+        policy_depth=4,
+        value_depth=5,
         activation='nn.swish',
         kernel_init='jax.nn.initializers.lecun_uniform()',
         action_distribution='ParametricDistribution(distribution=distrax.Normal, bijector=distrax.Tanh())',
@@ -78,17 +92,11 @@ def main(argv=None):
         optimizer='optax.adam(3e-4)',
     )
 
-    # Start Wandb and save metadata:
-    run = wandb.init(
-        project='walter',
-        group='ppo',
-        config={
-            'reward_config': reward_config,
-            'network_metadata': network_metadata,
-            'loss_metadata': loss_metadata,
-            'training_metadata': training_metadata,
-        },
-    )
+    # Update run config:
+    run.config['enviroment_metadata'] = reward_config
+    run.config['network_metadata'] = network_metadata
+    run.config['loss_metadata'] = loss_metadata
+    run.config['training_metadata'] = training_metadata
 
     # Initialize Functions with Params:
     randomization_fn = None
@@ -187,6 +195,12 @@ def main(argv=None):
     )
 
     run.finish()
+
+
+def main(argv=None):
+    config = yaml.safe_load(Path('sweep_config.yaml').read_text())
+    sweep_id = wandb.sweep(sweep=config, project='walter')
+    wandb.agent(sweep_id, function=train_main)
 
 
 if __name__ == '__main__':

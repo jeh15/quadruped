@@ -45,10 +45,10 @@
         </default>
 
         <default class="knee_actuator">
-            <position kp="100" forcerange="-16 16"/>
+            <general forcerange="-16 16" biastype="affine" gainprm="50 0 0" biasprm="0 -50 -0.5"/>
         </default>
         <default class="hip_actuator">
-            <position kp="300" forcerange="-15 15"/> 
+            <general forcerange="-15 15" biastype="affine" gainprm="50 0 0" biasprm="0 -50 -0.5"/> 
         </default>
         <default class="wheel_actuator">
             <general gear="2" forcerange="-4.9 4.9"/>
@@ -175,20 +175,20 @@
 
     <!-- Defining the actuators -->
     <actuator>
-        <position joint="fr_hip" class="hip_actuator"/>
-        <position joint="fr_knee" class="knee_actuator"/>
+        <general joint="fr_hip" class="hip_actuator"/>
+        <general joint="fr_knee" class="knee_actuator"/>
         <general joint="fr_wheel_1_joint" class="wheel_actuator"/>
         <general joint="fr_wheel_2_joint" class="wheel_actuator"/>
-        <position joint="fl_hip" class="hip_actuator"/>
-        <position joint="fl_knee" class="knee_actuator"/>
+        <general joint="fl_hip" class="hip_actuator"/>
+        <general joint="fl_knee" class="knee_actuator"/>
         <general joint="fl_wheel_1_joint" class="wheel_actuator"/>
         <general joint="fl_wheel_2_joint" class="wheel_actuator"/>
-        <position joint="br_hip" class="hip_actuator"/>
-        <position joint="br_knee" class="knee_actuator"/>
+        <general joint="br_hip" class="hip_actuator"/>
+        <general joint="br_knee" class="knee_actuator"/>
         <general joint="br_wheel_1_joint" class="wheel_actuator"/>
         <general joint="br_wheel_2_joint" class="wheel_actuator"/>
-        <position joint="bl_hip" class="hip_actuator"/>
-        <position joint="bl_knee" class="knee_actuator"/>
+        <general joint="bl_hip" class="hip_actuator"/>
+        <general joint="bl_knee" class="knee_actuator"/>
         <general joint="bl_wheel_1_joint" class="wheel_actuator"/>
         <general joint="bl_wheel_2_joint" class="wheel_actuator"/>
     </actuator>

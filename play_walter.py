@@ -42,7 +42,7 @@ def main(argv=None):
     num_steps = 1000
     states = []
     for i in range(num_steps):
-        state.info['command'] = jnp.array([0.0, 0.75])
+        state.info['command'] = jnp.array([1.0, 0.0])
         key, subkey = jax.random.split(key)
         action, _ = inference_fn(state.obs, subkey)
         state = step_fn(state, action)

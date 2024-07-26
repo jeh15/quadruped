@@ -1,0 +1,11 @@
+program: train.py
+name: parameter_sweep
+method: grid
+metric:
+  goal: maximize
+  name: eval/episode_reward
+parameters:
+  wheel_torque:
+    values: [-0.02, -0.002, -0.0002, -0.00002]
+  action_rate_wheel:
+    values: [-1.0, -0.1, -0.01, -0.001]
