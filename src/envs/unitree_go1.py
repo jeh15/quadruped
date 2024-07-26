@@ -40,6 +40,8 @@ class RewardConfig:
     foot_slip: float = -0.1
     # Hyperparameter for exponential kernel:
     kernel_sigma: float = 0.25
+    # Target air time for feet:
+    target_air_time: float = 0.1
 
 
 def domain_randomize(sys: System, rng: PRNGKey) -> tuple[System, System]:
@@ -114,8 +116,10 @@ class UnitreeGo1Env(PipelineEnv):
         super().__init__(sys, backend='mjx', n_frames=n_frames)
 
         self.kernel_sigma = config.kernel_sigma
+        self.target_air_time = config.target_air_time
         config_dict = flax.serialization.to_state_dict(config)
         del config_dict['kernel_sigma']
+        del config_dict['target_air_time']
         self.reward_config = config_dict
 
         self.trunk_idx = mujoco.mj_name2id(
@@ -420,7 +424,7 @@ class UnitreeGo1Env(PipelineEnv):
         self, air_time: jax.Array, first_contact: jax.Array, commands: jax.Array
     ) -> jax.Array:
         # Reward air time.
-        rew_air_time = jnp.sum((air_time - 0.1) * first_contact)
+        rew_air_time = jnp.sum((air_time - self.target_air_time) * first_contact)
         rew_air_time *= (
             math.normalize(commands[:2])[1] > 0.05
         )  # no reward for zero command
