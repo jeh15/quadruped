@@ -51,7 +51,7 @@ def main(argv=None):
     key = jax.random.key(0)
 
     # Sweep through velocities:
-    velocities = [0.25, 0.5, 0.75, 1.0]
+    velocities = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5]
     for velocity in velocities:
         key, subkey = jax.random.split(key)
         state = reset_fn(subkey)
@@ -132,6 +132,11 @@ def main(argv=None):
             )
             gait[foot.name]['flight'].update(
                 average=np.mean(gait[foot.name]['flight']['length']),
+            )
+
+        for foot in Feet:
+            print(
+                f'Average Stance Length ({foot.name}): {gait[foot.name]["stance"]["average"]:.3f} \t Average Flight Length ({foot.name}): {gait[foot.name]["flight"]["average"]:.3f}',
             )
 
         # Visualize:
