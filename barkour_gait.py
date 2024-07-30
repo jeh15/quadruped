@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 
 from brax.io import html
 
-from src.envs import unitree_go1
+from src.envs import barkour
 from src.algorithms.ppo.load_utilities import load_policy
 
 jax.config.update("jax_enable_x64", True)
@@ -34,7 +34,7 @@ class Feet(Enum):
 
 def main(argv=None):
     # Load from Env:
-    env = unitree_go1.UnitreeGo1Env(kick_vel=0.0)
+    env = barkour.BarkourEnv(kick_vel=0.0)
     reset_fn = jax.jit(env.reset)
     step_fn = jax.jit(env.step)
 

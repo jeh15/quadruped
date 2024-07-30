@@ -19,6 +19,8 @@ from src.algorithms.ppo import checkpoint_utilities
 
 jax.config.update("jax_enable_x64", True)
 
+wandb.require('core')
+
 
 def main(argv=None):
     # Config:
@@ -183,7 +185,7 @@ def main(argv=None):
         evaluation_environment=eval_env,
     )
 
-    wandb.finish()
+    run.finish()
 
 
 if __name__ == '__main__':

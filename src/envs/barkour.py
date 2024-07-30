@@ -1,5 +1,5 @@
 from typing import Any, List, Sequence
-import os 
+import os
 
 import jax
 import jax.numpy as jnp
@@ -132,7 +132,7 @@ class BarkourEnv(PipelineEnv):
             filename,
         )
         sys = mjcf.load(self.filepath)
-        self._dt = 0.02  # this environment is 50 fps
+        self.step_dt = 0.02  # this environment is 50 fps
         sys = sys.tree_replace({'opt.timestep': 0.004})
 
         # override menagerie params for smoother policy
@@ -142,7 +142,7 @@ class BarkourEnv(PipelineEnv):
             actuator_biasprm=sys.actuator_biasprm.at[:, 1].set(-35.0),
         )
 
-        n_frames = kwargs.pop('n_frames', int(self._dt / sys.opt.timestep))
+        n_frames = kwargs.pop('n_frames', int(self.step_dt / sys.opt.timestep))
         super().__init__(sys, backend='mjx', n_frames=n_frames)
 
         self.reward_config = get_config()
