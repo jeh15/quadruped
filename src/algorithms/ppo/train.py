@@ -24,6 +24,7 @@ import src.algorithms.ppo.loss_utilities as loss_utilities
 import src.optimization_utilities as optimization_utilities
 import src.training_utilities as trainining_utilities
 import src.metrics_utilities as metrics_utilities
+from src.algorithms.ppo.load_utilities import RestoredCheckpoint
 
 
 InferenceParams = Tuple[running_statistics.NestedMeanStd, types.Params]
@@ -77,6 +78,7 @@ def train(
     randomization_fn: Optional[
         Callable[[base.System, jnp.ndarray], Tuple[base.System, base.System]]
     ] = None,
+    restored_checkpoint: Optional[RestoredCheckpoint] = None,
     wandb: Optional[Any] = None,
 ):
     assert batch_size * num_minibatches % num_envs == 0
@@ -140,11 +142,15 @@ def train(
 
     # Initialize Network:
     # functools.partial network_factory to capture parameters:
-    network = network_factory(
-        observation_size=env_state.obs.shape[-1],
-        action_size=env.action_size,
-        input_normalization_fn=normalization_fn,
-    )
+    if restored_checkpoint is None:
+        network = network_factory(
+            observation_size=env_state.obs.shape[-1],
+            action_size=env.action_size,
+            input_normalization_fn=normalization_fn,
+        )
+    else:
+        network = restored_checkpoint.network
+
     make_policy = ppo_networks.make_inference_fn(ppo_networks=network)
 
     # Initialize Loss Function:
@@ -312,19 +318,22 @@ def train(
         return train_state, state, metrics
 
     # Initialize Params and Train State:
-    init_params = PPONetworkParams(
-        policy_params=network.policy_network.init(policy_key),
-        value_params=network.value_network.init(value_key),
-    )
-    # Can't pass optimizer function to device_put_replicated:
-    train_state = TrainState(
-        opt_state=optimizer.init(init_params),
-        params=init_params,
-        normalization_params=running_statistics.init_state(
-            specs.Array(env_state.obs.shape[-1:], jnp.dtype('float32'))
-        ),
-        env_steps=0,
-    )
+    if restored_checkpoint is None:
+        init_params = PPONetworkParams(
+            policy_params=network.policy_network.init(policy_key),
+            value_params=network.value_network.init(value_key),
+        )
+        # Can't pass optimizer function to device_put_replicated:
+        train_state = TrainState(
+            opt_state=optimizer.init(init_params),
+            params=init_params,
+            normalization_params=running_statistics.init_state(
+                specs.Array(env_state.obs.shape[-1:], jnp.dtype('float32'))
+            ),
+            env_steps=0,
+        )
+    else:
+        train_state = restored_checkpoint.train_state
 
     train_state = jax.device_put_replicated(
         train_state,
