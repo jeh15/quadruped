@@ -138,6 +138,8 @@ def main(argv=None):
             print(
                 f'Average Stance Length ({foot.name}): {gait[foot.name]["stance"]["average"]:.3f} \t Average Flight Length ({foot.name}): {gait[foot.name]["flight"]["average"]:.3f}',
             )
+            duty_cycle = gait[foot.name]["stance"]["average"] / (gait[foot.name]["stance"]["average"] + gat[foot.name]["flight"]["average"])
+            print(f'Duty Cycle ({foot.name}): {duty_cycle:.3f}')
 
         # Visualize:
         fig, axs = plt.subplots(1, 1)
