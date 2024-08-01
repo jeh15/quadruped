@@ -24,20 +24,14 @@ import src.algorithms.ppo.loss_utilities as loss_utilities
 import src.optimization_utilities as optimization_utilities
 import src.training_utilities as trainining_utilities
 import src.metrics_utilities as metrics_utilities
-from src.algorithms.ppo.load_utilities import RestoredCheckpoint
+from src.algorithms.ppo.checkpoint_utilities import (
+    RestoredCheckpoint, TrainState
+)
 
 
 InferenceParams = Tuple[running_statistics.NestedMeanStd, types.Params]
 
 _PMAP_AXIS_NAME = 'i'
-
-
-@flax.struct.dataclass
-class TrainState:
-    opt_state: optax.OptState
-    params: PPONetworkParams
-    normalization_params: running_statistics.RunningStatisticsState
-    env_steps: jnp.ndarray
 
 
 def unpmap(v):

@@ -1,11 +1,10 @@
-from typing import Optional
+from typing import Optional, Tuple, Any
 import os
 
 import jax
 import jax.numpy as jnp
 import orbax.checkpoint as ocp
 import flax.linen as nn
-import flax.struct
 import optax
 from brax.training.acme import running_statistics, specs
 from brax.envs.base import Env
@@ -13,13 +12,9 @@ from brax.envs.base import Env
 from src.algorithms.ppo import checkpoint_utilities
 from src.algorithms.ppo import network_utilities as ppo_networks
 from src.algorithms.ppo.network_utilities import PPONetworkParams
-from src.algorithms.ppo.train import TrainState
-
-
-@flax.struct.dataclass
-class RestoredCheckpoint:
-    network: ppo_networks.PPONetworks
-    train_state: TrainState
+from src.algorithms.ppo.checkpoint_utilities import (
+    RestoredCheckpoint, TrainState,
+)
 
 
 def load_policy(checkpoint_name: str, environment: Env, restore_iteration: Optional[int] = None):
@@ -119,7 +114,7 @@ def load_checkpoint(
     checkpoint_name: str,
     environment: Env,
     restore_iteration: Optional[int] = None,
-) -> RestoredCheckpoint:
+) -> Tuple[RestoredCheckpoint, Tuple[Any, ...]]:
     # Load Metadata:
     checkpoint_direrctory = os.path.join(
         os.path.dirname(
@@ -203,4 +198,12 @@ def load_checkpoint(
     )
     train_state = restored_train_state.train_state
 
-    return RestoredCheckpoint(network=network, train_state=train_state)
+    metadata = (
+        network_metadata,
+        loss_metadata,
+        training_metadata,
+    )
+
+    return (
+        RestoredCheckpoint(network=network, train_state=train_state), metadata
+    )

@@ -51,7 +51,7 @@ def main(argv=None):
     key = jax.random.key(0)
 
     # Sweep through velocities:
-    velocities = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5]
+    velocities = [1.0, 1.5, 2.0, 2.5, 3.0]
     for velocity in velocities:
         key, subkey = jax.random.split(key)
         state = reset_fn(subkey)

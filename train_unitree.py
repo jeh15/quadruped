@@ -1,4 +1,4 @@
-from absl import app
+from absl import app, flags
 import os
 import functools
 
@@ -16,10 +16,25 @@ from src.algorithms.ppo.loss_utilities import loss_function
 from src.distribution_utilities import ParametricDistribution
 from src.algorithms.ppo.train import train
 from src.algorithms.ppo import checkpoint_utilities
+from src.algorithms.ppo.load_utilities import load_checkpoint
 
 jax.config.update("jax_enable_x64", True)
 
 wandb.require('core')
+
+FLAGS = flags.FLAGS
+flags.DEFINE_string(
+    'checkpoint_name', None, 'Desired checkpoint folder name to load.', short_name='c',
+)
+flags.DEFINE_integer(
+    'checkpoint_iteration', None, 'Desired checkpoint iteration.', short_name='i',
+)
+flags.DEFINE_bool(
+    'overwrite_metadata', False, 'Overwrite metadata from restored checkpoint.', short_name='o',
+)
+flags.DEFINE_string(
+    'tag', '', 'Tag for wandb run.', short_name='t',
+)
 
 
 def main(argv=None):
@@ -81,6 +96,7 @@ def main(argv=None):
     run = wandb.init(
         project='unitree',
         group='ppo',
+        tags=[FLAGS.tag],
         config={
             'reward_config': reward_config,
             'network_metadata': network_metadata,
@@ -111,8 +127,22 @@ def main(argv=None):
         gae_lambda=loss_metadata.gae_lambda,
         normalize_advantages=loss_metadata.normalize_advantages,
     )
-    env = unitree_go1.UnitreeGo1Env(config=reward_config)
-    eval_env = unitree_go1.UnitreeGo1Env(config=reward_config)
+    env = unitree_go1.UnitreeGo1Env(config=reward_config, train_fast_cmd=True)
+    eval_env = unitree_go1.UnitreeGo1Env(config=reward_config, train_fast_cmd=True)
+
+    if FLAGS.checkpoint_name is not None:
+        restored_checkpoint, metadata = load_checkpoint(
+            checkpoint_name=FLAGS.checkpoint_name,
+            environment=env,
+            restore_iteration=FLAGS.checkpoint_iteration,
+        )
+        if FLAGS.overwrite_metadata:
+            network_metadata, loss_metadata, training_metadata = metadata
+            run.config.update({
+                'network_metadata': network_metadata,
+                'loss_metadata': loss_metadata,
+                'training_metadata': training_metadata,
+            })
 
     def progress_fn(iteration, num_steps, metrics):
         print(
@@ -177,6 +207,7 @@ def main(argv=None):
         progress_fn=progress_fn,
         randomization_fn=randomization_fn,
         checkpoint_fn=checkpoint_fn,
+        restored_checkpoint=restored_checkpoint,
         wandb=run,
     )
 

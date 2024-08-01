@@ -91,6 +91,7 @@ class UnitreeGo1Env(PipelineEnv):
         obs_noise: float = 0.05,
         action_scale: float = 0.3,
         kick_vel: float = 0.05,
+        train_fast_cmd: bool = False,
         **kwargs,
     ):
         filename = f'models/{filename}'
@@ -128,6 +129,7 @@ class UnitreeGo1Env(PipelineEnv):
         self._action_scale = action_scale
         self._obs_noise = obs_noise
         self._kick_vel = kick_vel
+        self._train_fast_cmd = train_fast_cmd
         self.init_q = jnp.array(sys.mj_model.keyframe('home').qpos)
         self.init_qd = jnp.zeros(sys.nv)
         self.default_pose = jnp.array(sys.mj_model.keyframe('home').qpos[7:])
@@ -163,9 +165,14 @@ class UnitreeGo1Env(PipelineEnv):
         self.num_observations = 31
 
     def sample_command(self, rng: PRNGKey) -> jax.Array:
-        lin_vel_x = [-0.6, 1.5]  # min max [m/s]
-        lin_vel_y = [-0.8, 0.8]  # min max [m/s]
-        ang_vel_yaw = [-0.7, 0.7]  # min max [rad/s]
+        if self._train_fast_cmd:
+            lin_vel_x = [0.75, 3.0]  # min max [m/s]
+            lin_vel_y = [0.0, 0.0]  # min max [m/s]
+            ang_vel_yaw = [0.0, 0.0]  # min max [rad/s]
+        else:
+            lin_vel_x = [-0.6, 1.5]  # min max [m/s]
+            lin_vel_y = [-0.8, 0.8]  # min max [m/s]
+            ang_vel_yaw = [-0.7, 0.7]  # min max [rad/s]
 
         _, key1, key2, key3 = jax.random.split(rng, 4)
         lin_vel_x = jax.random.uniform(
