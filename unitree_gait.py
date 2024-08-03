@@ -52,6 +52,7 @@ def main(argv=None):
 
     # Sweep through velocities:
     velocities = [1.0, 1.5, 2.0, 2.5, 3.0]
+    gaits = []
     for velocity in velocities:
         key, subkey = jax.random.split(key)
         state = reset_fn(subkey)
@@ -134,6 +135,8 @@ def main(argv=None):
                 average=np.mean(gait[foot.name]['flight']['length']),
             )
 
+        gaits.append(gait)
+
         for foot in Feet:
             duty_cycle = gait[foot.name]["stance"]["average"] / (gait[foot.name]["stance"]["average"] + gait[foot.name]["flight"]["average"])
             print(
@@ -184,6 +187,23 @@ def main(argv=None):
 
         with open(html_path, "w") as f:
             f.writelines(html_string)
+
+    # Duty Factor Plot:
+    fig, axs = plt.subplots(1, 1)
+    for i, gait in enumerate(gaits):
+        average_duty_cycle = []
+        for foot in Feet:
+            duty_cycle = gait[foot.name]["stance"]["average"] / (gait[foot.name]["stance"]["average"] + gait[foot.name]["flight"]["average"])
+            average_duty_cycle.append(duty_cycle)
+        average_duty_cycle = np.mean(average_duty_cycle)
+        axs.scatter(velocities[i], average_duty_cycle, color='b')
+
+    axs.set_ylabel('Duty Factor')
+    axs.set_xlabel('Command Velocity (m/s)')
+    axs.set_ylim(0.5, 0.7)
+    fig.suptitle('Duty Factor vs. Command Velocity')
+
+    plt.savefig('duty_factor.png')
 
 
 if __name__ == '__main__':
