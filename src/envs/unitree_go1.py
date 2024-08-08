@@ -166,7 +166,7 @@ class UnitreeGo1Env(PipelineEnv):
 
     def sample_command(self, rng: PRNGKey) -> jax.Array:
         if self._train_fast_cmd:
-            lin_vel_x = [0.75, 3.0]  # min max [m/s]
+            lin_vel_x = [0.75, 4.0]  # min max [m/s]
             lin_vel_y = [0.0, 0.0]  # min max [m/s]
             ang_vel_yaw = [0.0, 0.0]  # min max [rad/s]
         else:
