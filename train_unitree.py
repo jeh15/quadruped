@@ -40,19 +40,19 @@ flags.DEFINE_string(
 def main(argv=None):
     # Config:
     reward_config = unitree_go1.RewardConfig(
-        tracking_linear_velocity=1.5,
+        tracking_linear_velocity=1.5 * 1e0,
         tracking_angular_velocity=0.8,
-        feet_air_time=0.2,
-        linear_z_velocity=-2.0,
-        angular_xy_velocity=-0.05,
-        orientation=-5,
-        torque=-2e-4,
+        feet_air_time=0.2 * 1e0,
+        linear_z_velocity=-2.0 * 1e-0,
+        angular_xy_velocity=-0.05 * 1e-0,
+        orientation=-5 * 1e-0,
+        torque=-2 * 1e-4,
         action_rate=-0.01,
         stand_still=-0.5,
         termination=-1.0,
         foot_slip=-0.1,
         kernel_sigma=0.25,
-        target_air_time=0.3,
+        target_air_time=0.1,
     )
 
     # Metadata:
@@ -74,7 +74,7 @@ def main(argv=None):
         normalize_advantages=True,
     )
     training_metadata = checkpoint_utilities.training_metadata(
-        num_epochs=15,
+        num_epochs=25,
         num_training_steps=20,
         episode_length=1000,
         num_policy_steps=25,
@@ -107,6 +107,7 @@ def main(argv=None):
 
     # Initialize Functions with Params:
     randomization_fn = unitree_go1.domain_randomize
+    # randomization_fn = None
     make_networks_factory = functools.partial(
         ppo_networks.make_ppo_networks,
         policy_layer_sizes=(network_metadata.policy_layer_size, ) * network_metadata.policy_depth,
@@ -127,9 +128,10 @@ def main(argv=None):
         gae_lambda=loss_metadata.gae_lambda,
         normalize_advantages=loss_metadata.normalize_advantages,
     )
-    env = unitree_go1.UnitreeGo1Env(config=reward_config, train_fast_cmd=True)
-    eval_env = unitree_go1.UnitreeGo1Env(config=reward_config, train_fast_cmd=True)
+    env = unitree_go1.UnitreeGo1Env(config=reward_config)
+    eval_env = unitree_go1.UnitreeGo1Env(config=reward_config)
 
+    restored_checkpoint = None
     if FLAGS.checkpoint_name is not None:
         restored_checkpoint, metadata = load_checkpoint(
             checkpoint_name=FLAGS.checkpoint_name,

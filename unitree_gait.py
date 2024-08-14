@@ -51,7 +51,7 @@ def main(argv=None):
     key = jax.random.key(0)
 
     # Sweep through velocities:
-    velocities = [1.0, 1.5, 2.0, 2.5, 3.0, 4.0]
+    velocities = [0.75, 1.0, 1.5, 2.0, 2.5, 3.0]
     gaits = []
     for velocity in velocities:
         key, subkey = jax.random.split(key)
@@ -149,7 +149,8 @@ def main(argv=None):
         start_step = 5
         end_step = 15
         for foot in Feet:
-            ys = [1, 1.1, 1.2, 1.3]
+            ys = [1.02, 1.0, 1.03, 1.01]
+            # ys = [1.0, 1.01, 1.02, 1.03]
             colors = ['b', 'g', 'r', 'c']
             for stance_idx, stance_length in zip(
                 gait[foot.name]['stance']['indicies'][start_step:end_step],
@@ -161,32 +162,33 @@ def main(argv=None):
                     xmax=(stance_idx+stance_length)*env.step_dt,
                     color=colors[foot.value],
                     linestyle='solid',
-                    linewidth=4,
+                    linewidth=10,
                 )
 
         axs.set_yticks(ys)
         axs.set_yticklabels([foot.name for foot in Feet])
         axs.set_xlabel('Time (s)')
-        axs.set_ylim(0.9, 1.4)
+        axs.set_ylim(0.99, 1.04)
+        axs.set_xlim(2.0, 3.0)
         fig.suptitle(f'Gait Visualization at {np.mean(forward_velocity):.3f} m/s')
 
         plt.savefig(f'gait_velocity_{velocity}.png')
 
         # Generate HTML:
-        html_string = html.render(
-            sys=env.sys.tree_replace({'opt.timestep': env.step_dt}),
-            states=states,
-            height="100vh",
-            colab=False,
-        )
+        # html_string = html.render(
+        #     sys=env.sys.tree_replace({'opt.timestep': env.step_dt}),
+        #     states=states,
+        #     height="100vh",
+        #     colab=False,
+        # )
 
-        html_path = os.path.join(
-            os.path.dirname(__file__),
-            f"visualization/visualization_{velocity}.html",
-        )
+        # html_path = os.path.join(
+        #     os.path.dirname(__file__),
+        #     f"visualization/visualization_{velocity}.html",
+        # )
 
-        with open(html_path, "w") as f:
-            f.writelines(html_string)
+        # with open(html_path, "w") as f:
+        #     f.writelines(html_string)
 
     # Duty Factor Plot:
     fig, axs = plt.subplots(1, 1)
