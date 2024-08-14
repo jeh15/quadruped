@@ -244,3 +244,6 @@ checkpoints/*
 
 # PDF files
 *.pdf
+
+# SVG files
+*.svg
