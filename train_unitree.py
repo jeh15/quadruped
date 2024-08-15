@@ -52,7 +52,7 @@ def main(argv=None):
         termination=-1.0,
         foot_slip=-0.1,
         kernel_sigma=0.25,
-        target_air_time=0.1,
+        target_air_time=1.0,
     )
 
     # Metadata:

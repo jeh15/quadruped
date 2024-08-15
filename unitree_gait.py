@@ -172,6 +172,7 @@ def main(argv=None):
         axs.set_xlim(2.0, 3.0)
         fig.suptitle(f'Gait Visualization at {np.mean(forward_velocity):.3f} m/s')
 
+        plt.savefig(f'gait_velocity_{velocity}.svg')
         plt.savefig(f'gait_velocity_{velocity}.png')
 
         # Generate HTML:
