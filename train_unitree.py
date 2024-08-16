@@ -10,7 +10,7 @@ import optax
 import wandb
 import orbax.checkpoint as ocp
 
-from src.envs import unitree_go1
+from src.envs import unitree_gait
 from src.algorithms.ppo import network_utilities as ppo_networks
 from src.algorithms.ppo.loss_utilities import loss_function
 from src.distribution_utilities import ParametricDistribution
@@ -39,20 +39,21 @@ flags.DEFINE_string(
 
 def main(argv=None):
     # Config:
-    reward_config = unitree_go1.RewardConfig(
-        tracking_linear_velocity=1.5 * 1e0,
+    reward_config = unitree_gait.RewardConfig(
+        tracking_linear_velocity=1.5,
         tracking_angular_velocity=0.8,
-        feet_air_time=0.2 * 1e0,
-        linear_z_velocity=-2.0 * 1e-0,
-        angular_xy_velocity=-0.05 * 1e-0,
-        orientation=-5 * 1e-0,
-        torque=-2 * 1e-4,
+        feet_air_time=0.2,
+        linear_z_velocity=-2.0,
+        angular_xy_velocity=-0.05,
+        orientation=-5.0,
+        torque=-2e-4,
         action_rate=-0.01,
         stand_still=-0.5,
         termination=-1.0,
         foot_slip=-0.1,
         kernel_sigma=0.25,
-        target_air_time=1.0,
+        target_air_time=0.3,
+        swing_leg_velocity=-0.01,
     )
 
     # Metadata:
@@ -106,7 +107,7 @@ def main(argv=None):
     )
 
     # Initialize Functions with Params:
-    randomization_fn = unitree_go1.domain_randomize
+    randomization_fn = unitree_gait.domain_randomize
     # randomization_fn = None
     make_networks_factory = functools.partial(
         ppo_networks.make_ppo_networks,
@@ -128,8 +129,8 @@ def main(argv=None):
         gae_lambda=loss_metadata.gae_lambda,
         normalize_advantages=loss_metadata.normalize_advantages,
     )
-    env = unitree_go1.UnitreeGo1Env(config=reward_config)
-    eval_env = unitree_go1.UnitreeGo1Env(config=reward_config)
+    env = unitree_gait.UnitreeGo1Env(config=reward_config)
+    eval_env = unitree_gait.UnitreeGo1Env(config=reward_config)
 
     restored_checkpoint = None
     if FLAGS.checkpoint_name is not None:

@@ -51,7 +51,7 @@ def main(argv=None):
     key = jax.random.key(0)
 
     # Sweep through velocities:
-    velocities = [0.75, 1.0, 1.5, 2.0, 2.5, 3.0]
+    velocities = [0.75, 1.0, 1.5]
     gaits = []
     for velocity in velocities:
         key, subkey = jax.random.split(key)
@@ -176,20 +176,20 @@ def main(argv=None):
         plt.savefig(f'gait_velocity_{velocity}.png')
 
         # Generate HTML:
-        # html_string = html.render(
-        #     sys=env.sys.tree_replace({'opt.timestep': env.step_dt}),
-        #     states=states,
-        #     height="100vh",
-        #     colab=False,
-        # )
+        html_string = html.render(
+            sys=env.sys.tree_replace({'opt.timestep': env.step_dt}),
+            states=states,
+            height="100vh",
+            colab=False,
+        )
 
-        # html_path = os.path.join(
-        #     os.path.dirname(__file__),
-        #     f"visualization/visualization_{velocity}.html",
-        # )
+        html_path = os.path.join(
+            os.path.dirname(__file__),
+            f"visualization/visualization_{velocity}.html",
+        )
 
-        # with open(html_path, "w") as f:
-        #     f.writelines(html_string)
+        with open(html_path, "w") as f:
+            f.writelines(html_string)
 
     # Duty Factor Plot:
     fig, axs = plt.subplots(1, 1)
