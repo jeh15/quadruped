@@ -139,8 +139,9 @@ def main(argv=None):
 
         for foot in Feet:
             duty_cycle = gait[foot.name]["stance"]["average"] / (gait[foot.name]["stance"]["average"] + gait[foot.name]["flight"]["average"])
+            stride_frequency = 1 / (env.step_dt * (gait[foot.name]["stance"]["average"] + gait[foot.name]["flight"]["average"]))
             print(
-                f'Average Stance Length ({foot.name}): {gait[foot.name]["stance"]["average"]:.3f} \t Average Flight Length ({foot.name}): {gait[foot.name]["flight"]["average"]:.3f} \t Duty Cycle ({foot.name}): {duty_cycle:.3f}',
+                f'Average Stance Length ({foot.name}): {gait[foot.name]["stance"]["average"]:.3f} \t Average Flight Length ({foot.name}): {gait[foot.name]["flight"]["average"]:.3f} \t Duty Cycle ({foot.name}): {duty_cycle:.3f} \t Average Stride Frequency ({foot.name}): {stride_frequency:.3f}',
             )
         print('\n')
 
