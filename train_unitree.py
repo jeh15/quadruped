@@ -43,9 +43,9 @@ def main(argv=None):
         tracking_linear_velocity=1.5,
         tracking_angular_velocity=0.8,
         feet_air_time=0.2,
-        linear_z_velocity=-2.0,
-        angular_xy_velocity=-0.05,
-        orientation=-5.0,
+        linear_z_velocity=-1.0,
+        angular_xy_velocity=-0.01,
+        orientation=-1.0,
         torque=-2e-4,
         action_rate=-0.01,
         stand_still=-0.5,
@@ -53,7 +53,7 @@ def main(argv=None):
         foot_slip=-0.1,
         kernel_sigma=0.25,
         target_air_time=0.3,
-        swing_leg_velocity=00.0,
+        swing_leg_velocity=-0.1,
     )
 
     # Metadata:
@@ -129,8 +129,8 @@ def main(argv=None):
         gae_lambda=loss_metadata.gae_lambda,
         normalize_advantages=loss_metadata.normalize_advantages,
     )
-    env = unitree_gait.UnitreeGo1Env(config=reward_config)
-    eval_env = unitree_gait.UnitreeGo1Env(config=reward_config)
+    env = unitree_gait.UnitreeGo1Env(config=reward_config, kick_vel=0.0, train_fast_cmd=True)
+    eval_env = unitree_gait.UnitreeGo1Env(config=reward_config, kick_vel=0.0, train_fast_cmd=True)
 
     restored_checkpoint = None
     if FLAGS.checkpoint_name is not None:
