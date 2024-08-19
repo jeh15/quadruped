@@ -53,7 +53,7 @@ def main(argv=None):
         foot_slip=-0.1,
         kernel_sigma=0.25,
         target_air_time=0.3,
-        swing_leg_velocity=-0.1,
+        swing_leg_velocity=00.0,
     )
 
     # Metadata:
