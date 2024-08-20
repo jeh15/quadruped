@@ -53,7 +53,7 @@ def main(argv=None):
         foot_slip=-0.1,
         kernel_sigma=0.25,
         target_air_time=0.3,
-        swing_leg_velocity=-0.1,
+        swing_leg_velocity=-0.01,
     )
 
     # Metadata:
@@ -107,8 +107,8 @@ def main(argv=None):
     )
 
     # Initialize Functions with Params:
-    randomization_fn = unitree_gait.domain_randomize
-    # randomization_fn = None
+    # randomization_fn = unitree_gait.domain_randomize
+    randomization_fn = None
     make_networks_factory = functools.partial(
         ppo_networks.make_ppo_networks,
         policy_layer_sizes=(network_metadata.policy_layer_size, ) * network_metadata.policy_depth,
