@@ -1,4 +1,5 @@
 from typing import Optional, Tuple, Any
+import dataclasses
 import os
 
 import jax
@@ -15,6 +16,13 @@ from src.algorithms.ppo.network_utilities import PPONetworkParams
 from src.algorithms.ppo.checkpoint_utilities import (
     RestoredCheckpoint, TrainState,
 )
+
+
+@dataclasses.dataclass
+class Metadata:
+    network_metadata: checkpoint_utilities.network_metadata
+    loss_metadata: checkpoint_utilities.loss_metadata
+    training_metadata: checkpoint_utilities.training_metadata
 
 
 def load_policy(checkpoint_name: str, environment: Env, restore_iteration: Optional[int] = None):
@@ -114,7 +122,7 @@ def load_checkpoint(
     checkpoint_name: str,
     environment: Env,
     restore_iteration: Optional[int] = None,
-) -> Tuple[RestoredCheckpoint, Tuple[Any, ...]]:
+) -> Tuple[RestoredCheckpoint, Metadata]:
     # Load Metadata:
     checkpoint_direrctory = os.path.join(
         os.path.dirname(
@@ -198,10 +206,11 @@ def load_checkpoint(
     )
     train_state = restored_train_state.train_state
 
-    metadata = (
-        network_metadata,
-        loss_metadata,
-        training_metadata,
+    # Kind of redundant, but this gives us type hint instead of Any
+    metadata = Metadata(
+        network_metadata=network_metadata,
+        loss_metadata=loss_metadata,
+        training_metadata=training_metadata,
     )
 
     return (

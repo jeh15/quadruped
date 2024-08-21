@@ -3,6 +3,7 @@ import os
 import functools
 
 import jax
+import jax.numpy as jnp
 import flax.linen as nn
 import distrax
 import optax
@@ -35,25 +36,48 @@ flags.DEFINE_bool(
 flags.DEFINE_string(
     'tag', '', 'Tag for wandb run.', short_name='t',
 )
+flags.DEFINE_bool(
+    'reinitialize_policy_std', False, 'Reinitialize Policy Output Layer parameters that correlate to Action STD.', short_name='r',
+)
 
 
 def main(argv=None):
     # Config:
+    # reward_config = unitree_gait.RewardConfig(
+    #     tracking_linear_velocity=1.5,
+    #     tracking_angular_velocity=0.8,
+    #     feet_air_time=0.2,
+    #     linear_z_velocity=-1.0,
+    #     angular_xy_velocity=-0.01,
+    #     orientation=-1.0,
+    #     torque=-2e-4,
+    #     action_rate=-0.01,
+    #     stand_still=-0.5,
+    #     termination=-1.0,
+    #     foot_slip=-0.1,
+    #     kernel_sigma=0.25,
+    #     target_air_time=0.3,
+    #     swing_leg_velocity=-0.001,
+    # )
+
     reward_config = unitree_gait.RewardConfig(
         tracking_linear_velocity=1.5,
         tracking_angular_velocity=0.8,
         feet_air_time=0.2,
-        linear_z_velocity=-1.0,
-        angular_xy_velocity=-0.01,
-        orientation=-1.0,
+        linear_z_velocity=-2.0,
+        angular_xy_velocity=-0.05,
+        orientation=-5.0,
         torque=-2e-4,
         action_rate=-0.01,
         stand_still=-0.5,
         termination=-1.0,
         foot_slip=-0.1,
+        # IMSI Gait Ideas:
+        swing_leg_velocity=-0.001,
+        # Hyperparameter for exponential kernel:
         kernel_sigma=0.25,
+        # Target air time for feet:
         target_air_time=0.3,
-        swing_leg_velocity=-0.01,
     )
 
     # Metadata:
@@ -139,12 +163,48 @@ def main(argv=None):
             environment=env,
             restore_iteration=FLAGS.checkpoint_iteration,
         )
+
+        if FLAGS.reinitialize_policy_std:
+            # Reset Policy std params to enable exploration:
+            key = jax.random.PRNGKey(42)
+            key, bias_key, kernel_key = jax.random.split(key, num=3)
+            policy_params = restored_checkpoint.train_state.params.policy_params
+            output_params = policy_params['params'][f'dense_{metadata.network_metadata.policy_depth}']
+            params = jax.tree.map(lambda x: jnp.split(x, 2, axis=-1), output_params)
+            bias_shape = jnp.expand_dims(params['bias'][-1], axis=0).shape
+            kernel_shape = params['kernel'][-1].shape
+            bias = jnp.concatenate(
+                [
+                    params['bias'][0],
+                    jax.nn.initializers.lecun_uniform()(
+                        key=bias_key, shape=bias_shape,
+                    ).flatten(),
+                ],
+                axis=-1,
+                dtype=jnp.float32,
+            )
+            kernel = jnp.concatenate(
+                [
+                    params['kernel'][0],
+                    jax.nn.initializers.lecun_uniform()(
+                        key=kernel_key, shape=kernel_shape,
+                    ),
+                ],
+                axis=-1,
+                dtype=jnp.float32,
+            )
+            output_layer = {
+                'bias': bias,
+                'kernel': kernel,
+            }
+            policy_params['params'].update({f'dense_{metadata.network_metadata.policy_depth}': output_layer})
+            restored_checkpoint.train_state.params.replace(policy_params=policy_params)
+
         if FLAGS.overwrite_metadata:
-            network_metadata, loss_metadata, training_metadata = metadata
             run.config.update({
-                'network_metadata': network_metadata,
-                'loss_metadata': loss_metadata,
-                'training_metadata': training_metadata,
+                'network_metadata': metadata.network_metadata,
+                'loss_metadata': metadata.loss_metadata,
+                'training_metadata': metadata.training_metadata,
             })
 
     def progress_fn(iteration, num_steps, metrics):

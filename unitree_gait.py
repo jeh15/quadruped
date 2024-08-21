@@ -51,7 +51,7 @@ def main(argv=None):
     key = jax.random.key(0)
 
     # Sweep through velocities:
-    velocities = [0.75, 1.0, 1.5]
+    velocities = [0.75, 1.0, 1.5, 2.0, 2.5]
     gaits = []
     for velocity in velocities:
         key, subkey = jax.random.split(key)
@@ -148,7 +148,7 @@ def main(argv=None):
         # Visualize:
         fig, axs = plt.subplots(1, 1)
         start_step = 5
-        end_step = 15
+        end_step = 50
         for foot in Feet:
             ys = [1.02, 1.0, 1.03, 1.01]
             # ys = [1.0, 1.01, 1.02, 1.03]
@@ -170,7 +170,7 @@ def main(argv=None):
         axs.set_yticklabels([foot.name for foot in Feet])
         axs.set_xlabel('Time (s)')
         axs.set_ylim(0.99, 1.04)
-        axs.set_xlim(2.0, 3.0)
+        axs.set_xlim(4.0, 5.0)
         fig.suptitle(f'Gait Visualization at {np.mean(forward_velocity):.3f} m/s')
 
         plt.savefig(f'gait_velocity_{velocity}.svg')
