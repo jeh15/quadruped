@@ -105,6 +105,7 @@ def load_policy(checkpoint_name: str, environment: Env, restore_iteration: Optio
     )
     restored_train_state = checkpoint_utilities.load_checkpoint(
         manager=manager,
+        restore_iteration=restore_iteration,
         train_state=train_state,
     )
     train_state = restored_train_state.train_state

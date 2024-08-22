@@ -138,8 +138,8 @@ def main(argv=None):
         gae_lambda=loss_metadata.gae_lambda,
         normalize_advantages=loss_metadata.normalize_advantages,
     )
-    env = unitree_gait.UnitreeGo1Env(config=reward_config, kick_vel=0.0, train_fast_cmd=True)
-    eval_env = unitree_gait.UnitreeGo1Env(config=reward_config, kick_vel=0.0, train_fast_cmd=True)
+    env = unitree_gait.UnitreeGo1Env(config=reward_config)
+    eval_env = unitree_gait.UnitreeGo1Env(config=reward_config)
 
     restored_checkpoint = None
     if FLAGS.checkpoint_name is not None:

@@ -39,10 +39,11 @@ class RewardConfig:
     termination: float = -1.0
     foot_slip: float = -0.1
     # IMSI Gait Ideas:
-    swing_leg_velocity: float = -0.5
-    natural_frequency: float = -0.5
+    swing_leg_velocity: float = -1e-2
+    natural_frequency: float = -1e-2
     # Hyperparameter for exponential kernel:
     kernel_sigma: float = 0.25
+    kernel_alpha: float = 1.0
     # Target air time for feet:
     target_air_time: float = 0.1
 
@@ -95,6 +96,7 @@ class UnitreeGo1Env(PipelineEnv):
         action_scale: float = 0.3,
         kick_vel: float = 0.05,
         train_fast_cmd: bool = False,
+        train_forward_cmd: bool = False,
         **kwargs,
     ):
         filename = f'models/{filename}'
@@ -120,9 +122,11 @@ class UnitreeGo1Env(PipelineEnv):
         super().__init__(sys, backend='mjx', n_frames=n_frames)
 
         self.kernel_sigma = config.kernel_sigma
+        self.kernel_alpha = config.kernel_alpha
         self.target_air_time = config.target_air_time
         config_dict = flax.serialization.to_state_dict(config)
         del config_dict['kernel_sigma']
+        del config_dict['kernel_alpha']
         del config_dict['target_air_time']
         self.reward_config = config_dict
 
@@ -133,6 +137,7 @@ class UnitreeGo1Env(PipelineEnv):
         self._obs_noise = obs_noise
         self._kick_vel = kick_vel
         self._train_fast_cmd = train_fast_cmd
+        self._train_forward_cmd = train_forward_cmd
         self.init_q = jnp.array(sys.mj_model.keyframe('home').qpos)
         self.init_qd = jnp.zeros(sys.nv)
         self.default_pose = jnp.array(sys.mj_model.keyframe('home').qpos[7:])
@@ -172,10 +177,14 @@ class UnitreeGo1Env(PipelineEnv):
             lin_vel_x = [0.75, 3.0]  # min max [m/s]
             lin_vel_y = [0.0, 0.0]  # min max [m/s]
             ang_vel_yaw = [0.0, 0.0]  # min max [rad/s]
-        else:
+        elif self._train_fast_cmd:
             lin_vel_x = [-0.6, 1.5]  # min max [m/s]
             lin_vel_y = [-0.8, 0.8]  # min max [m/s]
             ang_vel_yaw = [-0.7, 0.7]  # min max [rad/s]
+        else:
+            lin_vel_x = [0.0, 1.5]  # min max [m/s]
+            lin_vel_y = [0.0, 0.0]  # min max [m/s]
+            ang_vel_yaw = [0.0, 0.0]  # min max [rad/s]
 
         _, key1, key2, key3 = jax.random.split(rng, 4)
         lin_vel_x = jax.random.uniform(
@@ -495,10 +504,10 @@ class UnitreeGo1Env(PipelineEnv):
             axis=1,
         )
         natural_frequencies = jnp.sqrt(jnp.linalg.norm(self.sys.gravity) / effective_lengths)
-        foot_rotation = pipeline_state.qd[qd_hip_idx] + pipeline_state.qd[qd_knee_idx]
-        frequency_reward = jnp.sum(self.kernel_alpha * (jnp.exp(foot_rotation - natural_frequencies) - 1))
+        foot_rotation = jnp.abs(pipeline_state.qd[qd_hip_idx] + pipeline_state.qd[qd_knee_idx])
+        frequency_reward = self.kernel_alpha * (jnp.exp(foot_rotation - natural_frequencies) - 1)
         reward_mask = frequency_reward > 0.0
-        return jax.lax.select(reward_mask, frequency_reward, jnp.zeros_like(frequency_reward))
+        return jnp.sum(jax.lax.select(reward_mask, frequency_reward, jnp.zeros_like(frequency_reward)))
 
     def _reward_termination(self, done: jax.Array, step: jax.Array) -> jax.Array:
         return done & (step < 500)
