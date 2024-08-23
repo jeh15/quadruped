@@ -549,23 +549,6 @@ class UnitreeGo1Env(PipelineEnv):
         # Penalize large swing leg velocities
         return jnp.sum(jnp.square(foot_velocities))
 
-    # def _reward_natural_frequency(
-    #     self, pipeline_state: base.State,
-    # ) -> jax.Array:
-    #     # Calculate Natural Frequency of Leg for a particular configuration:
-    #     xpos_hip_idx = jnp.array([3, 6, 9, 12])
-    #     qd_hip_idx = jnp.array([7, 10, 13, 16])
-    #     qd_knee_idx = jnp.array([8, 11, 14, 17])
-    #     effective_lengths = jnp.linalg.norm(
-    #         pipeline_state.xpos[xpos_hip_idx] - pipeline_state.site_xpos[self.feet_site_id],
-    #         axis=1,
-    #     )
-    #     natural_frequencies = jnp.sqrt(jnp.linalg.norm(self.sys.gravity) / effective_lengths)
-    #     foot_rotation = jnp.abs(pipeline_state.qd[qd_hip_idx] + pipeline_state.qd[qd_knee_idx])
-    #     frequency_reward = self.kernel_alpha * (jnp.exp(foot_rotation - natural_frequencies) - 1)
-    #     reward_mask = frequency_reward > 0.0
-    #     return jnp.sum(jax.lax.select(reward_mask, frequency_reward, jnp.zeros_like(frequency_reward)))
-
     def _reward_natural_frequency(
         self, pipeline_state: base.State,
     ) -> jax.Array:
