@@ -41,6 +41,8 @@ class RewardConfig:
     # IMSI Gait Ideas:
     swing_leg_velocity: float = -1e-2
     natural_frequency: float = -1e-2
+    foot_acceleration: float = -1e-2
+    angular_acceleration: float = -1e-2
     # Hyperparameter for exponential kernel:
     kernel_sigma: float = 0.25
     kernel_alpha: float = 1.0
@@ -170,21 +172,24 @@ class UnitreeGo1Env(PipelineEnv):
         self.calf_body_id = np.array(calf_body_id)
         self._foot_radius = 0.023
         self.history_length = 15
-        self.num_observations = 31
+        # Without joint velocities
+        # self.num_observations = 31
+        # With joint velocities
+        self.num_observations = 43
 
     def sample_command(self, rng: PRNGKey) -> jax.Array:
         if self._train_fast_cmd:
             lin_vel_x = [0.75, 3.0]  # min max [m/s]
             lin_vel_y = [0.0, 0.0]  # min max [m/s]
             ang_vel_yaw = [0.0, 0.0]  # min max [rad/s]
-        elif self._train_fast_cmd:
-            lin_vel_x = [-0.6, 1.5]  # min max [m/s]
-            lin_vel_y = [-0.8, 0.8]  # min max [m/s]
-            ang_vel_yaw = [-0.7, 0.7]  # min max [rad/s]
-        else:
+        elif self._train_forward_cmd:
             lin_vel_x = [0.0, 1.5]  # min max [m/s]
             lin_vel_y = [0.0, 0.0]  # min max [m/s]
             ang_vel_yaw = [0.0, 0.0]  # min max [rad/s]
+        else:
+            lin_vel_x = [-0.6, 1.5]  # min max [m/s]
+            lin_vel_y = [-0.8, 0.8]  # min max [m/s]
+            ang_vel_yaw = [-0.7, 0.7]  # min max [rad/s]
 
         _, key1, key2, key3 = jax.random.split(rng, 4)
         lin_vel_x = jax.random.uniform(
@@ -207,7 +212,8 @@ class UnitreeGo1Env(PipelineEnv):
         state_info = {
             'rng': rng,
             'previous_action': jnp.zeros(12),
-            'previous_velocity': jnp.zeros(12),
+            'previous_velocity': jnp.zeros(4),
+            'previous_angular_velocity': jnp.zeros(4),
             'command': self.sample_command(key),
             'last_contact': jnp.zeros(4, dtype=bool),
             'feet_air_time': jnp.zeros(4),
@@ -308,9 +314,19 @@ class UnitreeGo1Env(PipelineEnv):
                 first_contact,
                 state.info['command'],
             ),
-            'foot_slip': self._reward_foot_slip(pipeline_state, contact_filt_cm),
+            'foot_slip': self._reward_foot_slip(
+                pipeline_state, contact_filt_cm,
+            ),
             'swing_leg_velocity': self._reward_swing_leg(pipeline_state),
-            'natural_frequency': self._reward_natural_frequency(pipeline_state),
+            'natural_frequency': self._reward_natural_frequency(
+                pipeline_state,
+            ),
+            'foot_acceleration': self._reward_foot_acceleration(
+                pipeline_state, state.info['previous_velocity'],
+            ),
+            'angular_acceleration': self._reward_angular_foot_acceleration(
+                pipeline_state, state.info['previous_angular_velocity'],
+            ),
             'termination': jnp.float64(
                 self._reward_termination(done, state.info['step'])
             ) if jax.config.x64_enabled else jnp.float32(
@@ -325,7 +341,9 @@ class UnitreeGo1Env(PipelineEnv):
         # state management
         state.info['kick'] = kick
         state.info['previous_action'] = action
-        state.info['previous_velocity'] = joint_vel
+        # state.info['previous_velocity'] = joint_vel
+        state.info['previous_velocity'] = self._foot_velocity(pipeline_state)
+        state.info['previous_angular_velocity'] = self._foot_angular_velocity(pipeline_state)
         state.info['feet_air_time'] *= ~contact_filt_mm
         state.info['last_contact'] = contact
         state.info['rewards'] = rewards
@@ -358,13 +376,52 @@ class UnitreeGo1Env(PipelineEnv):
         )
         return state
 
+    # def get_observation(
+    #     self,
+    #     pipeline_state: base.State,
+    #     state_info: dict[str, Any],
+    #     observation_history: jax.Array,
+    # ) -> jax.Array:
+    #     # Observation: [yaw_rate, projected_gravity, command, relative_motor_positions, previous_action]
+    #     inverse_trunk_rotation = math.quat_inv(pipeline_state.x.rot[0])
+    #     body_frame_yaw_rate = math.rotate(
+    #         pipeline_state.xd.ang[0], inverse_trunk_rotation,
+    #     )[2]
+    #     projected_gravity = math.rotate(jnp.array([0, 0, -1]), inverse_trunk_rotation)
+
+    #     observation = jnp.concatenate([
+    #         jnp.array([body_frame_yaw_rate]) * 0.25,
+    #         projected_gravity,
+    #         state_info['command'] * jnp.array([2.0, 2.0, 0.25]),
+    #         pipeline_state.q[7:] - self.default_pose,
+    #         state_info['previous_action'],
+    #     ])
+
+    #     # clip, noise
+    #     observation = (
+    #         jnp.clip(observation, -100.0, 100.0)
+    #         + self._obs_noise
+    #         * jax.random.uniform(
+    #             state_info['rng'],
+    #             observation.shape,
+    #             minval=-1,
+    #             maxval=1,
+    #         )
+    #     )
+    #     # stack observations through time
+    #     observation = jnp.roll(
+    #         observation_history, observation.size
+    #     ).at[:observation.size].set(observation)
+
+    #     return observation
+
     def get_observation(
         self,
         pipeline_state: base.State,
         state_info: dict[str, Any],
         observation_history: jax.Array,
     ) -> jax.Array:
-        # Observation: [yaw_rate, projected_gravity, command, relative_motor_positions, previous_action]
+        # Observation: [yaw_rate, projected_gravity, command, relative_motor_positions, joint_velocity, previous_action]
         inverse_trunk_rotation = math.quat_inv(pipeline_state.x.rot[0])
         body_frame_yaw_rate = math.rotate(
             pipeline_state.xd.ang[0], inverse_trunk_rotation,
@@ -372,10 +429,11 @@ class UnitreeGo1Env(PipelineEnv):
         projected_gravity = math.rotate(jnp.array([0, 0, -1]), inverse_trunk_rotation)
 
         observation = jnp.concatenate([
-            jnp.array([body_frame_yaw_rate]) * 0.25,
+            jnp.array([body_frame_yaw_rate]),
             projected_gravity,
-            state_info['command'] * jnp.array([2.0, 2.0, 0.25]),
+            state_info['command'],
             pipeline_state.q[7:] - self.default_pose,
+            pipeline_state.qd[6:],
             state_info['previous_action'],
         ])
 
@@ -397,7 +455,6 @@ class UnitreeGo1Env(PipelineEnv):
 
         return observation
 
-    # ------------ reward functions----------------
     def _reward_lin_vel_z(self, xd: Motion) -> jax.Array:
         # Penalize z axis base linear velocity
         return jnp.square(xd.vel[0, 2])
@@ -492,25 +549,139 @@ class UnitreeGo1Env(PipelineEnv):
         # Penalize large swing leg velocities
         return jnp.sum(jnp.square(foot_velocities))
 
+    # def _reward_natural_frequency(
+    #     self, pipeline_state: base.State,
+    # ) -> jax.Array:
+    #     # Calculate Natural Frequency of Leg for a particular configuration:
+    #     xpos_hip_idx = jnp.array([3, 6, 9, 12])
+    #     qd_hip_idx = jnp.array([7, 10, 13, 16])
+    #     qd_knee_idx = jnp.array([8, 11, 14, 17])
+    #     effective_lengths = jnp.linalg.norm(
+    #         pipeline_state.xpos[xpos_hip_idx] - pipeline_state.site_xpos[self.feet_site_id],
+    #         axis=1,
+    #     )
+    #     natural_frequencies = jnp.sqrt(jnp.linalg.norm(self.sys.gravity) / effective_lengths)
+    #     foot_rotation = jnp.abs(pipeline_state.qd[qd_hip_idx] + pipeline_state.qd[qd_knee_idx])
+    #     frequency_reward = self.kernel_alpha * (jnp.exp(foot_rotation - natural_frequencies) - 1)
+    #     reward_mask = frequency_reward > 0.0
+    #     return jnp.sum(jax.lax.select(reward_mask, frequency_reward, jnp.zeros_like(frequency_reward)))
+
     def _reward_natural_frequency(
         self, pipeline_state: base.State,
     ) -> jax.Array:
+        # Calculate feet velocities:
+        pos = pipeline_state.site_xpos[self.feet_site_id]
+        feet_offset = pos - pipeline_state.xpos[self.calf_body_id]
+        offset = base.Transform.create(pos=feet_offset)
+        foot_indices = self.calf_body_id - 1
+        foot_velocities = offset.vmap().do(pipeline_state.xd.take(foot_indices)).vel
+
         # Calculate Natural Frequency of Leg for a particular configuration:
         xpos_hip_idx = jnp.array([3, 6, 9, 12])
-        qd_hip_idx = jnp.array([7, 10, 13, 16])
-        qd_knee_idx = jnp.array([8, 11, 14, 17])
-        effective_lengths = jnp.linalg.norm(
-            pipeline_state.xpos[xpos_hip_idx] - pipeline_state.site_xpos[self.feet_site_id],
-            axis=1,
-        )
-        natural_frequencies = jnp.sqrt(jnp.linalg.norm(self.sys.gravity) / effective_lengths)
-        foot_rotation = jnp.abs(pipeline_state.qd[qd_hip_idx] + pipeline_state.qd[qd_knee_idx])
-        frequency_reward = self.kernel_alpha * (jnp.exp(foot_rotation - natural_frequencies) - 1)
+        radius_vector = pipeline_state.xpos[xpos_hip_idx] - pipeline_state.site_xpos[self.feet_site_id]
+        radius = jnp.linalg.norm(radius_vector, axis=-1)
+        angular_velocities = jax.vmap(
+            fun=lambda x, y, z: jnp.linalg.cross(x, y, axis=-1) / z ** 2,
+            in_axes=(0, 0, 0),
+            out_axes=0,
+        )(radius_vector, foot_velocities, radius)
+        magnitudes = jnp.linalg.norm(angular_velocities, axis=-1)
+        natural_frequencies = jnp.sqrt(jnp.linalg.norm(self.sys.gravity) / radius)
+        frequency_reward = self.kernel_alpha * (jnp.exp(magnitudes - natural_frequencies) - 1)
         reward_mask = frequency_reward > 0.0
         return jnp.sum(jax.lax.select(reward_mask, frequency_reward, jnp.zeros_like(frequency_reward)))
 
+    def _reward_stride_frequency(
+        self, pipeline_state: base.State,
+    ) -> jax.Array:
+        # Calculate feet velocities:
+        pos = pipeline_state.site_xpos[self.feet_site_id]
+        feet_offset = pos - pipeline_state.xpos[self.calf_body_id]
+        offset = base.Transform.create(pos=feet_offset)
+        foot_indices = self.calf_body_id - 1
+        foot_velocities = offset.vmap().do(pipeline_state.xd.take(foot_indices)).vel
+
+        # Calculate Angular Velocity of Foot relative to Hip:
+        xpos_hip_idx = jnp.array([3, 6, 9, 12])
+        radius_vector = pipeline_state.xpos[xpos_hip_idx] - pipeline_state.site_xpos[self.feet_site_id]
+        radius = jnp.linalg.norm(radius_vector, axis=-1)
+        angular_velocities = jax.vmap(
+            fun=lambda x, y, z: jnp.linalg.cross(x, y, axis=-1) / z ** 2,
+            in_axes=(0, 0, 0),
+            out_axes=0,
+        )(radius_vector, foot_velocities, radius)
+        magnitudes = jnp.linalg.norm(angular_velocities, axis=-1)
+        return jnp.sum(jnp.square(magnitudes))
+
+    def _reward_foot_acceleration(
+        self, pipeline_state: base.State, previous_foot_velocities: jax.Array,
+    ) -> jax.Array:
+        # Penalize large foot accelerations
+        pos = pipeline_state.site_xpos[self.feet_site_id]
+        feet_offset = pos - pipeline_state.xpos[self.calf_body_id]
+        offset = base.Transform.create(pos=feet_offset)
+        foot_indices = self.calf_body_id - 1
+        foot_velocities = jnp.linalg.norm(offset.vmap().do(pipeline_state.xd.take(foot_indices)).vel, axis=-1)
+        return jnp.sum(jnp.square(foot_velocities - previous_foot_velocities))
+
+    def _reward_angular_foot_acceleration(
+        self, pipeline_state: base.State, previous_angular_velocities: jax.Array,
+    ) -> tuple[jax.Array, jax.Array]:
+        # Calculate feet velocities:
+        pos = pipeline_state.site_xpos[self.feet_site_id]
+        feet_offset = pos - pipeline_state.xpos[self.calf_body_id]
+        offset = base.Transform.create(pos=feet_offset)
+        foot_indices = self.calf_body_id - 1
+        foot_velocities = offset.vmap().do(pipeline_state.xd.take(foot_indices)).vel
+
+        # Calculate Natural Frequency of Leg for a particular configuration:
+        xpos_hip_idx = jnp.array([3, 6, 9, 12])
+        radius_vector = pipeline_state.xpos[xpos_hip_idx] - pipeline_state.site_xpos[self.feet_site_id]
+        radius = jnp.linalg.norm(radius_vector, axis=-1)
+        angular_velocities = jax.vmap(
+            fun=lambda x, y, z: jnp.linalg.cross(x, y, axis=-1) / z ** 2,
+            in_axes=(0, 0, 0),
+            out_axes=0,
+        )(radius_vector, foot_velocities, radius)
+        angular_velocities = jnp.linalg.norm(angular_velocities, axis=-1)
+        return jnp.sum(jnp.square(angular_velocities - previous_angular_velocities))
+
     def _reward_termination(self, done: jax.Array, step: jax.Array) -> jax.Array:
         return done & (step < 500)
+
+    # Foot Velocity Calculations:
+    def _foot_velocity(
+        self, pipeline_state: base.State,
+    ) -> tuple[jax.Array, jax.Array]:
+        # Calculate feet velocities:
+        pos = pipeline_state.site_xpos[self.feet_site_id]
+        feet_offset = pos - pipeline_state.xpos[self.calf_body_id]
+        offset = base.Transform.create(pos=feet_offset)
+        foot_indices = self.calf_body_id - 1
+        foot_velocities = jnp.linalg.norm(offset.vmap().do(pipeline_state.xd.take(foot_indices)).vel, axis=-1)
+        return foot_velocities
+
+    def _foot_angular_velocity(
+        self, pipeline_state: base.State,
+    ) -> tuple[jax.Array, jax.Array]:
+        # Calculate feet velocities:
+        pos = pipeline_state.site_xpos[self.feet_site_id]
+        feet_offset = pos - pipeline_state.xpos[self.calf_body_id]
+        offset = base.Transform.create(pos=feet_offset)
+        foot_indices = self.calf_body_id - 1
+        foot_velocities = offset.vmap().do(pipeline_state.xd.take(foot_indices)).vel
+
+        # Calculate Natural Frequency of Leg for a particular configuration:
+        xpos_hip_idx = jnp.array([3, 6, 9, 12])
+        radius_vector = pipeline_state.xpos[xpos_hip_idx] - pipeline_state.site_xpos[self.feet_site_id]
+        radius = jnp.linalg.norm(radius_vector, axis=-1)
+        angular_velocities = jax.vmap(
+            fun=lambda x, y, z: jnp.linalg.cross(x, y, axis=-1) / z ** 2,
+            in_axes=(0, 0, 0),
+            out_axes=0,
+        )(radius_vector, foot_velocities, radius)
+        angular_velocities = jnp.linalg.norm(angular_velocities, axis=-1)
+        return angular_velocities
 
 
 envs.register_environment('unitree_go1', UnitreeGo1Env)

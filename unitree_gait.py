@@ -141,7 +141,7 @@ def main(argv=None):
             duty_cycle = gait[foot.name]["stance"]["average"] / (gait[foot.name]["stance"]["average"] + gait[foot.name]["flight"]["average"])
             stride_frequency = 1 / (env.step_dt * (gait[foot.name]["stance"]["average"] + gait[foot.name]["flight"]["average"]))
             print(
-                f'Average Stance Length ({foot.name}): {gait[foot.name]["stance"]["average"]:.3f} \t Average Flight Length ({foot.name}): {gait[foot.name]["flight"]["average"]:.3f} \t Duty Cycle ({foot.name}): {duty_cycle:.3f} \t Average Stride Frequency ({foot.name}): {stride_frequency:.3f}',
+                f'Average Stance Length ({foot.name}): {gait[foot.name]["stance"]["average"]:.3f} \t Average Flight Length ({foot.name}): {gait[foot.name]["flight"]["average"]:.3f} \t Duty Cycle ({foot.name}): {duty_cycle:.3f} \t Average Stride Frequency ({foot.name}): {stride_frequency:.1f}',
             )
         print('\n')
 
@@ -175,6 +175,13 @@ def main(argv=None):
 
         plt.savefig(f'gait_velocity_{velocity}.svg')
         plt.savefig(f'gait_velocity_{velocity}.png')
+
+        # fig, axs = plt.subplots(1, 1)
+        # axs.plot(np.arange(len(angular_velocity)) * env.step_dt, angular_velocity)
+        # axs.set_xlabel('Time (s)')
+        # axs.set_ylabel('Angular Velocity (rad/s)')
+        # fig.suptitle(f'Angular Velocity at {np.mean(forward_velocity):.3f} m/s')
+        # plt.savefig(f'angular_velocity_{velocity}.png')
 
         # Generate HTML:
         html_string = html.render(

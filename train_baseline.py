@@ -57,7 +57,9 @@ def main(argv=None):
         foot_slip=-0.1,
         # IMSI Gait Ideas:
         swing_leg_velocity=0.0,
-        natural_frequency=-1e-2,
+        natural_frequency=-0.0,
+        foot_acceleration=-1e-3,
+        angular_acceleration=-1e-3,
         # Hyperparameter for exponential kernel:
         kernel_sigma=0.25,
         kernel_alpha=1.0,
