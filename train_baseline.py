@@ -58,13 +58,14 @@ def main(argv=None):
         # IMSI Gait Ideas:
         swing_leg_velocity=0.0,
         natural_frequency=-0.0,
-        foot_acceleration=-1e-3,
-        angular_acceleration=-1e-3,
+        foot_acceleration=-0.0,
+        angular_acceleration=0.0,
+        stride_frequency=0.0,
         # Hyperparameter for exponential kernel:
         kernel_sigma=0.25,
         kernel_alpha=1.0,
         # Target air time for feet:
-        target_air_time=0.3,
+        target_air_time=0.1,
     )
 
     # Metadata:
@@ -118,8 +119,8 @@ def main(argv=None):
     )
 
     # Initialize Functions with Params:
-    # randomization_fn = unitree_gait.domain_randomize
-    randomization_fn = None
+    randomization_fn = unitree_gait.domain_randomize
+    # randomization_fn = None
     make_networks_factory = functools.partial(
         ppo_networks.make_ppo_networks,
         policy_layer_sizes=(network_metadata.policy_layer_size, ) * network_metadata.policy_depth,

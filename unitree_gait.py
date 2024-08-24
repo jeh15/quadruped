@@ -67,6 +67,9 @@ def main(argv=None):
         contacts = []
         forward_velocity = []
         torque_history = []
+        radius_history = []
+        body_height_x = []
+        body_height_q = []
         for i in range(num_steps):
             # Stop Command Sampling:
             state.info['command'] = jnp.array([velocity, 0.0, 0.0])
@@ -75,6 +78,14 @@ def main(argv=None):
             state = step_fn(state, action)
             states.append(state.pipeline_state)
             torque_history.append(state.pipeline_state.qfrc_actuator)
+
+            xpos_hip_idx = jnp.array([3, 6, 9, 12])
+            radius_vector = state.pipeline_state.xpos[xpos_hip_idx] - state.pipeline_state.site_xpos[env.feet_site_id]
+            radius = jnp.linalg.norm(radius_vector, axis=-1)
+            radius_history.append(radius)
+
+            body_height_x.append(state.pipeline_state.x.pos[0][2])
+            body_height_q.append(state.pipeline_state.q[2])
 
             # Get Steady State:
             steady_state_condition = (
@@ -91,7 +102,13 @@ def main(argv=None):
         contacts = np.asarray(contacts)
         forward_velocity = np.asarray(forward_velocity)
         average_velocity.append(np.mean(forward_velocity))
+        average_radius = np.mean(radius)
+        x_body_height = np.mean(body_height_x)
+        q_body_height = np.mean(body_height_q)
         print(f'Velocity: {np.mean(forward_velocity)}')
+        print(f'Average Radius: {average_radius}')
+        print(f'Average Body Height (xpos): {x_body_height:.3f}')
+        print(f'Average Body Height (q): {q_body_height:.3f}')
 
         # Calculate COT:
         power = np.sum(np.trapz(torques ** 2, dx=env.step_dt, axis=0), axis=-1)
@@ -196,20 +213,20 @@ def main(argv=None):
         plt.savefig(f'gait_velocity_{velocity}.png')
 
         # Generate HTML:
-        # html_string = html.render(
-        #     sys=env.sys.tree_replace({'opt.timestep': env.step_dt}),
-        #     states=states,
-        #     height="100vh",
-        #     colab=False,
-        # )
+        html_string = html.render(
+            sys=env.sys.tree_replace({'opt.timestep': env.step_dt}),
+            states=states,
+            height="100vh",
+            colab=False,
+        )
 
-        # html_path = os.path.join(
-        #     os.path.dirname(__file__),
-        #     f"visualization/visualization_{velocity}.html",
-        # )
+        html_path = os.path.join(
+            os.path.dirname(__file__),
+            f"visualization/visualization_{velocity}.html",
+        )
 
-        # with open(html_path, "w") as f:
-        #     f.writelines(html_string)
+        with open(html_path, "w") as f:
+            f.writelines(html_string)
 
     # Duty Factor Plot:
     fig, axs = plt.subplots(1, 1)
