@@ -11,7 +11,7 @@ import optax
 import wandb
 import orbax.checkpoint as ocp
 
-from src.envs import unitree_gait
+from src.envs import unitree_gait_q as unitree_gait
 from src.algorithms.ppo import network_utilities as ppo_networks
 from src.algorithms.ppo.loss_utilities import loss_function
 from src.distribution_utilities import ParametricDistribution
