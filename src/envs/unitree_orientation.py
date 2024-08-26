@@ -28,7 +28,7 @@ class RewardConfig:
     # Rewards:
     tracking_linear_velocity: float = 1.5
     tracking_angular_velocity: float = 0.8
-    feet_air_time: float = 0.2
+    stride_period: float = 0.2
     # Penalties / Regularization Terms:
     linear_z_velocity: float = -2.0
     angular_xy_velocity: float = -0.05
@@ -40,7 +40,7 @@ class RewardConfig:
     foot_slip: float = -0.1
     # IMSI Gait Ideas:
     foot_acceleration: float = -1e-2
-    stride_period: float = 0.1
+    target_stride_period: float = 0.1
     # Hyperparameter for exponential kernel:
     kernel_sigma: float = 0.25
     kernel_alpha: float = 1.0
@@ -121,11 +121,11 @@ class UnitreeGo1Env(PipelineEnv):
 
         self.kernel_sigma = config.kernel_sigma
         self.kernel_alpha = config.kernel_alpha
-        self.stride_period = config.stride_period
+        self.target_stride_period = config.target_stride_period
         config_dict = flax.serialization.to_state_dict(config)
         del config_dict['kernel_sigma']
         del config_dict['kernel_alpha']
-        del config_dict['stride_period']
+        del config_dict['target_stride_period']
         self.reward_config = config_dict
 
         self.trunk_idx = mujoco.mj_name2id(
@@ -467,7 +467,7 @@ class UnitreeGo1Env(PipelineEnv):
         self, air_time: jax.Array, first_contact: jax.Array, commands: jax.Array
     ) -> jax.Array:
         # Reward air time.
-        rew_air_time = jnp.sum((air_time - self.stride_period) * first_contact)
+        rew_air_time = jnp.sum((air_time - self.target_stride_period) * first_contact)
         rew_air_time *= (
             math.normalize(commands[:2])[1] > 0.05
         )  # no reward for zero command
