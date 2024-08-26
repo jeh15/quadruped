@@ -32,7 +32,6 @@ class RewardConfig:
     # Penalties / Regularization Terms:
     linear_z_velocity: float = -2.0
     angular_xy_velocity: float = -0.05
-    orientation: float = -5.0
     torque: float = -2e-4
     action_rate: float = -0.01
     stand_still: float = -0.5
@@ -41,6 +40,10 @@ class RewardConfig:
     # IMSI Gait Ideas:
     foot_acceleration: float = -1e-2
     target_stride_period: float = 0.1
+    # Orientation Ideas:
+    orientation_deviation: float = 0.95
+    orientation_regularization: float = -0.1
+    orientation: float = -5.0
     # Hyperparameter for exponential kernel:
     kernel_sigma: float = 0.25
     kernel_alpha: float = 1.0
@@ -122,10 +125,12 @@ class UnitreeGo1Env(PipelineEnv):
         self.kernel_sigma = config.kernel_sigma
         self.kernel_alpha = config.kernel_alpha
         self.target_stride_period = config.target_stride_period
+        self.orientation_deviation = config.orientation_deviation
         config_dict = flax.serialization.to_state_dict(config)
         del config_dict['kernel_sigma']
         del config_dict['kernel_alpha']
         del config_dict['target_stride_period']
+        del config_dict['orientation_deviation']
         self.reward_config = config_dict
 
         self.trunk_idx = mujoco.mj_name2id(
@@ -168,8 +173,8 @@ class UnitreeGo1Env(PipelineEnv):
         self.calf_body_id = np.array(calf_body_id)
         self._foot_radius = 0.023
         self.history_length = 15
-        # With joint velocities
-        self.num_observations = 43
+        # Without joint velocities
+        self.num_observations = 31
 
     def sample_command(self, rng: PRNGKey) -> jax.Array:
         if self._train_fast_cmd:
@@ -296,6 +301,7 @@ class UnitreeGo1Env(PipelineEnv):
             ),
             'linear_z_velocity': self._reward_lin_vel_z(xd),
             'angular_xy_velocity': self._reward_ang_vel_xy(xd),
+            'orientation_regularization': self._reward_orientation_regularization(x),
             'orientation': self._reward_orientation(x),
             # pytype: disable=attribute-error
             'torque': self._reward_torques(pipeline_state.qfrc_actuator),
@@ -375,7 +381,6 @@ class UnitreeGo1Env(PipelineEnv):
                 projected_gravity,
                 command,
                 relative_motor_positions,
-                joint_velocity,
                 previous_action,
             ]
         """
@@ -392,7 +397,6 @@ class UnitreeGo1Env(PipelineEnv):
             projected_gravity,
             state_info['command'],
             pipeline_state.q[7:] - self.default_pose,
-            pipeline_state.qd[6:],
             state_info['previous_action'],
         ])
 
@@ -431,8 +435,12 @@ class UnitreeGo1Env(PipelineEnv):
     def _reward_orientation(self, x: Transform) -> jax.Array:
         # Penalize non flat base orientation
         up = jnp.array([0.0, 0.0, 1.0])
-        rot_up = math.rotate(up, x.rot[0])
-        return jnp.sum(jnp.square(rot_up[:2]))
+        orientation = jnp.dot(math.rotate(up, x.rot[0]), up)
+        reward = self.kernel_alpha * (
+            jnp.exp(self.orientation_deviation - orientation) - 1
+        )
+        mask = reward > 0.0
+        return reward * mask
 
     def _reward_torques(self, torques: jax.Array) -> jax.Array:
         # Penalize torques
