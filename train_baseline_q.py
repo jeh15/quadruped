@@ -46,7 +46,7 @@ def main(argv=None):
     reward_config = unitree_gait.RewardConfig(
         tracking_linear_velocity=1.5,
         tracking_angular_velocity=0.8,
-        feet_air_time=0.2,
+        # Regularization Terms:
         linear_z_velocity=-2.0,
         angular_xy_velocity=-0.05,
         orientation=-5.0,
@@ -56,16 +56,12 @@ def main(argv=None):
         termination=-1.0,
         foot_slip=-0.1,
         # IMSI Gait Ideas:
-        swing_leg_velocity=0.0,
-        natural_frequency=-0.0,
         foot_acceleration=-1.0e-2,
-        angular_acceleration=0.0,
-        stride_frequency=0.0,
+        stride_period=0.2,
+        target_stride_period=0.1,
         # Hyperparameter for exponential kernel:
         kernel_sigma=0.25,
         kernel_alpha=1.0,
-        # Target air time for feet:
-        target_air_time=0.1,
     )
 
     # Metadata:
