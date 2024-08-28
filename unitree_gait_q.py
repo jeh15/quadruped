@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 
 from brax.io import html
 
-from src.envs import unitree_gait_q
+from src.envs import unitree_curriculum as unitree_gait_q
 from src.algorithms.ppo.load_utilities import load_policy
 
 jax.config.update("jax_enable_x64", True)
@@ -51,7 +51,7 @@ def main(argv=None):
     key = jax.random.key(0)
 
     # Sweep through velocities:
-    velocities = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5]
+    velocities = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5]
     gaits = []
     average_velocity = []
     cost_of_transport = []
@@ -72,7 +72,7 @@ def main(argv=None):
         body_height_q = []
         for i in range(num_steps):
             # Stop Command Sampling:
-            state.info['command'] = jnp.array([velocity, 0.0, 0.0])
+            # state.info['command'] = jnp.array([velocity, 0.0, 0.0])
             key, subkey = jax.random.split(key)
             action, _ = inference_fn(state.obs, subkey)
             state = step_fn(state, action)
@@ -86,6 +86,9 @@ def main(argv=None):
 
             body_height_x.append(state.pipeline_state.x.pos[0][2])
             body_height_q.append(state.pipeline_state.q[2])
+
+            if i > 501:
+                pass
 
             # Get Steady State:
             steady_state_condition = (

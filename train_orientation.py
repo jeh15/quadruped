@@ -47,7 +47,7 @@ def main(argv=None):
         tracking_linear_velocity=1.5,
         tracking_angular_velocity=0.8,
         # Regularization Terms:
-        linear_z_velocity=-0.1,
+        linear_z_velocity=-2.0,
         angular_xy_velocity=-0.05,
         torque=-2e-4,
         action_rate=-0.01,
@@ -55,9 +55,10 @@ def main(argv=None):
         termination=-1.0,
         foot_slip=-0.1,
         # IMSI Gait Ideas:
-        foot_acceleration=-1.0e-2,
+        foot_acceleration=0.0,
         stride_period=0.2,
         target_stride_period=0.3,
+        mechanical_power=-1e-6,
         # Orientation Ideas:
         orientation_deviation=0.0,
         orientation_regularization=-5.0,
@@ -139,8 +140,8 @@ def main(argv=None):
         gae_lambda=loss_metadata.gae_lambda,
         normalize_advantages=loss_metadata.normalize_advantages,
     )
-    env = unitree_orientation.UnitreeGo1Env(config=reward_config, kick_vel=0.0, train_fast_cmd=True)
-    eval_env = unitree_orientation.UnitreeGo1Env(config=reward_config, kick_vel=0.0, train_fast_cmd=True)
+    env = unitree_orientation.UnitreeGo1Env(config=reward_config, kick_vel=0.0,)
+    eval_env = unitree_orientation.UnitreeGo1Env(config=reward_config, kick_vel=0.0)
 
     restored_checkpoint = None
     if FLAGS.checkpoint_name is not None:

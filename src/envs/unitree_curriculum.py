@@ -97,8 +97,6 @@ class UnitreeGo1Env(PipelineEnv):
         obs_noise: float = 0.05,
         action_scale: float = 0.3,
         kick_vel: float = 0.05,
-        train_fast_cmd: bool = False,
-        train_forward_cmd: bool = False,
         **kwargs,
     ):
         filename = f'models/{filename}'
@@ -140,8 +138,6 @@ class UnitreeGo1Env(PipelineEnv):
         self._action_scale = action_scale
         self._obs_noise = obs_noise
         self._kick_vel = kick_vel
-        self._train_fast_cmd = train_fast_cmd
-        self._train_forward_cmd = train_forward_cmd
         self.init_q = jnp.array(sys.mj_model.keyframe('home').qpos)
         self.init_qd = jnp.zeros(sys.nv)
         self.default_pose = jnp.array(sys.mj_model.keyframe('home').qpos[7:])
@@ -174,22 +170,30 @@ class UnitreeGo1Env(PipelineEnv):
         self.calf_body_id = np.array(calf_body_id)
         self._foot_radius = 0.023
         self.history_length = 15
-        # Without joint velocities
         self.num_observations = 31
 
     def sample_command(self, rng: PRNGKey) -> jax.Array:
-        if self._train_fast_cmd:
-            lin_vel_x = [0.75, 3.0]  # min max [m/s]
-            lin_vel_y = [0.0, 0.0]  # min max [m/s]
-            ang_vel_yaw = [0.0, 0.0]  # min max [rad/s]
-        elif self._train_forward_cmd:
-            lin_vel_x = [0.0, 1.5]  # min max [m/s]
-            lin_vel_y = [0.0, 0.0]  # min max [m/s]
-            ang_vel_yaw = [0.0, 0.0]  # min max [rad/s]
-        else:
-            lin_vel_x = [-0.6, 1.5]  # min max [m/s]
-            lin_vel_y = [-0.8, 0.8]  # min max [m/s]
-            ang_vel_yaw = [-0.7, 0.7]  # min max [rad/s]
+        lin_vel_x = [-0.6, 1.5]  # min max [m/s]
+        lin_vel_y = [-0.8, 0.8]  # min max [m/s]
+        ang_vel_yaw = [-0.7, 0.7]  # min max [rad/s]
+
+        _, key1, key2, key3 = jax.random.split(rng, 4)
+        lin_vel_x = jax.random.uniform(
+            key1, (1,), minval=lin_vel_x[0], maxval=lin_vel_x[1]
+        )
+        lin_vel_y = jax.random.uniform(
+            key2, (1,), minval=lin_vel_y[0], maxval=lin_vel_y[1]
+        )
+        ang_vel_yaw = jax.random.uniform(
+            key3, (1,), minval=ang_vel_yaw[0], maxval=ang_vel_yaw[1]
+        )
+        new_cmd = jnp.array([lin_vel_x[0], lin_vel_y[0], ang_vel_yaw[0]])
+        return new_cmd
+
+    def sample_fast_command(self, rng: PRNGKey) -> jax.Array:
+        lin_vel_x = [1.5, 3.0]
+        lin_vel_y = [-0.01, 0.01]
+        ang_vel_yaw = [-0.01, 0.01]
 
         _, key1, key2, key3 = jax.random.split(rng, 4)
         lin_vel_x = jax.random.uniform(
@@ -221,6 +225,8 @@ class UnitreeGo1Env(PipelineEnv):
             'rewards': {k: 0.0 for k in self.reward_config.keys()},
             'kick': jnp.array([0.0, 0.0]),
             'step': 0,
+            'avg_xy_error': 0.0,
+            'avg_yaw_error': 0.0,
         }
 
         observation_history = jnp.zeros(
@@ -233,7 +239,12 @@ class UnitreeGo1Env(PipelineEnv):
         reward, done = jnp.zeros(2)
         done = jnp.float64(done) if jax.config.x64_enabled else jnp.float32(done)
 
-        metrics = {'total_dist': 0.0}
+        metrics = {
+            'total_dist': 0.0,
+            'xy_command_error': 0.0,
+            'yaw_command_error': 0.0,
+            'stride_air_time': 0.0,
+        }
         for k in state_info['rewards']:
             metrics[k] = state_info['rewards'][k]
 
@@ -284,6 +295,7 @@ class UnitreeGo1Env(PipelineEnv):
         contact_filt_cm = (foot_contact_z < 3e-2) | state.info['last_contact']
         first_contact = (state.info['feet_air_time'] > 0) * contact_filt_mm
         state.info['feet_air_time'] += self.step_dt
+        stride_air_time = jnp.sum(state.info['feet_air_time'] * first_contact)
 
         # done if joint limits are reached or robot is falling
         up = jnp.array([0.0, 0.0, 1.0])
@@ -347,20 +359,63 @@ class UnitreeGo1Env(PipelineEnv):
         state.info['step'] += 1
         state.info['rng'] = rng
 
-        # sample new command if more than 500 timesteps achieved
+        # Curriculum: Sample Fast Forward Command if successful:
+        xy_command_error, yaw_command_error = self._velocity_tracking(
+            state.info['command'], x, xd,
+        )
+
+        state.info['avg_xy_error'] = (
+            state.info['avg_xy_error']
+            + (xy_command_error - state.info['avg_xy_error'])
+            / (state.info['step'])
+        )
+
+        state.info['avg_yaw_error'] = (
+            state.info['avg_yaw_error']
+            + (yaw_command_error - state.info['avg_yaw_error'])
+            / (state.info['step'])
+        )
+
+        error_threshold = 0.3
+        curriculum_check = state.info['avg_xy_error'] < error_threshold
+        curriculum_check &= state.info['avg_yaw_error'] < error_threshold
+
+        sample_new_command = state.info['step'] > 500
+
+        # Sample New Command after 500 steps:
         state.info['command'] = jnp.where(
-            state.info['step'] > 500,
+            sample_new_command,
             self.sample_command(cmd_rng),
             state.info['command'],
         )
-        # reset the step counter when done
+
+        # Sample a Difficult Command if Curriculum Check is True:
+        state.info['command'] = jnp.where(
+            (curriculum_check & sample_new_command),
+            self.sample_fast_command(cmd_rng),
+            state.info['command'],
+        )
+
+        # Reset the step counter when done or after 500 steps:
         state.info['step'] = jnp.where(
             done | (state.info['step'] > 500), 0, state.info['step']
         )
 
-        # log total displacement as a proxy metric
+        # Reset Avg Error with new command:
+        state.info['avg_xy_error'] = jnp.where(
+            sample_new_command, 0.0, state.info['avg_xy_error'],
+        )
+        state.info['avg_yaw_error'] = jnp.where(
+            sample_new_command, 0.0, state.info['avg_yaw_error'],
+        )
+
+        # Metrics:
         state.metrics['total_dist'] = math.normalize(
-            x.pos[self.trunk_idx - 1])[1]
+            x.pos[self.trunk_idx - 1],
+        )[1]
+        state.metrics['xy_command_error'] = xy_command_error
+        state.metrics['yaw_command_error'] = yaw_command_error
+        state.metrics['stride_air_time'] = stride_air_time
         state.metrics.update(state.info['rewards'])
 
         done = jnp.float64(done) if jax.config.x64_enabled else jnp.float32(done)
@@ -561,6 +616,18 @@ class UnitreeGo1Env(PipelineEnv):
         )(radius_vector, foot_velocities, radius)
         angular_velocities = jnp.linalg.norm(angular_velocities, axis=-1)
         return angular_velocities
+
+    def _velocity_tracking(
+        self, commands: jax.Array, x: Transform, xd: Motion
+    ) -> tuple[jax.Array, jax.Array]:
+        # Tracking of linear velocity commands (xy axes)
+        local_velocity = math.rotate(xd.vel[0], math.quat_inv(x.rot[0]))
+        velocity_error = jnp.sum(jnp.square(commands[:2] - local_velocity[:2]))
+
+        # Tracking of angular velocity commands (yaw)
+        angular_velocity = math.rotate(xd.ang[0], math.quat_inv(x.rot[0]))
+        angular_velocity_error = jnp.square(commands[2] - angular_velocity[2])
+        return velocity_error, angular_velocity_error
 
 
 envs.register_environment('unitree_go1', UnitreeGo1Env)

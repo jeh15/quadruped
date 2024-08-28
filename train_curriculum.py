@@ -11,7 +11,7 @@ import optax
 import wandb
 import orbax.checkpoint as ocp
 
-from src.envs import unitree_orientation
+from src.envs import unitree_curriculum
 from src.algorithms.ppo import network_utilities as ppo_networks
 from src.algorithms.ppo.loss_utilities import loss_function
 from src.distribution_utilities import ParametricDistribution
@@ -43,7 +43,7 @@ flags.DEFINE_bool(
 
 def main(argv=None):
     # Config:
-    reward_config = unitree_orientation.RewardConfig(
+    reward_config = unitree_curriculum.RewardConfig(
         tracking_linear_velocity=1.5,
         tracking_angular_velocity=0.8,
         # Regularization Terms:
@@ -55,13 +55,14 @@ def main(argv=None):
         termination=-1.0,
         foot_slip=-0.1,
         # IMSI Gait Ideas:
-        foot_acceleration=0.0,
+        foot_acceleration=-0.0,
         stride_period=0.2,
         target_stride_period=0.3,
+        mechanical_power=0.0,
         # Orientation Ideas:
-        orientation_deviation=0.95,
-        orientation_regularization=-0.1,
-        orientation=-5.0,
+        orientation_deviation=0.0,
+        orientation_regularization=-5.0,
+        orientation=0.0,
         # Hyperparameter for exponential kernel:
         kernel_sigma=0.25,
         kernel_alpha=1.0,
@@ -71,8 +72,8 @@ def main(argv=None):
     network_metadata = checkpoint_utilities.network_metadata(
         policy_layer_size=128,
         value_layer_size=256,
-        policy_depth=4,
-        value_depth=5,
+        policy_depth=6,
+        value_depth=7,
         activation='nn.swish',
         kernel_init='jax.nn.initializers.lecun_uniform()',
         action_distribution='ParametricDistribution(distribution=distrax.Normal, bijector=distrax.Tanh())',
@@ -86,7 +87,7 @@ def main(argv=None):
         normalize_advantages=True,
     )
     training_metadata = checkpoint_utilities.training_metadata(
-        num_epochs=25,
+        num_epochs=50,
         num_training_steps=20,
         episode_length=1000,
         num_policy_steps=25,
@@ -118,7 +119,7 @@ def main(argv=None):
     )
 
     # Initialize Functions with Params:
-    randomization_fn = unitree_orientation.domain_randomize
+    randomization_fn = unitree_curriculum.domain_randomize
     make_networks_factory = functools.partial(
         ppo_networks.make_ppo_networks,
         policy_layer_sizes=(network_metadata.policy_layer_size, ) * network_metadata.policy_depth,
@@ -139,8 +140,8 @@ def main(argv=None):
         gae_lambda=loss_metadata.gae_lambda,
         normalize_advantages=loss_metadata.normalize_advantages,
     )
-    env = unitree_orientation.UnitreeGo1Env(config=reward_config, kick_vel=0.0)
-    eval_env = unitree_orientation.UnitreeGo1Env(config=reward_config, kick_vel=0.0)
+    env = unitree_curriculum.UnitreeGo1Env(config=reward_config)
+    eval_env = unitree_curriculum.UnitreeGo1Env(config=reward_config)
 
     restored_checkpoint = None
     if FLAGS.checkpoint_name is not None:
