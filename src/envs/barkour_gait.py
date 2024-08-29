@@ -5,6 +5,9 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
+import flax.struct
+import flax.serialization
+
 from brax import base
 from brax import envs
 from brax import math
@@ -12,8 +15,10 @@ from brax.base import Motion, Transform
 from brax.envs.base import PipelineEnv, State
 from brax.io import mjcf
 
-from ml_collections import config_dict
 import mujoco
+
+# Types:
+PRNGKey = jax.Array
 
 
 def domain_randomize(sys, rng):
@@ -52,63 +57,28 @@ def domain_randomize(sys, rng):
     return sys, in_axes
 
 
-def get_config():
-    """Returns reward config for barkour quadruped environment."""
-
-    def get_default_rewards_config():
-        default_config = config_dict.ConfigDict(
-            dict(
-                # The coefficients for all reward terms used for training. All
-                # physical quantities are in SI units, if no otherwise specified,
-                # i.e. joint positions are in rad, positions are measured in meters,
-                # torques in Nm, and time in seconds, and forces in Newtons.
-                scales=config_dict.ConfigDict(
-                    dict(
-                        # Tracking rewards are computed using exp(-delta^2/sigma)
-                        # sigma can be a hyperparameters to tune.
-                        # Track the base x-y velocity (no z-velocity tracking.)
-                        tracking_lin_vel=1.5,
-                        # Track the angular velocity along z-axis, i.e. yaw rate.
-                        tracking_ang_vel=0.8,
-                        # Below are regularization terms, we roughly divide the
-                        # terms to base state regularizations, joint
-                        # regularizations, and other behavior regularizations.
-                        # Penalize the base velocity in z direction, L2 penalty.
-                        lin_vel_z=-2.0,
-                        # Penalize the base roll and pitch rate. L2 penalty.
-                        ang_vel_xy=-0.05,
-                        # Penalize non-zero roll and pitch angles. L2 penalty.
-                        orientation=-5.0,
-                        # L2 regularization of joint torques, |tau|^2.
-                        torques=-0.0002,
-                        # Penalize the change in the action and encourage smooth
-                        # actions. L2 regularization |action - last_action|^2
-                        action_rate=-0.01,
-                        # Encourage long swing steps.  However, it does not
-                        # encourage high clearances.
-                        feet_air_time=0.2,
-                        # Encourage no motion at zero command, L2 regularization
-                        # |q - q_default|^2.
-                        stand_still=-0.5,
-                        # Early termination penalty.
-                        termination=-1.0,
-                        # Penalizing foot slipping on the ground.
-                        foot_slip=-0.1,
-                    )
-                ),
-                # Tracking reward = exp(-error^2/sigma).
-                tracking_sigma=0.25,
-            )
-        )
-        return default_config
-
-    default_config = config_dict.ConfigDict(
-        dict(
-            rewards=get_default_rewards_config(),
-        )
-    )
-
-    return default_config
+@flax.struct.dataclass
+class RewardConfig:
+    # Rewards:
+    tracking_linear_velocity: float = 1.5
+    tracking_angular_velocity: float = 0.8
+    stride_period: float = 0.2
+    # Penalties / Regularization Terms:
+    orientation_regularization: float = -5.0
+    linear_z_velocity: float = -2.0
+    angular_xy_velocity: float = -0.05
+    torque: float = -2e-4
+    action_rate: float = -0.01
+    stand_still: float = -0.5
+    termination: float = -1.0
+    foot_slip: float = -0.1
+    # IMSI Gait Ideas:
+    foot_acceleration: float = 0.0
+    target_stride_period: float = 0.1
+    mechanical_power: float = 0.0
+    # Hyperparameter for exponential kernel:
+    kernel_sigma: float = 0.25
+    kernel_alpha: float = 1.0
 
 
 class BarkourEnv(PipelineEnv):
@@ -117,6 +87,7 @@ class BarkourEnv(PipelineEnv):
     def __init__(
         self,
         filename: str = 'barkour/scene_mjx.xml',
+        config: RewardConfig = RewardConfig(),
         obs_noise: float = 0.05,
         action_scale: float = 0.3,
         kick_vel: float = 0.05,
@@ -145,11 +116,14 @@ class BarkourEnv(PipelineEnv):
         n_frames = kwargs.pop('n_frames', int(self.step_dt / sys.opt.timestep))
         super().__init__(sys, backend='mjx', n_frames=n_frames)
 
-        self.reward_config = get_config()
-        # set custom from kwargs
-        for k, v in kwargs.items():
-            if k.endswith('_scale'):
-                self.reward_config.rewards.scales[k[:-6]] = v
+        self.kernel_sigma = config.kernel_sigma
+        self.kernel_alpha = config.kernel_alpha
+        self.target_stride_period = config.target_stride_period
+        config_dict = flax.serialization.to_state_dict(config)
+        del config_dict['kernel_sigma']
+        del config_dict['kernel_alpha']
+        del config_dict['target_stride_period']
+        self.reward_config = config_dict
 
         self._torso_idx = mujoco.mj_name2id(
             sys.mj_model, mujoco.mjtObj.mjOBJ_BODY.value, 'torso'
@@ -189,6 +163,8 @@ class BarkourEnv(PipelineEnv):
         self._lower_leg_body_id = np.array(lower_leg_body_id)
         self._foot_radius = 0.0175
         self._nv = sys.nv
+        self.history_length = 15
+        self.num_observations = 31
 
     def sample_command(self, rng: jax.Array) -> jax.Array:
         lin_vel_x = [-0.6, 1.5]  # min max [m/s]
@@ -215,24 +191,39 @@ class BarkourEnv(PipelineEnv):
 
         state_info = {
             'rng': rng,
-            'last_act': jnp.zeros(12),
+            'previous_action': jnp.zeros(12),
             'last_vel': jnp.zeros(12),
+            'previous_foot_velocity': jnp.zeros(4),
             'command': self.sample_command(key),
             'last_contact': jnp.zeros(4, dtype=bool),
             'feet_air_time': jnp.zeros(4),
-            'rewards': {k: 0.0 for k in self.reward_config.rewards.scales.keys()},
+            'rewards': {k: 0.0 for k in self.reward_config.keys()},
             'kick': jnp.array([0.0, 0.0]),
             'step': 0,
         }
 
-        obs_history = jnp.zeros(15 * 31)  # store 15 steps of history
-        obs = self._get_obs(pipeline_state, state_info, obs_history)
+        observation_history = jnp.zeros(
+            self.history_length * self.num_observations,
+        )
+        observation = self.get_observation(
+            pipeline_state, state_info, observation_history,
+        )
+
         reward, done = jnp.zeros(2)
+        done = jnp.float64(done) if jax.config.x64_enabled else jnp.float32(done)
+
         metrics = {'total_dist': 0.0}
         for k in state_info['rewards']:
             metrics[k] = state_info['rewards'][k]
-        state = State(pipeline_state, obs, reward, done, metrics,
-                      state_info)  # pytype: disable=wrong-arg-types
+
+        state = State(
+            pipeline_state=pipeline_state,
+            obs=observation,
+            reward=reward,
+            done=done,
+            metrics=metrics,
+            info=state_info,
+        )
         return state
 
     def step(self, state: State, action: jax.Array) -> State:  # pytype: disable=signature-mismatch
@@ -255,7 +246,11 @@ class BarkourEnv(PipelineEnv):
         x, xd = pipeline_state.x, pipeline_state.xd
 
         # observation data
-        obs = self._get_obs(pipeline_state, state.info, state.obs)
+        observation = self.get_observation(
+            pipeline_state,
+            state.info,
+            state.obs,
+        )
         joint_angles = pipeline_state.q[7:]
         joint_vel = pipeline_state.qd[6:]
 
@@ -278,48 +273,49 @@ class BarkourEnv(PipelineEnv):
 
         # reward
         rewards = {
-            'tracking_lin_vel': (
+            'tracking_linear_velocity': (
                 self._reward_tracking_lin_vel(state.info['command'], x, xd)
             ),
-            'tracking_ang_vel': (
+            'tracking_angular_velocity': (
                 self._reward_tracking_ang_vel(state.info['command'], x, xd)
             ),
-            'lin_vel_z': self._reward_lin_vel_z(xd),
-            'ang_vel_xy': self._reward_ang_vel_xy(xd),
-            'orientation': self._reward_orientation(x),
-            # pytype: disable=attribute-error
-            'torques': self._reward_torques(pipeline_state.qfrc_actuator),
-            'action_rate': self._reward_action_rate(action, state.info['last_act']),
+            'linear_z_velocity': self._reward_lin_vel_z(xd),
+            'angular_xy_velocity': self._reward_ang_vel_xy(xd),
+            'orientation_regularization': self._reward_orientation_regularization(x),
+            'torque': self._reward_torques(pipeline_state.qfrc_actuator[6:]),
+            'mechanical_power': self._mechanical_power(
+                pipeline_state.qfrc_actuator[6:], pipeline_state.qd[6:],
+            ),
+            'action_rate': self._reward_action_rate(action, state.info['previous_action']),
             'stand_still': self._reward_stand_still(
                 state.info['command'], joint_angles,
             ),
-            'feet_air_time': self._reward_feet_air_time(
+            'foot_slip': self._reward_foot_slip(
+                pipeline_state, contact_filt_cm,
+            ),
+            'foot_acceleration': self._reward_foot_acceleration(
+                pipeline_state, state.info['previous_foot_velocity'],
+            ),
+            'stride_period': self._reward_stride_period(
                 state.info['feet_air_time'],
                 first_contact,
                 state.info['command'],
             ),
-            'foot_slip': self._reward_foot_slip(pipeline_state, contact_filt_cm),
-            'termination': self._reward_termination(done, state.info['step']),
+            'termination': jnp.float64(
+                self._reward_termination(done, state.info['step'])
+            ) if jax.config.x64_enabled else jnp.float32(
+                self._reward_termination(done, state.info['step'])
+            ),
         }
         rewards = {
-            k: v * self.reward_config.rewards.scales[k] for k, v in rewards.items()
+            k: v * self.reward_config[k] for k, v in rewards.items()
         }
         reward = jnp.clip(sum(rewards.values()) * self.dt, 0.0, 10000.0)
 
-        # If contact triggered:
-        # impact_window = 5
-        # impact_counter = first_contact * impact_counter
-        # impact_filter = first_contact * (impact_counter < impact_window)
-        # impact_counter += 1
-        # impact_mask = (1 - impact_filter)
-        # filtered_rewards = {
-        #     k: v * self.reward_config.rewards.scales[k] for k, v in filtered_rewards.items()
-        # }
-        # filtered_reward = jnp.clip(sum(filtered_rewards.values()) * self.dt, 0.0, 10000.0)
-
         # state management
         state.info['kick'] = kick
-        state.info['last_act'] = action
+        state.info['previous_action'] = action
+        state.info['previous_foot_velocity'] = self._foot_velocity(pipeline_state)
         state.info['last_vel'] = joint_vel
         state.info['feet_air_time'] *= ~contact_filt_mm
         state.info['last_contact'] = contact
@@ -347,36 +343,87 @@ class BarkourEnv(PipelineEnv):
         done = jnp.float64(done)
 
         state = state.replace(
-            pipeline_state=pipeline_state, obs=obs, reward=reward, done=done
+            pipeline_state=pipeline_state,
+            obs=observation,
+            reward=reward,
+            done=done,
         )
         return state
 
-    def _get_obs(
+    # def get_observation(
+    #     self,
+    #     pipeline_state: base.State,
+    #     state_info: dict[str, Any],
+    #     observation_history: jax.Array,
+    # ) -> jax.Array:
+    #     inv_torso_rot = math.quat_inv(pipeline_state.x.rot[0])
+    #     local_rpyrate = math.rotate(pipeline_state.xd.ang[0], inv_torso_rot)
+
+    #     obs = jnp.concatenate([
+    #         jnp.array([local_rpyrate[2]]) * 0.25,
+    #         math.rotate(jnp.array([0, 0, -1]), inv_torso_rot),
+    #         state_info['command'] * jnp.array([2.0, 2.0, 0.25]),
+    #         pipeline_state.q[7:] - self._default_pose,
+    #         state_info['previous_action'],
+    #     ])
+
+    #     # clip, noise
+    #     obs = jnp.clip(obs, -100.0, 100.0) + self._obs_noise * jax.random.uniform(
+    #         state_info['rng'], obs.shape, minval=-1, maxval=1
+    #     )
+    #     # stack observations through time
+    #     obs = jnp.roll(obs_history, obs.size).at[:obs.size].set(obs)
+
+    #     return obs
+
+    def get_observation(
         self,
         pipeline_state: base.State,
         state_info: dict[str, Any],
-        obs_history: jax.Array,
+        observation_history: jax.Array,
     ) -> jax.Array:
-        inv_torso_rot = math.quat_inv(pipeline_state.x.rot[0])
-        local_rpyrate = math.rotate(pipeline_state.xd.ang[0], inv_torso_rot)
+        """
+            Observation: [
+                yaw_rate,
+                projected_gravity,
+                command,
+                relative_motor_positions,
+                previous_action,
+            ]
+        """
+        inverse_trunk_rotation = math.quat_inv(pipeline_state.x.rot[0])
+        body_frame_yaw_rate = math.rotate(
+            pipeline_state.xd.ang[0], inverse_trunk_rotation,
+        )[2]
+        projected_gravity = math.rotate(
+            jnp.array([0, 0, -1]), inverse_trunk_rotation,
+        )
 
-        obs = jnp.concatenate([
-            jnp.array([local_rpyrate[2]]) * 0.25,                 # yaw rate
-            # projected gravity
-            math.rotate(jnp.array([0, 0, -1]), inv_torso_rot),
-            state_info['command'] * jnp.array([2.0, 2.0, 0.25]),  # command
-            pipeline_state.q[7:] - self._default_pose,           # motor angles
-            state_info['last_act'],                              # last action
+        observation = jnp.concatenate([
+            jnp.array([body_frame_yaw_rate]),
+            projected_gravity,
+            state_info['command'],
+            pipeline_state.q[7:] - self._default_pose,
+            state_info['previous_action'],
         ])
 
         # clip, noise
-        obs = jnp.clip(obs, -100.0, 100.0) + self._obs_noise * jax.random.uniform(
-            state_info['rng'], obs.shape, minval=-1, maxval=1
+        observation = (
+            jnp.clip(observation, -100.0, 100.0)
+            + self._obs_noise
+            * jax.random.uniform(
+                state_info['rng'],
+                observation.shape,
+                minval=-1,
+                maxval=1,
+            )
         )
         # stack observations through time
-        obs = jnp.roll(obs_history, obs.size).at[:obs.size].set(obs)
+        observation = jnp.roll(
+            observation_history, observation.size
+        ).at[:observation.size].set(observation)
 
-        return obs
+        return observation
 
     # ------------ reward functions----------------
     def _reward_lin_vel_z(self, xd: Motion) -> jax.Array:
@@ -387,7 +434,7 @@ class BarkourEnv(PipelineEnv):
         # Penalize xy axes base angular velocity
         return jnp.sum(jnp.square(xd.ang[0, :2]))
 
-    def _reward_orientation(self, x: Transform) -> jax.Array:
+    def _reward_orientation_regularization(self, x: Transform) -> jax.Array:
         # Penalize non flat base orientation
         up = jnp.array([0.0, 0.0, 1.0])
         rot_up = math.rotate(up, x.rot[0])
@@ -397,11 +444,15 @@ class BarkourEnv(PipelineEnv):
         # Penalize torques
         return jnp.sqrt(jnp.sum(jnp.square(torques))) + jnp.sum(jnp.abs(torques))
 
+    def _mechanical_power(self, torques: jax.Array, omega: jax.Array) -> jax.Array:
+        # Calculate mechanical power
+        return jnp.sum(jnp.square(torques * omega))
+
     def _reward_action_rate(
-        self, act: jax.Array, last_act: jax.Array
+        self, act: jax.Array, previous_action: jax.Array
     ) -> jax.Array:
         # Penalize changes in actions
-        return jnp.sum(jnp.square(act - last_act))
+        return jnp.sum(jnp.square(act - previous_action))
 
     def _reward_tracking_lin_vel(
         self, commands: jax.Array, x: Transform, xd: Motion
@@ -410,7 +461,7 @@ class BarkourEnv(PipelineEnv):
         local_vel = math.rotate(xd.vel[0], math.quat_inv(x.rot[0]))
         lin_vel_error = jnp.sum(jnp.square(commands[:2] - local_vel[:2]))
         lin_vel_reward = jnp.exp(
-            -lin_vel_error / self.reward_config.rewards.tracking_sigma
+            -lin_vel_error / self.kernel_sigma
         )
         return lin_vel_reward
 
@@ -420,13 +471,13 @@ class BarkourEnv(PipelineEnv):
         # Tracking of angular velocity commands (yaw)
         base_ang_vel = math.rotate(xd.ang[0], math.quat_inv(x.rot[0]))
         ang_vel_error = jnp.square(commands[2] - base_ang_vel[2])
-        return jnp.exp(-ang_vel_error / self.reward_config.rewards.tracking_sigma)
+        return jnp.exp(-ang_vel_error / self.kernel_sigma)
 
-    def _reward_feet_air_time(
+    def _reward_stride_period(
         self, air_time: jax.Array, first_contact: jax.Array, commands: jax.Array
     ) -> jax.Array:
         # Reward air time.
-        rew_air_time = jnp.sum((air_time - 0.1) * first_contact)
+        rew_air_time = jnp.sum((air_time - self.target_stride_period) * first_contact)
         rew_air_time *= (
             math.normalize(commands[:2])[1] > 0.05
         )  # no reward for zero command
@@ -457,8 +508,33 @@ class BarkourEnv(PipelineEnv):
         # Penalize large feet velocity for feet that are in contact with the ground.
         return jnp.sum(jnp.square(foot_vel[:, :2]) * contact_filt.reshape((-1, 1)))
 
+    def _reward_foot_acceleration(
+        self, pipeline_state: base.State, previous_foot_velocities: jax.Array,
+    ) -> jax.Array:
+        # Penalize large foot accelerations
+        pos = pipeline_state.site_xpos[self._feet_site_id]  # feet position
+        feet_offset = pos - pipeline_state.xpos[self._lower_leg_body_id]
+        # pytype: enable=attribute-error
+        offset = base.Transform.create(pos=feet_offset)
+        foot_indices = self._lower_leg_body_id - 1  # we got rid of the world body
+        foot_velocities = jnp.linalg.norm(offset.vmap().do(pipeline_state.xd.take(foot_indices)).vel, axis=-1)
+        return jnp.sum(jnp.square(foot_velocities - previous_foot_velocities))
+
     def _reward_termination(self, done: jax.Array, step: jax.Array) -> jax.Array:
         return done & (step < 500)
+    
+    # Foot Velocity Calculations:
+    def _foot_velocity(
+        self, pipeline_state: base.State,
+    ) -> tuple[jax.Array, jax.Array]:
+        # Calculate feet velocities:
+        pos = pipeline_state.site_xpos[self._feet_site_id]  # feet position
+        feet_offset = pos - pipeline_state.xpos[self._lower_leg_body_id]
+        # pytype: enable=attribute-error
+        offset = base.Transform.create(pos=feet_offset)
+        foot_indices = self._lower_leg_body_id - 1  # we got rid of the world body
+        foot_velocities = jnp.linalg.norm(offset.vmap().do(pipeline_state.xd.take(foot_indices)).vel, axis=-1)
+        return foot_velocities
 
     def render(
         self, trajectory: List[base.State], camera: str | None = None
@@ -466,7 +542,7 @@ class BarkourEnv(PipelineEnv):
         camera = camera or 'track'
         return super().render(trajectory, camera=camera)
 
-    def get_observation(
+    def np_get_observation(
         self,
         mj_data: mujoco.MjData,
         command: np.ndarray,

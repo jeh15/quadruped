@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 
 from brax.io import html
 
-from src.envs import barkour
+from src.envs import barkour_gait
 from src.algorithms.ppo.load_utilities import load_policy
 
 jax.config.update("jax_enable_x64", True)
@@ -34,7 +34,7 @@ class Feet(Enum):
 
 def main(argv=None):
     # Load from Env:
-    env = barkour.BarkourEnv(kick_vel=0.0)
+    env = barkour_gait.BarkourEnv(kick_vel=0.0)
     reset_fn = jax.jit(env.reset)
     step_fn = jax.jit(env.step)
 
@@ -51,7 +51,7 @@ def main(argv=None):
     key = jax.random.key(0)
 
     # Sweep through velocities:
-    velocities = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 2.5]
+    velocities = [0.5, 0.75, 1.0, 1.25]
     gaits = []
     average_velocity = []
     cost_of_transport = []
@@ -67,6 +67,7 @@ def main(argv=None):
         contacts = []
         forward_velocity = []
         torque_history = []
+        motor_qd = []
         for i in range(num_steps):
             # Stop Command Sampling:
             state.info['command'] = jnp.array([velocity, 0.0, 0.0])
@@ -74,7 +75,8 @@ def main(argv=None):
             action, _ = inference_fn(state.obs, subkey)
             state = step_fn(state, action)
             states.append(state.pipeline_state)
-            torque_history.append(state.pipeline_state.qfrc_actuator)
+            torque_history.append(state.pipeline_state.qfrc_actuator[6:])
+            motor_qd.append(state.pipeline_state.qd[6:])
 
             # Get Steady State:
             steady_state_condition = (
@@ -88,6 +90,7 @@ def main(argv=None):
                 )
 
         torques = np.asarray(torque_history)
+        motor_qd = np.asarray(motor_qd)
         contacts = np.asarray(contacts)
         forward_velocity = np.asarray(forward_velocity)
         average_velocity.append(np.mean(forward_velocity))
@@ -95,8 +98,11 @@ def main(argv=None):
 
         # Calculate COT:
         power = np.sum(np.trapz(torques ** 2, dx=env.step_dt, axis=0), axis=-1)
-        time = env.step_dt * num_steps
-        cot = (power * time) / (jnp.sum(env.sys.body_mass) * jnp.linalg.norm(env.sys.gravity) * state.metrics['total_dist'])
+        cot = power / (jnp.sum(env.sys.body_mass) * jnp.linalg.norm(env.sys.gravity) * state.metrics['total_dist'])
+
+        # Work:
+        # work = np.sum(np.trapz(np.maximum(torques * motor_qd, 0), dx=env.step_dt, axis=0), axis=-1)
+        # cot = (work) / (jnp.sum(env.sys.body_mass) * jnp.linalg.norm(env.sys.gravity) * state.metrics['total_dist'])
         cost_of_transport.append(cot)
 
         gait = {}
@@ -235,7 +241,6 @@ def main(argv=None):
     axs.scatter(average_velocities, cot, color='b')
     axs.set_ylabel('Cost of Transport')
     axs.set_xlabel('Average Forward Velocity (m/s)')
-    axs.set_ylim(50, 200)
     axs.set_xlim(0.0, 1.5)
     fig.suptitle('Cost of Transport vs. Average Forward Velocity')
 

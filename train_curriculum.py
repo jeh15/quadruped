@@ -72,8 +72,8 @@ def main(argv=None):
     network_metadata = checkpoint_utilities.network_metadata(
         policy_layer_size=128,
         value_layer_size=256,
-        policy_depth=6,
-        value_depth=7,
+        policy_depth=4,
+        value_depth=5,
         activation='nn.swish',
         kernel_init='jax.nn.initializers.lecun_uniform()',
         action_distribution='ParametricDistribution(distribution=distrax.Normal, bijector=distrax.Tanh())',

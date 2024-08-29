@@ -115,8 +115,7 @@ def main(argv=None):
 
         # Calculate COT:
         power = np.sum(np.trapz(torques ** 2, dx=env.step_dt, axis=0), axis=-1)
-        time = env.step_dt * num_steps
-        cot = (power * time) / (jnp.sum(env.sys.body_mass) * jnp.linalg.norm(env.sys.gravity) * state.metrics['total_dist'])
+        cot = power / (jnp.sum(env.sys.body_mass) * jnp.linalg.norm(env.sys.gravity) * state.metrics['total_dist'])
         cost_of_transport.append(cot)
 
         gait = {}

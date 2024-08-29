@@ -1,4 +1,4 @@
-from absl import app
+from absl import app, flags
 import os
 import functools
 
@@ -10,7 +10,7 @@ import optax
 import wandb
 import orbax.checkpoint as ocp
 
-from src.envs import barkour
+from src.envs import barkour_gait
 from src.algorithms.ppo import network_utilities as ppo_networks
 from src.algorithms.ppo.loss_utilities import loss_function
 from src.distribution_utilities import ParametricDistribution
@@ -21,10 +21,47 @@ jax.config.update("jax_enable_x64", True)
 
 wandb.require('core')
 
+FLAGS = flags.FLAGS
+flags.DEFINE_string(
+    'checkpoint_name', None, 'Desired checkpoint folder name to load.', short_name='c',
+)
+flags.DEFINE_integer(
+    'checkpoint_iteration', None, 'Desired checkpoint iteration.', short_name='i',
+)
+flags.DEFINE_bool(
+    'overwrite_metadata', False, 'Overwrite metadata from restored checkpoint.', short_name='o',
+)
+flags.DEFINE_string(
+    'tag', '', 'Tag for wandb run.', short_name='t',
+)
+flags.DEFINE_bool(
+    'reinitialize_policy_std', False, 'Reinitialize Policy Output Layer parameters that correlate to Action STD.', short_name='r',
+)
+
 
 def main(argv=None):
     # Config:
-    reward_config = barkour.get_config()
+    reward_config = barkour_gait.RewardConfig(
+        tracking_linear_velocity=1.5,
+        tracking_angular_velocity=0.8,
+        # Regularization Terms:
+        orientation_regularization=-5.0,
+        linear_z_velocity=-2.0,
+        angular_xy_velocity=-0.05,
+        torque=-2e-4,
+        action_rate=-0.01,
+        stand_still=-0.5,
+        termination=-1.0,
+        foot_slip=-0.1,
+        # IMSI Gait Ideas:
+        foot_acceleration=-0.0,
+        stride_period=1.0,
+        target_stride_period=0.5,
+        mechanical_power=0.0,
+        # Hyperparameter for exponential kernel:
+        kernel_sigma=0.25,
+        kernel_alpha=1.0,
+    )
 
     # Metadata:
     network_metadata = checkpoint_utilities.network_metadata(
@@ -45,7 +82,7 @@ def main(argv=None):
         normalize_advantages=True,
     )
     training_metadata = checkpoint_utilities.training_metadata(
-        num_epochs=25,
+        num_epochs=50,
         num_training_steps=20,
         episode_length=1000,
         num_policy_steps=25,
@@ -67,6 +104,7 @@ def main(argv=None):
     run = wandb.init(
         project='barkour',
         group='ppo',
+        tags=[FLAGS.tag],
         config={
             'reward_config': reward_config,
             'network_metadata': network_metadata,
@@ -76,7 +114,7 @@ def main(argv=None):
     )
 
     # Initialize Functions with Params:
-    randomization_fn = barkour.domain_randomize
+    randomization_fn = barkour_gait.domain_randomize
     make_networks_factory = functools.partial(
         ppo_networks.make_ppo_networks,
         policy_layer_sizes=(network_metadata.policy_layer_size, ) * network_metadata.policy_depth,
@@ -97,8 +135,8 @@ def main(argv=None):
         gae_lambda=loss_metadata.gae_lambda,
         normalize_advantages=loss_metadata.normalize_advantages,
     )
-    env = barkour.BarkourEnv()
-    eval_env = barkour.BarkourEnv()
+    env = barkour_gait.BarkourEnv(config=reward_config)
+    eval_env = barkour_gait.BarkourEnv(config=reward_config)
 
     def progress_fn(iteration, num_steps, metrics):
         print(

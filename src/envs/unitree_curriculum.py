@@ -2,7 +2,6 @@ from typing import Any
 from absl import app
 import os
 
-import flax.serialization
 import jax
 import jax.numpy as jnp
 import numpy as np
