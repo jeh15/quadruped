@@ -55,7 +55,7 @@ def main(argv=None):
         foot_slip=-0.1,
         # IMSI Gait Ideas:
         foot_acceleration=-0.0,
-        stride_period=1.0,
+        stride_period=2.0,
         target_stride_period=0.5,
         mechanical_power=0.0,
         # Hyperparameter for exponential kernel:

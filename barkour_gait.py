@@ -51,7 +51,7 @@ def main(argv=None):
     key = jax.random.key(0)
 
     # Sweep through velocities:
-    velocities = [0.5, 0.75, 1.0, 1.25]
+    velocities = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5]
     gaits = []
     average_velocity = []
     cost_of_transport = []
