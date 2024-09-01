@@ -3,6 +3,7 @@ import os
 import functools
 
 import jax
+import jax.numpy as jnp
 import flax.linen as nn
 import distrax
 import optax
@@ -16,6 +17,7 @@ from src.algorithms.ppo.loss_utilities import loss_function
 from src.distribution_utilities import ParametricDistribution
 from src.algorithms.ppo.train import train
 from src.algorithms.ppo import checkpoint_utilities
+from src.algorithms.ppo.load_utilities import load_checkpoint
 
 jax.config.update("jax_enable_x64", True)
 
@@ -46,7 +48,7 @@ def main(argv=None):
         tracking_angular_velocity=0.8,
         # Regularization Terms:
         orientation_regularization=-5.0,
-        linear_z_velocity=-2.0,
+        linear_z_velocity=-0.1,
         angular_xy_velocity=-0.05,
         torque=-2e-4,
         action_rate=-0.01,
@@ -55,8 +57,8 @@ def main(argv=None):
         foot_slip=-0.1,
         # IMSI Gait Ideas:
         foot_acceleration=-0.0,
-        stride_period=2.0,
-        target_stride_period=0.5,
+        stride_period=4.0,
+        target_stride_period=0.1,
         mechanical_power=0.0,
         # Hyperparameter for exponential kernel:
         kernel_sigma=0.25,
@@ -137,6 +139,57 @@ def main(argv=None):
     )
     env = barkour_gait.BarkourEnv(config=reward_config)
     eval_env = barkour_gait.BarkourEnv(config=reward_config)
+
+    restored_checkpoint = None
+    if FLAGS.checkpoint_name is not None:
+        restored_checkpoint, metadata = load_checkpoint(
+            checkpoint_name=FLAGS.checkpoint_name,
+            environment=env,
+            restore_iteration=FLAGS.checkpoint_iteration,
+        )
+
+        if FLAGS.reinitialize_policy_std:
+            # Reset Policy std params to enable exploration:
+            key = jax.random.PRNGKey(42)
+            key, bias_key, kernel_key = jax.random.split(key, num=3)
+            policy_params = restored_checkpoint.train_state.params.policy_params
+            output_params = policy_params['params'][f'dense_{metadata.network_metadata.policy_depth}']
+            params = jax.tree.map(lambda x: jnp.split(x, 2, axis=-1), output_params)
+            bias_shape = jnp.expand_dims(params['bias'][-1], axis=0).shape
+            kernel_shape = params['kernel'][-1].shape
+            bias = jnp.concatenate(
+                [
+                    params['bias'][0],
+                    jax.nn.initializers.lecun_uniform()(
+                        key=bias_key, shape=bias_shape,
+                    ).flatten(),
+                ],
+                axis=-1,
+                dtype=jnp.float32,
+            )
+            kernel = jnp.concatenate(
+                [
+                    params['kernel'][0],
+                    jax.nn.initializers.lecun_uniform()(
+                        key=kernel_key, shape=kernel_shape,
+                    ),
+                ],
+                axis=-1,
+                dtype=jnp.float32,
+            )
+            output_layer = {
+                'bias': bias,
+                'kernel': kernel,
+            }
+            policy_params['params'].update({f'dense_{metadata.network_metadata.policy_depth}': output_layer})
+            restored_checkpoint.train_state.params.replace(policy_params=policy_params)
+
+        if FLAGS.overwrite_metadata:
+            run.config.update({
+                'network_metadata': metadata.network_metadata,
+                'loss_metadata': metadata.loss_metadata,
+                'training_metadata': metadata.training_metadata,
+            })
 
     def progress_fn(iteration, num_steps, metrics):
         print(
