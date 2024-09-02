@@ -357,32 +357,6 @@ class BarkourEnv(PipelineEnv):
         )
         return state
 
-    # def get_observation(
-    #     self,
-    #     pipeline_state: base.State,
-    #     state_info: dict[str, Any],
-    #     observation_history: jax.Array,
-    # ) -> jax.Array:
-    #     inv_torso_rot = math.quat_inv(pipeline_state.x.rot[0])
-    #     local_rpyrate = math.rotate(pipeline_state.xd.ang[0], inv_torso_rot)
-
-    #     obs = jnp.concatenate([
-    #         jnp.array([local_rpyrate[2]]) * 0.25,
-    #         math.rotate(jnp.array([0, 0, -1]), inv_torso_rot),
-    #         state_info['command'] * jnp.array([2.0, 2.0, 0.25]),
-    #         pipeline_state.q[7:] - self._default_pose,
-    #         state_info['previous_action'],
-    #     ])
-
-    #     # clip, noise
-    #     obs = jnp.clip(obs, -100.0, 100.0) + self._obs_noise * jax.random.uniform(
-    #         state_info['rng'], obs.shape, minval=-1, maxval=1
-    #     )
-    #     # stack observations through time
-    #     obs = jnp.roll(obs_history, obs.size).at[:obs.size].set(obs)
-
-    #     return obs
-
     def get_observation(
         self,
         pipeline_state: base.State,
@@ -483,11 +457,19 @@ class BarkourEnv(PipelineEnv):
     def _reward_stride_period(
         self, air_time: jax.Array, first_contact: jax.Array, commands: jax.Array
     ) -> jax.Array:
-        # Reward air time.
+        # Stride Period Reward:
         rew_air_time = jnp.sum((air_time - self.target_stride_period) * first_contact)
         rew_air_time *= (
             math.normalize(commands[:2])[1] > 0.05
         )  # no reward for zero command
+
+        # # Stride Frequency Reward:
+        # stride_frequency = 1.0 / (air_time + 1e-6)
+        # stride_frequency = jnp.clip(
+        #     stride_frequency, 0.0, 10.0,
+        # ) * first_contact
+        # stride_frequency_reward = stride_frequency - 2.25
+
         return rew_air_time
 
     def _reward_stand_still(

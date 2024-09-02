@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 
 from brax.io import html
 
-from src.envs import unitree_curriculum as unitree_gait_q
+from src.envs import unitree_gait_q
 from src.algorithms.ppo.load_utilities import load_policy
 
 jax.config.update("jax_enable_x64", True)
@@ -214,21 +214,21 @@ def main(argv=None):
         plt.savefig(f'gait_velocity_{velocity}.svg')
         plt.savefig(f'gait_velocity_{velocity}.png')
 
-        # Generate HTML:
-        html_string = html.render(
-            sys=env.sys.tree_replace({'opt.timestep': env.step_dt}),
-            states=states,
-            height="100vh",
-            colab=False,
-        )
+        # # Generate HTML:
+        # html_string = html.render(
+        #     sys=env.sys.tree_replace({'opt.timestep': env.step_dt}),
+        #     states=states,
+        #     height="100vh",
+        #     colab=False,
+        # )
 
-        html_path = os.path.join(
-            os.path.dirname(__file__),
-            f"visualization/visualization_{velocity}.html",
-        )
+        # html_path = os.path.join(
+        #     os.path.dirname(__file__),
+        #     f"visualization/visualization_{velocity}.html",
+        # )
 
-        with open(html_path, "w") as f:
-            f.writelines(html_string)
+        # with open(html_path, "w") as f:
+        #     f.writelines(html_string)
 
     # Duty Factor Plot:
     fig, axs = plt.subplots(1, 1)

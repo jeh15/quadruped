@@ -51,7 +51,8 @@ def main(argv=None):
     key = jax.random.key(0)
 
     # Sweep through velocities:
-    velocities = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5]
+    # velocities = [0.25, 0.5, 0.75, 1.0, 1.25, 1.5]
+    velocities = np.linspace(0.25, 1.5, 20)
     gaits = []
     average_velocity = []
     cost_of_transport = []
@@ -202,20 +203,20 @@ def main(argv=None):
         plt.savefig(f'gait_velocity_{velocity}.png')
 
         # Generate HTML:
-        html_string = html.render(
-            sys=env.sys.tree_replace({'opt.timestep': env.step_dt}),
-            states=states,
-            height="100vh",
-            colab=False,
-        )
+        # html_string = html.render(
+        #     sys=env.sys.tree_replace({'opt.timestep': env.step_dt}),
+        #     states=states,
+        #     height="100vh",
+        #     colab=False,
+        # )
 
-        html_path = os.path.join(
-            os.path.dirname(__file__),
-            f"visualization/visualization_{velocity}.html",
-        )
+        # html_path = os.path.join(
+        #     os.path.dirname(__file__),
+        #     f"visualization/visualization_{velocity}.html",
+        # )
 
-        with open(html_path, "w") as f:
-            f.writelines(html_string)
+        # with open(html_path, "w") as f:
+        #     f.writelines(html_string)
 
     # Duty Factor Plot:
     fig, axs = plt.subplots(1, 1)
@@ -262,6 +263,7 @@ def main(argv=None):
     axs.set_ylabel('Average Stride Frequency (Hz)')
     axs.set_xlabel('Average Forward Velocity (m/s)')
     axs.set_xlim(0.0, 1.5)
+    # axs.set_xlim(0.9, 1.6)
     fig.suptitle('Average Stride Frequency vs. Average Forward Velocity')
     axs.legend()
 

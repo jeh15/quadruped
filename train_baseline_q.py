@@ -56,7 +56,7 @@ def main(argv=None):
         termination=-1.0,
         foot_slip=-0.1,
         # IMSI Gait Ideas:
-        foot_acceleration=-1.0e-2,
+        foot_acceleration=0.0,
         stride_period=0.2,
         target_stride_period=0.1,
         # Hyperparameter for exponential kernel:
@@ -83,7 +83,7 @@ def main(argv=None):
         normalize_advantages=True,
     )
     training_metadata = checkpoint_utilities.training_metadata(
-        num_epochs=25,
+        num_epochs=50,
         num_training_steps=20,
         episode_length=1000,
         num_policy_steps=25,
@@ -137,8 +137,8 @@ def main(argv=None):
         gae_lambda=loss_metadata.gae_lambda,
         normalize_advantages=loss_metadata.normalize_advantages,
     )
-    env = unitree_gait.UnitreeGo1Env(config=reward_config, kick_vel=0.0)
-    eval_env = unitree_gait.UnitreeGo1Env(config=reward_config, kick_vel=0.0)
+    env = unitree_gait.UnitreeGo1Env(config=reward_config)
+    eval_env = unitree_gait.UnitreeGo1Env(config=reward_config)
 
     restored_checkpoint = None
     if FLAGS.checkpoint_name is not None:
