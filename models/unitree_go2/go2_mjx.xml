@@ -7,7 +7,7 @@
 
   <default>
     <default class="go2">
-      <geom friction="0.6" margin="0.001" contype="0" conaffinity="0" type="mesh"/>
+      <geom friction="0.6" contype="0" conaffinity="0" type="mesh"/>
       <joint axis="0 1 0" damping="2" armature="0.01"/>
       <general forcerange="-23.7 23.7" biastype="affine" gainprm="50 0 0" biasprm="0 -50 -0.5"/>
       <default class="go2/abduction">
@@ -45,7 +45,6 @@
     <material name="black" rgba="0 0 0 1"/>
     <material name="white" rgba="1 1 1 1"/>
     <material name="gray" rgba="0.671705 0.692426 0.774270 1"/>
-
     <mesh file="base_0.obj"/>
     <mesh file="base_1.obj"/>
     <mesh file="base_2.obj"/>
@@ -252,8 +251,4 @@
     <framelinvel name="frame_vel" objtype="site" objname="imu"/>
   </sensor>
 
-  <keyframe>
-    <key name="home" qpos="0 0 0.285 1 0 0 0 0 0.9 -1.8 0 0.9 -1.8 0 0.9 -1.8 0 0.9 -1.8"
-      ctrl="0 0.9 -1.8 0 0.9 -1.8 0 0.9 -1.8 0 0.9 -1.8"/>
-  </keyframe>
 </mujoco>

@@ -498,7 +498,7 @@ envs.register_environment('unitree_go2', UnitreeGo2Env)
 
 
 def main(argv=None):
-    env = UnitreeGo2Env()
+    env = UnitreeGo2Env(filename='unitree_go2/scene_barkour_hfield_mjx.xml')
     rng = jax.random.PRNGKey(0)
 
     reset_fn = jax.jit(env.reset)
