@@ -3,10 +3,10 @@ import time
 from typing import Any, Callable, Optional, Tuple
 
 from absl import logging
-import flax.struct
 import jax
 import jax.numpy as jnp
 import flax
+import flax.struct
 import optax
 import orbax.checkpoint as ocp
 import numpy as np
@@ -73,7 +73,9 @@ def train(
         Callable[[base.System, jnp.ndarray], Tuple[base.System, base.System]]
     ] = None,
     restored_checkpoint: Optional[RestoredCheckpoint] = None,
-    wandb: Optional[Any] = None,
+    wandb_run: Optional[Any] = None,
+    render_environment: Optional[envs.Env] = None,
+    render_interval: int = 1,
 ):
     assert batch_size * num_minibatches % num_envs == 0
     training_start_time = time.time()
@@ -96,8 +98,7 @@ def train(
     )
 
     # Generate Random Key:
-    # key = jax.random.key(seed)
-    key = jax.random.PRNGKey(seed)
+    key = jax.random.key(seed)
     global_key, local_key = jax.random.split(key)
     del key
     local_key = jax.random.fold_in(local_key, process_id)
@@ -364,6 +365,34 @@ def train(
         key=eval_key,
     )
 
+    if render_environment is not None:
+        render_randomization_fn = None
+        if randomization_fn is not None:
+            render_randomization_key = jax.random.split(
+                eval_key,
+            )
+            render_randomization_fn = functools.partial(
+                randomization_fn,
+                rng=render_randomization_key,
+            )
+        # TODO(jeh15): Fix single environment domain randomization:
+        render_env = wrap(
+            env=render_environment,
+            episode_length=episode_length,
+            action_repeat=action_repeat,
+            randomization_fn=None,
+        )
+        renderer = metrics_utilities.Renderer(
+            env=render_env,
+            policy_generator=functools.partial(
+                make_policy, deterministic=deterministic_evaluation,
+            ),
+            episode_length=episode_length,
+            action_repeat=action_repeat,
+            filepath=wandb_run.name,
+            key=eval_key,
+        )
+
     # Initialize Metrics:
     metrics = {}
     if process_id == 0 and num_evaluations != 0:
@@ -375,9 +404,13 @@ def train(
             policy_params=params,
             training_metrics={},
         )
+
+        if render_environment is not None:
+            renderer.render(policy_params=params, iteration=0)
+
         logging.info(metrics)
-        if wandb is not None:
-            wandb.log(metrics)
+        if wandb_run is not None:
+            wandb_run.log(metrics)
         progress_fn(0, 0, metrics)
         if checkpoint_fn is not None:
             _train_state = unpmap(train_state)
@@ -421,9 +454,17 @@ def train(
                 policy_params=params,
                 training_metrics=training_metrics,
             )
+
+            if render_environment is not None:
+                if epoch_iteration % render_interval == 0:
+                    renderer.render(
+                        policy_params=params,
+                        iteration=epoch_iteration+1,
+                    )
+
             logging.info(metrics)
-            if wandb is not None:
-                wandb.log(metrics)
+            if wandb_run is not None:
+                wandb_run.log(metrics)
             progress_fn(epoch_iteration+1, current_step, metrics)
             # Save Checkpoint:
             if checkpoint_fn is not None:
