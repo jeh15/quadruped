@@ -89,7 +89,7 @@ def main(argv=None):
         normalize_advantages=True,
     )
     training_metadata = checkpoint_utilities.training_metadata(
-        num_epochs=35,
+        num_epochs=100,
         num_training_steps=20,
         episode_length=1000,
         num_policy_steps=25,
@@ -144,6 +144,7 @@ def main(argv=None):
     )
     env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_barkour_hfield_mjx.xml', config=reward_config)
     eval_env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_barkour_hfield_mjx.xml', config=reward_config)
+    render_env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_barkour_hfield_mjx.xml', config=reward_config)
 
     restored_checkpoint = None
     if FLAGS.checkpoint_name is not None:
@@ -259,7 +260,9 @@ def main(argv=None):
         progress_fn=progress_fn,
         randomization_fn=randomization_fn,
         checkpoint_fn=checkpoint_fn,
-        wandb=run,
+        wandb_run=run,
+        render_environment=render_env,
+        render_interval=5,
     )
 
     policy_generator, params, metrics = train_fn(

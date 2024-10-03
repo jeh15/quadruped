@@ -52,6 +52,10 @@ def main(argv=None):
         action, _ = inference_fn(state.obs, subkey)
         state = step_fn(state, action)
         states.append(state.pipeline_state)
+        # if jnp.linalg.norm(state.pipeline_state.q[:2]) > 10.0:
+        #     pipeline_state = state.pipeline_state
+        #     pipeline_state = pipeline_state.replace(q=pipeline_state.q.at[:2].set(0.0))
+        #     state = state.replace(pipeline_state=pipeline_state)
 
     # Generate HTML:
     html_string = html.render(

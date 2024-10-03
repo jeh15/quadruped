@@ -35,14 +35,14 @@ _PMAP_AXIS_NAME = 'i'
 
 
 def unpmap(v):
-    return jax.tree_util.tree_map(lambda x: x[0], v)
+    return jax.tree.map(lambda x: x[0], v)
 
 
 def strip_weak_type(pytree):
     def f(leaf):
         leaf = jnp.asarray(leaf)
         return leaf.astype(leaf.dtype)
-    return jax.tree_util.tree_map(f, pytree)
+    return jax.tree.map(f, pytree)
 
 
 def train(
@@ -98,7 +98,7 @@ def train(
     )
 
     # Generate Random Key:
-    key = jax.random.key(seed)
+    key = jax.random.PRNGKey(seed)
     global_key, local_key = jax.random.split(key)
     del key
     local_key = jax.random.fold_in(local_key, process_id)

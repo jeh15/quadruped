@@ -175,7 +175,9 @@ class UnitreeGo2Env(PipelineEnv):
         self.calf_body_idx = np.array(calf_body_idx)
         self.foot_radius = 0.022
         self.history_length = 15
-        self.num_observations = 31
+        # self.num_observations = 31
+        self.num_observations = 35
+
 
     def sample_command(self, rng: jax.Array) -> jax.Array:
         forward_velocity_range = [-0.6, 1.5]
@@ -226,8 +228,12 @@ class UnitreeGo2Env(PipelineEnv):
         observation_history = jnp.zeros(
             self.history_length * self.num_observations,
         )
+        # Observation Tests:
+        # observation = self.get_observation(
+        #     pipeline_state, state_info, observation_history,
+        # )
         observation = self.get_observation(
-            pipeline_state, state_info, observation_history,
+            pipeline_state, state_info['previous_contact'], state_info, observation_history,
         )
 
         reward, done = jnp.zeros(2)
@@ -268,11 +274,11 @@ class UnitreeGo2Env(PipelineEnv):
         x, xd = pipeline_state.x, pipeline_state.xd
 
         # observation data
-        observation = self.get_observation(
-            pipeline_state,
-            state.info,
-            state.obs,
-        )
+        # observation = self.get_observation(
+        #     pipeline_state,
+        #     state.info,
+        #     state.obs,
+        # )
         joint_angles = pipeline_state.q[7:]
         joint_velocities = pipeline_state.qd[6:]
 
@@ -285,6 +291,13 @@ class UnitreeGo2Env(PipelineEnv):
         contact_filt_cm = (foot_contact_z < 3e-2) | state.info['previous_contact']
         first_contact = (state.info['feet_air_time'] > 0) * contact_filt_mm
         state.info['feet_air_time'] += self.dt
+
+        observation = self.get_observation(
+            pipeline_state,
+            contact_filt_mm,
+            state.info,
+            state.obs,
+        )
 
         # done if joint limits are reached or robot is falling
         up = jnp.array([0.0, 0.0, 1.0])
@@ -364,9 +377,61 @@ class UnitreeGo2Env(PipelineEnv):
         )
         return state
 
+    # def get_observation(
+    #     self,
+    #     pipeline_state: base.State,
+    #     state_info: dict[str, Any],
+    #     observation_history: jax.Array,
+    # ) -> jax.Array:
+    #     """
+    #         Observation: [
+    #             yaw_rate,
+    #             projected_gravity,
+    #             command,
+    #             relative_motor_positions,
+    #             previous_action,
+    #         ]
+    #     """
+    #     inverse_trunk_rotation = math.quat_inv(pipeline_state.x.rot[0])
+    #     body_frame_yaw_rate = math.rotate(
+    #         pipeline_state.xd.ang[0], inverse_trunk_rotation,
+    #     )[2]
+    #     projected_gravity = math.rotate(
+    #         jnp.array([0, 0, -1]), inverse_trunk_rotation,
+    #     )
+
+    #     q = pipeline_state.q[7:]
+
+    #     observation = jnp.concatenate([
+    #         jnp.array([body_frame_yaw_rate]),
+    #         projected_gravity,
+    #         state_info['command'],
+    #         q - self.default_pose,
+    #         state_info['previous_action'],
+    #     ])
+
+    #     # clip, noise
+    #     observation = (
+    #         jnp.clip(observation, -100.0, 100.0)
+    #         + self._obs_noise
+    #         * jax.random.uniform(
+    #             state_info['rng'],
+    #             observation.shape,
+    #             minval=-1,
+    #             maxval=1,
+    #         )
+    #     )
+    #     # stack observations through time
+    #     observation = jnp.roll(
+    #         observation_history, observation.size
+    #     ).at[:observation.size].set(observation)
+
+    #     return observation
+
     def get_observation(
         self,
         pipeline_state: base.State,
+        contact: jax.Array,
         state_info: dict[str, Any],
         observation_history: jax.Array,
     ) -> jax.Array:
@@ -395,6 +460,7 @@ class UnitreeGo2Env(PipelineEnv):
             state_info['command'],
             q - self.default_pose,
             state_info['previous_action'],
+            contact,
         ])
 
         # clip, noise
@@ -414,6 +480,7 @@ class UnitreeGo2Env(PipelineEnv):
         ).at[:observation.size].set(observation)
 
         return observation
+
 
     def _reward_vertical_velocity(self, xd: Motion) -> jax.Array:
         # Penalize z axis base linear velocity
