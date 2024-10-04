@@ -175,8 +175,7 @@ class UnitreeGo2Env(PipelineEnv):
         self.calf_body_idx = np.array(calf_body_idx)
         self.foot_radius = 0.022
         self.history_length = 15
-        # self.num_observations = 31
-        self.num_observations = 35
+        self.num_observations = 31
 
 
     def sample_command(self, rng: jax.Array) -> jax.Array:
@@ -229,11 +228,8 @@ class UnitreeGo2Env(PipelineEnv):
             self.history_length * self.num_observations,
         )
         # Observation Tests:
-        # observation = self.get_observation(
-        #     pipeline_state, state_info, observation_history,
-        # )
         observation = self.get_observation(
-            pipeline_state, state_info['previous_contact'], state_info, observation_history,
+            pipeline_state, state_info, observation_history,
         )
 
         reward, done = jnp.zeros(2)
@@ -274,11 +270,11 @@ class UnitreeGo2Env(PipelineEnv):
         x, xd = pipeline_state.x, pipeline_state.xd
 
         # observation data
-        # observation = self.get_observation(
-        #     pipeline_state,
-        #     state.info,
-        #     state.obs,
-        # )
+        observation = self.get_observation(
+            pipeline_state,
+            state.info,
+            state.obs,
+        )
         joint_angles = pipeline_state.q[7:]
         joint_velocities = pipeline_state.qd[6:]
 
@@ -291,13 +287,6 @@ class UnitreeGo2Env(PipelineEnv):
         contact_filt_cm = (foot_contact_z < 3e-2) | state.info['previous_contact']
         first_contact = (state.info['feet_air_time'] > 0) * contact_filt_mm
         state.info['feet_air_time'] += self.dt
-
-        observation = self.get_observation(
-            pipeline_state,
-            contact_filt_mm,
-            state.info,
-            state.obs,
-        )
 
         # done if joint limits are reached or robot is falling
         up = jnp.array([0.0, 0.0, 1.0])
@@ -377,61 +366,9 @@ class UnitreeGo2Env(PipelineEnv):
         )
         return state
 
-    # def get_observation(
-    #     self,
-    #     pipeline_state: base.State,
-    #     state_info: dict[str, Any],
-    #     observation_history: jax.Array,
-    # ) -> jax.Array:
-    #     """
-    #         Observation: [
-    #             yaw_rate,
-    #             projected_gravity,
-    #             command,
-    #             relative_motor_positions,
-    #             previous_action,
-    #         ]
-    #     """
-    #     inverse_trunk_rotation = math.quat_inv(pipeline_state.x.rot[0])
-    #     body_frame_yaw_rate = math.rotate(
-    #         pipeline_state.xd.ang[0], inverse_trunk_rotation,
-    #     )[2]
-    #     projected_gravity = math.rotate(
-    #         jnp.array([0, 0, -1]), inverse_trunk_rotation,
-    #     )
-
-    #     q = pipeline_state.q[7:]
-
-    #     observation = jnp.concatenate([
-    #         jnp.array([body_frame_yaw_rate]),
-    #         projected_gravity,
-    #         state_info['command'],
-    #         q - self.default_pose,
-    #         state_info['previous_action'],
-    #     ])
-
-    #     # clip, noise
-    #     observation = (
-    #         jnp.clip(observation, -100.0, 100.0)
-    #         + self._obs_noise
-    #         * jax.random.uniform(
-    #             state_info['rng'],
-    #             observation.shape,
-    #             minval=-1,
-    #             maxval=1,
-    #         )
-    #     )
-    #     # stack observations through time
-    #     observation = jnp.roll(
-    #         observation_history, observation.size
-    #     ).at[:observation.size].set(observation)
-
-    #     return observation
-
     def get_observation(
         self,
         pipeline_state: base.State,
-        contact: jax.Array,
         state_info: dict[str, Any],
         observation_history: jax.Array,
     ) -> jax.Array:
@@ -460,7 +397,6 @@ class UnitreeGo2Env(PipelineEnv):
             state_info['command'],
             q - self.default_pose,
             state_info['previous_action'],
-            contact,
         ])
 
         # clip, noise
@@ -480,7 +416,6 @@ class UnitreeGo2Env(PipelineEnv):
         ).at[:observation.size].set(observation)
 
         return observation
-
 
     def _reward_vertical_velocity(self, xd: Motion) -> jax.Array:
         # Penalize z axis base linear velocity
@@ -559,6 +494,58 @@ class UnitreeGo2Env(PipelineEnv):
 
     def _reward_termination(self, done: jax.Array, step: jax.Array) -> jax.Array:
         return done & (step < 500)
+
+    def np_observation(
+        self,
+        mj_data: mujoco.MjData,
+        command: np.ndarray,
+        previous_action: np.ndarray,
+        observation_history: np.ndarray,
+    ) -> np.ndarray:
+        # Numpy implementation of the observation function:
+        def rotate(vec: np.ndarray, quat: np.ndarray) -> np.ndarray:
+            if len(vec.shape) != 1:
+                raise ValueError('vec must have no batch dimensions.')
+            s, u = quat[0], quat[1:]
+            r = 2 * (np.dot(u, vec) * u) + (s * s - np.dot(u, u)) * vec
+            r = r + 2 * s * np.cross(u, vec)
+            return r
+
+        def quat_inv(q: np.ndarray) -> np.ndarray:
+            return q * np.array([1, -1, -1, -1])
+
+        base_w = mj_data.qpos[3:7]
+        base_dw = mj_data.qvel[3:6]
+        q = mj_data.qpos[7:]
+
+        inverse_trunk_rotation = quat_inv(base_w)
+        body_frame_yaw_rate = rotate(
+            base_dw, inverse_trunk_rotation,
+        )[2]
+        projected_gravity = rotate(
+            jnp.array([0, 0, -1]), inverse_trunk_rotation,
+        )
+
+        new_observation = np.concatenate([
+            np.array([body_frame_yaw_rate]),
+            projected_gravity,
+            command,
+            q - self.default_ctrl,
+            previous_action,
+        ])
+
+        # clip, noise
+        new_observation = (
+            jnp.clip(new_observation, -100.0, 100.0)
+            + self._obs_noise * np.random.uniform(
+                low=-1, high=1, size=new_observation.shape,
+            )
+        )
+        # stack observations through time
+        observation = np.roll(observation_history, new_observation.size)
+        observation[:new_observation.size] = new_observation
+
+        return observation
 
 
 envs.register_environment('unitree_go2', UnitreeGo2Env)

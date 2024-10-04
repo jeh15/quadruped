@@ -38,24 +38,25 @@ def main(argv=None):
     # Initialize Simulation:
     key = jax.random.key(0)
 
-    velocity = 1.0
+    velocity = 0.0
     key, subkey = jax.random.split(key)
     state = reset_fn(subkey)
     state.info['command'] = jnp.array([velocity, 0.0, 0.0])
 
     num_steps = 1000
     states = []
+
+    ramp_time = 200
+
     for i in range(num_steps):
         # Stop Command Sampling:
+        if i <= ramp_time:
+            velocity = (i * env.step_dt) / (ramp_time * env.step_dt)
         state.info['command'] = jnp.array([velocity, 0.0, 0.0])
         key, subkey = jax.random.split(key)
         action, _ = inference_fn(state.obs, subkey)
         state = step_fn(state, action)
         states.append(state.pipeline_state)
-        # if jnp.linalg.norm(state.pipeline_state.q[:2]) > 10.0:
-        #     pipeline_state = state.pipeline_state
-        #     pipeline_state = pipeline_state.replace(q=pipeline_state.q.at[:2].set(0.0))
-        #     state = state.replace(pipeline_state=pipeline_state)
 
     # Generate HTML:
     html_string = html.render(
