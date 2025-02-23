@@ -58,3 +58,35 @@ def unroll_policy_steps(
         length=num_steps,
     )
     return final_state, transitions
+
+
+def render_policy(
+    env: Env,
+    state: State,
+    policy: types.Policy,
+    key: types.PRNGKey,
+    num_steps: int,
+    extra_fields: Sequence[str] = (),
+) -> State:
+    @jax.jit
+    def f(carry, unused_t):
+        state, key = carry
+        key, subkey = jax.random.split(key)
+        state, _ = policy_step(
+            env,
+            state,
+            policy,
+            key,
+            extra_fields=extra_fields,
+        )
+        pipeline_state = jax.tree.map(lambda x: x[0], state.pipeline_state)
+        return (state, subkey), pipeline_state
+
+    _, states = jax.lax.scan(
+        f,
+        (state, key),
+        (),
+        length=num_steps,
+    )
+
+    return states

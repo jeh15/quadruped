@@ -1,5 +1,5 @@
 from typing import Any, List, Sequence
-import os 
+import os
 
 import jax
 import jax.numpy as jnp
@@ -12,7 +12,6 @@ from brax.base import Motion, Transform
 from brax.envs.base import PipelineEnv, State
 from brax.io import mjcf
 
-from etils import epath
 from ml_collections import config_dict
 import mujoco
 
@@ -133,8 +132,8 @@ class BarkourEnv(PipelineEnv):
             filename,
         )
         sys = mjcf.load(self.filepath)
-        self._dt = 0.02  # this environment is 50 fps
-        sys = sys.tree_replace({'opt.timestep': 0.004, 'dt': 0.004})
+        self.step_dt = 0.02  # this environment is 50 fps
+        sys = sys.tree_replace({'opt.timestep': 0.004})
 
         # override menagerie params for smoother policy
         sys = sys.replace(
@@ -143,7 +142,7 @@ class BarkourEnv(PipelineEnv):
             actuator_biasprm=sys.actuator_biasprm.at[:, 1].set(-35.0),
         )
 
-        n_frames = kwargs.pop('n_frames', int(self._dt / sys.opt.timestep))
+        n_frames = kwargs.pop('n_frames', int(self.step_dt / sys.opt.timestep))
         super().__init__(sys, backend='mjx', n_frames=n_frames)
 
         self.reward_config = get_config()
@@ -306,6 +305,17 @@ class BarkourEnv(PipelineEnv):
             k: v * self.reward_config.rewards.scales[k] for k, v in rewards.items()
         }
         reward = jnp.clip(sum(rewards.values()) * self.dt, 0.0, 10000.0)
+
+        # If contact triggered:
+        # impact_window = 5
+        # impact_counter = first_contact * impact_counter
+        # impact_filter = first_contact * (impact_counter < impact_window)
+        # impact_counter += 1
+        # impact_mask = (1 - impact_filter)
+        # filtered_rewards = {
+        #     k: v * self.reward_config.rewards.scales[k] for k, v in filtered_rewards.items()
+        # }
+        # filtered_reward = jnp.clip(sum(filtered_rewards.values()) * self.dt, 0.0, 10000.0)
 
         # state management
         state.info['kick'] = kick

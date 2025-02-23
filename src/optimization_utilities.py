@@ -39,7 +39,8 @@ def gradient_update_fn(
     loss_fn: Callable[..., float],
     optimizer: optax.GradientTransformation,
     pmap_axis_name: Optional[str],
-    has_aux: bool = False
+    has_aux: bool = False,
+    return_grads: bool = False,
 ):
     """Wrapper of the loss function that apply gradient updates.
 
@@ -49,6 +50,7 @@ def gradient_update_fn(
         pmap_axis_name: If relevant, the name of the pmap axis to synchronize
         gradients.
         has_aux: Whether the loss_fn has auxiliary data.
+        return_grads: Whether to return gradients in the output.
 
     Returns:
         A function that takes the same argument as the loss function plus the
@@ -62,6 +64,9 @@ def gradient_update_fn(
         value, grads = loss_and_pgrad_fn(*args)
         params_update, opt_state = optimizer.update(grads, opt_state)
         params = optax.apply_updates(args[0], params_update)
-        return value, params, opt_state
+        if not return_grads:
+            return value, params, opt_state
+        else:
+            return value, params, opt_state, grads
 
     return f

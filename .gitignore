@@ -9,6 +9,9 @@ __pycache__/
 # C extensions
 *.so
 
+# Pickle files
+*.pkl
+
 # Distribution / packaging
 .Python
 build/
@@ -189,12 +192,13 @@ Network Trash Folder
 Temporary Items
 .apdisk
 
+# Ignore all vscode:
 .vscode/*
-!.vscode/settings.json
-!.vscode/tasks.json
-!.vscode/launch.json
-!.vscode/extensions.json
-!.vscode/*.code-snippets
+# !.vscode/settings.json
+# !.vscode/tasks.json
+# !.vscode/launch.json
+# !.vscode/extensions.json
+# !.vscode/*.code-snippets
 
 # Local History for Visual Studio Code
 .history/
@@ -238,8 +242,12 @@ examples/jax/jax-llm/proteins-base/
 # Orbax Checkpoints
 checkpoints/*
 
-# Portable Network Graphics
+# PNG files
 *.png
+!models/*/assets/*.png
 
-# Portable Document Format
+# PDF files
 *.pdf
+
+# SVG files
+*.svg

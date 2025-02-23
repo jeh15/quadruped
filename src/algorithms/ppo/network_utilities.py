@@ -65,7 +65,7 @@ def make_ppo_networks(
     .identity_normalization_fn,
     policy_layer_sizes: Sequence[int] = (256, 256),
     value_layer_sizes: Sequence[int] = (256, 256),
-    activation: networks.ActivationFn = nn.tanh,
+    activation: networks.ActivationFn = nn.swish,
     kernel_init: types.Initializer = jax.nn.initializers.lecun_uniform(),
     action_distribution: distribution_utilities.ParametricDistribution = distribution_utilities
     .ParametricDistribution(distribution=distrax.Normal, bijector=distrax.Tanh())

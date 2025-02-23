@@ -1,12 +1,29 @@
 from typing import Any, Optional, Union
 
+import jax.numpy as jnp
+
 import orbax.checkpoint as ocp
 from orbax.checkpoint import CheckpointManager, CheckpointManagerOptions
-from src.algorithms.ppo.train import TrainState
 import optax
 import flax.struct
+from brax.training.acme import running_statistics
 import src.module_types as types
 import src.distribution_utilities as distribution
+import src.algorithms.ppo.network_utilities as ppo_networks
+
+
+@flax.struct.dataclass
+class TrainState:
+    opt_state: optax.OptState
+    params: ppo_networks.PPONetworkParams
+    normalization_params: running_statistics.RunningStatisticsState
+    env_steps: jnp.ndarray
+
+
+@flax.struct.dataclass
+class RestoredCheckpoint:
+    network: ppo_networks.PPONetworks
+    train_state: TrainState
 
 
 @flax.struct.dataclass
