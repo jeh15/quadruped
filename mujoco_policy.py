@@ -92,7 +92,7 @@ def main(argv=None):
     global_steps = 0
     with mujoco.viewer.launch_passive(model, data) as viewer:
         viewer.cam.trackbodyid = 1
-        viewer.cam.distance = 5 
+        viewer.cam.distance = 5
 
         while viewer.is_running() and not termination_flag:
             if global_steps >= 1000:
