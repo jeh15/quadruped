@@ -51,7 +51,7 @@ def quat_inv(q: np.ndarray) -> np.ndarray:
 
 def main(argv=None):
     # Load from Env:
-    env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_barkour_hfield_mjx.xml')
+    env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx.xml')
     model = env.sys.mj_model
 
     data = mujoco.MjData(model)  # type: ignore

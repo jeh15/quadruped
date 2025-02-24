@@ -89,7 +89,7 @@ def main(argv=None):
         normalize_advantages=True,
     )
     training_metadata = checkpoint_utilities.training_metadata(
-        num_epochs=100,
+        num_epochs=40,
         num_training_steps=20,
         episode_length=1000,
         num_policy_steps=25,
@@ -142,9 +142,9 @@ def main(argv=None):
         gae_lambda=loss_metadata.gae_lambda,
         normalize_advantages=loss_metadata.normalize_advantages,
     )
-    env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_barkour_hfield_mjx.xml', config=reward_config)
-    eval_env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_barkour_hfield_mjx.xml', config=reward_config)
-    render_env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_barkour_hfield_mjx.xml', config=reward_config)
+    env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx.xml', config=reward_config)
+    eval_env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx.xml', config=reward_config)
+    render_env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx.xml', config=reward_config)
 
     restored_checkpoint = None
     if FLAGS.checkpoint_name is not None:
