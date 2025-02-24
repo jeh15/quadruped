@@ -1,0 +1,26 @@
+"""
+    Hardware Interface Module
+"""
+module(
+    name = "unitree-interface",
+)
+
+# Abseil Cpp:
+bazel_dep(name = "abseil-cpp", version = "20250127.0")
+
+# OSQP Cpp Wrapper:
+bazel_dep(name = "osqp-cpp", version = "0.0.0-20231004-4343373.bcr.1")
+
+bazel_dep(name = "operational-space-controller")
+archive_override(
+    module_name = "operational-space-controller",
+    strip_prefix = "operational-space-controller-main",
+    urls = ["https://github.com/jeh15/operational-space-control/archive/refs/heads/main.zip"],
+)
+
+bazel_dep(name = "unitree-bazel")
+archive_override(
+    module_name = "unitree-bazel",
+    strip_prefix = "unitree-bazel-main",
+    urls = ["https://github.com/jeh15/unitree-bazel/archive/refs/heads/main.zip"],
+)
