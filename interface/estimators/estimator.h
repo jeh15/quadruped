@@ -21,7 +21,7 @@
 
 #include <mujoco/mujoco.h>
 
-#include "mjpc/utilities.h"
+#include "interface/estimators/utilities/utilities.h"
 
 namespace mjpc {
 

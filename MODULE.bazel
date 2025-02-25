@@ -11,6 +11,15 @@ bazel_dep(name = "abseil-cpp", version = "20250127.0")
 # OSQP Cpp Wrapper:
 bazel_dep(name = "osqp-cpp", version = "0.0.0-20231004-4343373.bcr.1")
 
+# MoJoCo:
+bazel_dep(name = "mujoco-bazel")
+archive_override(
+    module_name = "mujoco-bazel",
+    strip_prefix = "mujoco-bazel-main",
+    urls = ["https://github.com/jeh15/mujoco-bazel/archive/refs/heads/main.zip"],
+    integrity = "sha256-1DPjO/tY5r8DTuvQz/cOYDrKzataaXJCP/DUP6Ktz/o=",
+)
+
 bazel_dep(name = "operational-space-controller")
 archive_override(
     module_name = "operational-space-controller",
@@ -23,4 +32,22 @@ archive_override(
     module_name = "unitree-bazel",
     strip_prefix = "unitree-bazel-main",
     urls = ["https://github.com/jeh15/unitree-bazel/archive/refs/heads/main.zip"],
+)
+
+# GLFW: (Visualize MuJoCo simulations)
+bazel_dep(name = "glfw-bazel")
+archive_override(
+    module_name = "glfw-bazel",
+    strip_prefix = "glfw-bazel-main",
+    urls = ["https://github.com/jeh15/glfw-bazel/archive/refs/heads/main.zip"],
+    integrity = "sha256-Gk5anHk3IXzREPrUpyYPweB9J0fAdbMt5Hlu5VCYTO0=",
+)
+
+# Hedron's Compile Commands Extractor for Bazel
+# https://github.com/hedronvision/bazel-compile-commands-extractor
+bazel_dep(name = "hedron_compile_commands", dev_dependency = True)
+git_override(
+    module_name = "hedron_compile_commands",
+    remote = "https://github.com/mikael-s-persson/bazel-compile-commands-extractor",
+    commit = "f5fbd4cee671d8d908f37c83abaf70fba5928fc7"
 )

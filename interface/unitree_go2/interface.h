@@ -83,9 +83,18 @@ class UnitreeGo2Interface {
 
         absl::Status initialize_threads() {
             // Initialize all threads:
-            initialize_operational_space_controller_thread();
-            initialize_motor_controller_thread();
-            initialize_control_thread();
+            absl::Status result = initialize_operational_space_controller_thread();
+            if (!result.ok())
+                return result;
+
+            result = initialize_motor_controller_thread();
+            if (!result.ok())
+                return result;
+
+            result = initialize_control_thread();
+            if (!result.ok())
+                return result;
+
             return absl::OkStatus();
         }
 
@@ -101,14 +110,26 @@ class UnitreeGo2Interface {
         absl::Status stop_child_threads() {
             if (operational_space_controller_initialized)
                 operational_space_controller.stop_control_thread();
+
             if (motor_controller_initialized)
                 motor_controller.stop_control_thread();
+
+            if (!operational_space_controller_initialized || !motor_controller_initialized)
+                return absl::FailedPreconditionError("Operational Space Controller and/or Motor Controller not initialized");
+
             return absl::OkStatus();
         }
 
         absl::Status stop_threads() {
-            stop_control_thread();
-            stop_child_threads();
+            // Stop all threads:
+            absl::Status result = stop_control_thread();
+            if (!result.ok())
+                return result;
+            
+            result = stop_child_threads();
+            if (!result.ok())
+                return result;
+
             return absl::OkStatus();
         }
 

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "mjpc/estimators/kalman.h"
+#include "interface/estimators/kalman.h"
 
 #include <chrono>
 #include <string>
@@ -20,9 +20,9 @@
 
 #include <mujoco/mujoco.h>
 
-#include "mjpc/array_safety.h"
-#include "mjpc/estimators/estimator.h"
-#include "mjpc/utilities.h"
+#include "interface/estimators/utilities/array_safety.h"
+#include "interface/estimators/estimator.h"
+#include "interface/estimators/utilities/utilities.h"
 
 namespace mjpc {
 namespace mju = ::mujoco::util_mjpc;
