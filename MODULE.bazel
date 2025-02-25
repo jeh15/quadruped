@@ -5,8 +5,14 @@ module(
     name = "unitree-interface",
 )
 
+# Python Rules:
+bazel_dep(name = "rules_python", version = "1.0.0")
+
 # Abseil Cpp:
 bazel_dep(name = "abseil-cpp", version = "20250127.0")
+
+# Eigen:
+bazel_dep(name = "eigen", version = "4.0.0-20241125.bcr.1")
 
 # OSQP Cpp Wrapper:
 bazel_dep(name = "osqp-cpp", version = "0.0.0-20231004-4343373.bcr.1")
@@ -23,7 +29,7 @@ archive_override(
 bazel_dep(name = "operational-space-controller")
 archive_override(
     module_name = "operational-space-controller",
-    strip_prefix = "operational-space-controller-main",
+    strip_prefix = "operational-space-control-main",
     urls = ["https://github.com/jeh15/operational-space-control/archive/refs/heads/main.zip"],
 )
 
@@ -41,6 +47,13 @@ archive_override(
     strip_prefix = "glfw-bazel-main",
     urls = ["https://github.com/jeh15/glfw-bazel/archive/refs/heads/main.zip"],
     integrity = "sha256-Gk5anHk3IXzREPrUpyYPweB9J0fAdbMt5Hlu5VCYTO0=",
+)
+
+# Python Toolchain:
+python = use_extension("@rules_python//python/extensions:python.bzl", "python")
+python.toolchain(
+    configure_coverage_tool = True,
+    python_version = "3.12",
 )
 
 # Hedron's Compile Commands Extractor for Bazel

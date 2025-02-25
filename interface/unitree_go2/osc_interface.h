@@ -8,10 +8,13 @@
 
 #include "absl/status/status.h"
 
+#include "Eigen/Dense"
 #include "osqp++.h"
 
-#include "operational_space_controller.h"
-#include "unitree_go2_api.h"
+#include "operational-space-control/unitree_go2/operational_space_controller.h"
+#include "operational-space-control/unitree_go2/autogen/autogen_defines.h"
+#include "unitree-api/lowlevelapi.h"
+#include "unitree-api/lowlevelapi_types.h"
 
 
 class UnitreeGo2Interface {
@@ -134,10 +137,18 @@ class UnitreeGo2Interface {
         }
 
         absl::Status clean_up() {
-            if(!operational_space_controller_initialized) {
+            if(!operational_space_controller_initialized)
                 return absl::FailedPreconditionError("Operational Space Controller not initialized. Nothing to clean up.");
-            }
+            
             operational_space_controller.close();            
+            return absl::OkStatus();
+        }
+
+        absl::Status update_taskspace_targets(const Eigen::Matrix<double, constants::model::site_ids_size, 6, Eigen::RowMajor> new_taskspace_targets) {
+            if (!operational_space_controller_initialized)
+                return absl::FailedPreconditionError("Operational Space Controller not initialized");
+
+            operational_space_controller.update_taskspace_targets(new_taskspace_targets);
             return absl::OkStatus();
         }
 
