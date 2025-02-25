@@ -60,12 +60,54 @@ def main(argv=None):
         state.info['command'] = jnp.array([velocity, 0.0, 0.0])
         key, subkey = jax.random.split(key)
 
-        # Test Inference time and CPU transfer time
+        # # Inference: Test np.asarray -- Avg 2337 Hz
+        # start_time = time.time()
+        # state_obs_gpu = state.obs
+        # state_obs_gpu.block_until_ready()
+        # state_obs_cpu = np.asarray(state_obs_gpu)
+        # action, _ = inference_fn(state_obs_cpu, subkey)
+        # action.block_until_ready()
+        # cpu_array = np.asarray(action)
+        # elapsed_time = time.time() - start_time
+
+        # Inference: Test CPU Put Device -- Avg 3935 Hz
+        # start_time = time.time()
+        # state_obs_gpu = state.obs
+        # state_obs_gpu.block_until_ready()
+        # state_obs_cpu = jax.device_put(state_obs_gpu, jax.devices("cpu")[0])
+        # state_obs_cpu.block_until_ready()
+        # action, _ = inference_fn(state_obs_cpu, subkey)
+        # action.block_until_ready()
+        # cpu_array = jax.device_put(action, jax.devices("cpu")[0])
+        # cpu_array.block_until_ready()
+        # elapsed_time = time.time() - start_time
+
+        # Inference: Test CPU Put Device and np.asarray -- Avg 2044 Hz
+        # start_time = time.time()
+        # state_obs_gpu = state.obs
+        # state_obs_gpu.block_until_ready()
+        # state_obs_cpu = jax.device_put(state_obs_gpu, jax.devices("cpu")[0])
+        # state_obs_cpu.block_until_ready()
+        # state_obs_cpu = np.asarray(state_obs_cpu)
+        # action, _ = inference_fn(state_obs_cpu, subkey)
+        # action.block_until_ready()
+        # cpu_array = jax.device_put(action, jax.devices("cpu")[0])
+        # cpu_array.block_until_ready()
+        # cpu_array = np.asarray(cpu_array)
+        # elapsed_time = time.time() - start_time
+
+        # Inference: Test CPU Put Device write to list -- Avg 3653 Hz
         start_time = time.time()
-        action, _ = inference_fn(state.obs, subkey)
+        state_obs_gpu = state.obs
+        state_obs_gpu.block_until_ready()
+        state_obs_cpu = jax.device_put(state_obs_gpu, jax.devices("cpu")[0])
+        state_obs_cpu.block_until_ready()
+        state_obs_list = state_obs_cpu.tolist()
+        action, _ = inference_fn(state_obs_cpu, subkey)
         action.block_until_ready()
         cpu_array = jax.device_put(action, jax.devices("cpu")[0])
         cpu_array.block_until_ready()
+        cpu_list = cpu_array.tolist
         elapsed_time = time.time() - start_time
 
         state = step_fn(state, action)
