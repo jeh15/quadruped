@@ -15,6 +15,12 @@ cc_binary(
     data = ["//models/unitree_go2:unitree_go2"],
     deps = [
         "//interface/unitree_go2:simulation_interface",
+        "@operational-space-controller//:operational_space_controller",
+        "@mujoco-bazel//:mujoco",
+        "@eigen//:eigen",
+        "@glfw-bazel//:glfw",
+        "@abseil-cpp//absl/log:absl_check",
+        "@abseil-cpp//absl/status:status",
         "@rules_cc//cc/runfiles:runfiles",
         "@bazel_tools//tools/cpp/runfiles",
     ],

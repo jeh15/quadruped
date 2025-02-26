@@ -202,6 +202,33 @@
         ]
       }
     },
+    "@@glfw-bazel+//third_party:extensions.bzl%glfw_extension": {
+      "general": {
+        "bzlTransitiveDigest": "SgObHP2ZmO2Dh2QQ87P43h3nBQ2RxrQo0LvX+S7VHHo=",
+        "usagesDigest": "Us4AgPYxGN3yxuARR7Y51EhVPjKk9vNieqWUq1HZid8=",
+        "recordedFileInputs": {},
+        "recordedDirentsInputs": {},
+        "envVariables": {},
+        "generatedRepoSpecs": {
+          "archive_glfw": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
+            "attributes": {
+              "build_file": "@@glfw-bazel+//third_party/glfw:BUILD.bazel",
+              "strip_prefix": "glfw-3.4",
+              "url": "https://github.com/glfw/glfw/archive/3.4.tar.gz",
+              "integrity": "sha256-wDjTQgAjTQcfrpNFvEVeSo8vVEq2AVB2XXcE4I89rAE="
+            }
+          }
+        },
+        "recordedRepoMappingEntries": [
+          [
+            "glfw-bazel+",
+            "bazel_tools",
+            "bazel_tools"
+          ]
+        ]
+      }
+    },
     "@@mujoco-bazel+//third_party:extensions.bzl%mujoco_x86_64_extension": {
       "general": {
         "bzlTransitiveDigest": "2D3l5x2FTn9OOr6vqTUjb3sOn0geAbJIsI90tk1Az/s=",

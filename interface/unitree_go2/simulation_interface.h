@@ -45,10 +45,19 @@ struct MockMotorControllerArgs {
     int control_rate = 2000;
 };
 
+// Data Struct for compatibility with Mujoco:
+struct LowState {
+    std::array<float, 4> foot_force = { 0 };
+};
+
 class MockMotorController {
     public:
         MockMotorController(int control_rate) : control_rate_us(control_rate) {}
         ~MockMotorController() {}
+
+        // Mujoco Model and Data public for visualization and testing:
+        mjModel* mj_model;
+        mjData* mj_data;
 
         absl::Status initialize(const std::filesystem::path xml_path) {
             char error[1000];
@@ -96,6 +105,15 @@ class MockMotorController {
             return absl::OkStatus();
         }
 
+        absl::Status clean_up() {
+            if(!initialized)
+                return absl::FailedPreconditionError("Motor Controller not initialized. Nothing to clean up.");
+
+            mj_deleteData(mj_data);
+            mj_deleteModel(mj_model);
+            return absl::OkStatus();
+        }
+
         void update_command(const lowleveltypes::MotorCommand& motor_cmd) {
             std::lock_guard<std::mutex> lock(mutex);
             for(const auto& [key, value] : lowleveltypes::MotorID) {
@@ -116,11 +134,11 @@ class MockMotorController {
             }
         }
 
-        lowleveltypes::LowState get_low_state() {
-            lowleveltypes::LowState low_state;
+        LowState get_low_state() {
+            LowState low_state;
             for(int i = 0; i < 4; i++) {
                 auto contact = mj_data->contact[i];
-                low_state.foot_force[i] = contact.dist;
+                low_state.foot_force[i] = static_cast<float>(contact.dist);
             }
             return low_state;
         }
@@ -205,9 +223,6 @@ class MockMotorController {
         std::thread thread;
         bool initialized = false;
         bool control_thread_initialized = false;
-        // Mujoco Model and Data:
-        mjModel* mj_model;
-        mjData* mj_data;
 
         void control_loop() {
             using Clock = std::chrono::steady_clock;
@@ -262,6 +277,10 @@ class UnitreeGo2Interface {
             control_rate_us(mc_args.control_rate) {}
         ~UnitreeGo2Interface() {}
 
+        /* Operational Space Controller and Motor Controller */
+        OperationalSpaceController operational_space_controller;
+        MockMotorController motor_controller;
+
         absl::Status initialize() {
             // Initialize Motor Controller and Operational Space Controller:
             absl::Status result;
@@ -277,7 +296,9 @@ class UnitreeGo2Interface {
                 return absl::FailedPreconditionError("Motor Controller not initialized. Motor Controller needs to be initialized first to set the initial state of the Operational Space Controller.");
 
             // Load mujoco model and use initial state from the motor controller:
-            absl::Status result = operational_space_controller.initialize(xml_path, initial_state);
+            absl::Status result;
+            result.Update(operational_space_controller.initialize(xml_path, initial_state));
+            result.Update(operational_space_controller.initialize_optimization());
             if(!result.ok())
                 return result;
 
@@ -355,8 +376,7 @@ class UnitreeGo2Interface {
             if(operational_space_controller_initialized)
                 operational_space_controller.stop_control_thread();
 
-            if(motor_controller_initialized)
-                result.Update(motor_controller.stop_control_thread());
+            result.Update(motor_controller.stop_control_thread());
 
             if(!result.ok())
                 return result;
@@ -379,10 +399,20 @@ class UnitreeGo2Interface {
         }
 
         absl::Status clean_up() {
+            // TODO(jeh15): Push error handling down to compontents...
             if(!operational_space_controller_initialized)
                 return absl::FailedPreconditionError("Operational Space Controller not initialized. Nothing to clean up.");
             
-            operational_space_controller.close();            
+            if(!motor_controller_initialized)
+                return absl::FailedPreconditionError("Mock Motor Controller not initialized. Nothing to clean up.");
+            
+            absl::Status result;
+            operational_space_controller.close();   
+            // result.Update(operational_space_controller.clean_up());
+            result.Update(motor_controller.clean_up());     
+            if(!result.ok())
+                return result;
+
             return absl::OkStatus();
         }
 
@@ -405,18 +435,16 @@ class UnitreeGo2Interface {
         State state;
         TaskspaceTargetsMatrix taskspace_targets = TaskspaceTargetsMatrix::Zero();
         /* Operational Space Controller and Motor Controller */
-        OperationalSpaceController operational_space_controller;
-        MockMotorController motor_controller;
         State initial_state;
         bool operational_space_controller_initialized = false;
         bool motor_controller_initialized = false;
         const std::filesystem::path xml_path;
         const std::filesystem::path mock_robot_model_xml_path;
         const int control_rate_us; // This should match the control rate of the motor controller.
-        /* Index mappings for Robot and Mujoco Model: mj_model : [FL FR Hl HR] | robot : [FR FL HR HL] */
-        const std::array<int, constants::model::nu_size> motor_idx_map{3, 4, 5, 0, 1, 2, 9, 10, 11, 6, 7, 8};
-        const std::array<int, 4> foot_idx_map{1, 0, 3, 2};
-        const short contact_threshold = 24;
+        /* Index mappings for Mock Robot and Mujoco match */
+        const std::array<int, constants::model::nu_size> motor_idx_map{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
+        const std::array<int, 4> foot_idx_map{0, 1, 2, 3};
+        const float contact_threshold = 1e-3;
         /* Thread Variables */
         std::atomic<bool> running{true};
         std::thread thread;
@@ -425,13 +453,13 @@ class UnitreeGo2Interface {
 
         absl::Status update_state() {
             // Get Current State for Unitree Go2 Motor Driver:
-            lowleveltypes::LowState low_state = motor_controller.get_low_state();
+            LowState low_state = motor_controller.get_low_state();
             lowleveltypes::IMUState imu_state = motor_controller.get_imu_state();
             lowleveltypes::MotorState motor_state = motor_controller.get_motor_state();
 
             // Create contact mask:
             ContactMask contact_mask = ContactMask::Zero();
-            Eigen::Vector<short, 4> foot_force = Eigen::Map<Eigen::Vector<short, 4>>(low_state.foot_force.data())(foot_idx_map);
+            Eigen::Vector<float, 4> foot_force = Eigen::Map<Eigen::Vector<float, 4>>(low_state.foot_force.data())(foot_idx_map);
             for(int i = 0; i < 4; i++) {
                 contact_mask(i) = foot_force(i) < contact_threshold;
             }
@@ -477,19 +505,9 @@ class UnitreeGo2Interface {
                 torque_feedforward[i] = torque_command(i);
             }
             std::array<float, constants::model::nu_size> stiffness = { 0 };
-            std::array<float, constants::model::nu_size> damping = {
-                5.0, 5.0, 5.0,
-                5.0, 5.0, 5.0,
-                5.0, 5.0, 5.0,
-                5.0, 5.0, 5.0,
-            };
+            std::array<float, constants::model::nu_size> damping = { 0 };
             std::array<float, constants::model::nu_size> kp = { 0 };
-            std::array<float, constants::model::nu_size> kd = {
-                5.0, 5.0, 5.0,
-                5.0, 5.0, 5.0,
-                5.0, 5.0, 5.0,
-                5.0, 5.0, 5.0,
-            };
+            std::array<float, constants::model::nu_size> kd = { 0 };
             
             lowleveltypes::MotorCommand motor_command = {
                 .q_setpoint = q_setpoint,
