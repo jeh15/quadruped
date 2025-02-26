@@ -1,0 +1,8 @@
+filegroup(
+    name = "unitree_go2",
+    srcs = glob([
+        "**",
+        "assets/**",
+    ]),
+    visibility = ["//visibility:public"],
+)

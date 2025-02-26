@@ -5,6 +5,9 @@ module(
     name = "unitree-interface",
 )
 
+# CC rules:
+bazel_dep(name = "rules_cc", version = "0.0.2")
+
 # Python Rules:
 bazel_dep(name = "rules_python", version = "1.0.0")
 
@@ -27,33 +30,33 @@ archive_override(
 )
 
 bazel_dep(name = "operational-space-controller")
-# archive_override(
-#     module_name = "operational-space-controller",
-#     strip_prefix = "operational-space-control-main",
-#     urls = ["https://github.com/jeh15/operational-space-control/archive/refs/heads/main.zip"],
-#     integrity = "sha256-Bo5gKObMoNg6zuYIEeTloKp1dujcQSqdYN1LDNtiloU=",
-# )
-
 archive_override(
     module_name = "operational-space-controller",
-    strip_prefix = "operational-space-control-feature",
-    urls = ["https://github.com/jeh15/operational-space-control/archive/refs/heads/feature.zip"],
+    strip_prefix = "operational-space-control-main",
+    urls = ["https://github.com/jeh15/operational-space-control/archive/refs/heads/main.zip"],
+    integrity = "sha256-2FICQzpAG9RE1YMfXxyVo8qzzQrWq1hix1Znodn1uBc=",
 )
 
-bazel_dep(name = "unitree-bazel")
 # archive_override(
-#     module_name = "unitree-bazel",
-#     strip_prefix = "unitree-bazel-main",
-#     urls = ["https://github.com/jeh15/unitree-bazel/archive/refs/heads/main.zip"],
-#     integrity = "sha256-eUDmYk/zcAAnQJnqw5/tZzkowmWtktJLinUJJf3CHgQ=",
+#     module_name = "operational-space-controller",
+#     strip_prefix = "operational-space-control-feature",
+#     urls = ["https://github.com/jeh15/operational-space-control/archive/refs/heads/feature.zip"],
 # )
 
-
+bazel_dep(name = "unitree-bazel")
 archive_override(
     module_name = "unitree-bazel",
-    strip_prefix = "unitree-bazel-feature",
-    urls = ["https://github.com/jeh15/unitree-bazel/archive/refs/heads/feature.zip"],
+    strip_prefix = "unitree-bazel-main",
+    urls = ["https://github.com/jeh15/unitree-bazel/archive/refs/heads/main.zip"],
+    integrity = "sha256-d4N8gsPYVh0A0Ho6/vTM3LPNIhKWJu/zBrNr/Uzo8aM=",
 )
+
+
+# archive_override(
+#     module_name = "unitree-bazel",
+#     strip_prefix = "unitree-bazel-feature",
+#     urls = ["https://github.com/jeh15/unitree-bazel/archive/refs/heads/feature.zip"],
+# )
 
 # GLFW: (Visualize MuJoCo simulations)
 bazel_dep(name = "glfw-bazel")

@@ -1,0 +1,22 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+
+cc_binary(
+    name = "osc_interface_test",
+    srcs = ["osc_interface_test.cc"],
+    deps = [
+        "//interface/unitree_go2:osc_interface",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+cc_binary(
+    name = "simulation_interface_test",
+    srcs = ["simulation_interface_test.cc"],
+    data = ["//models/unitree_go2:unitree_go2"],
+    deps = [
+        "//interface/unitree_go2:simulation_interface",
+        "@rules_cc//cc/runfiles:runfiles",
+        "@bazel_tools//tools/cpp/runfiles",
+    ],
+    visibility = ["//visibility:public"],
+)
