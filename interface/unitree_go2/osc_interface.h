@@ -1,5 +1,8 @@
 #pragma once
 
+#include <iostream>
+#include <string>
+#include <array>
 #include <filesystem>
 #include <thread>
 #include <mutex>
@@ -7,6 +10,7 @@
 #include <chrono>
 
 #include "absl/status/status.h"
+#include "absl/log/absl_check.h"
 
 #include "Eigen/Dense"
 #include "osqp++.h"
@@ -17,46 +21,89 @@
 #include "unitree-api/lowlevelapi_types.h"
 
 
+namespace {
+    using TaskspaceTargetsMatrix = Eigen::Matrix<double, constants::model::site_ids_size, 6, Eigen::RowMajor>;
+    using TorqueCommand = Eigen::Vector<double, constants::model::nu_size>;
+    using MotorVector = Eigen::Vector<double, constants::model::nu_size>;
+    using MotorVectorFloat = Eigen::Vector<float, constants::model::nu_size>;
+    using Quaternion = Eigen::Vector<double, 4>;
+    using QuaternionFloat = Eigen::Vector<float, 4>;
+    using Vector3 = Eigen::Vector<double, 3>;
+    using Vector3Float = Eigen::Vector<float, 3>;
+    using ContactMask = Eigen::Vector<double, constants::model::contact_site_ids_size>;
+}
+
+struct OperationalSpaceControllerArgs {
+    std::filesystem::path xml_path;
+    int control_rate = 1000;
+    osqp::OsqpSettings osqp_settings = osqp::OsqpSettings();
+};
+
+struct MotorControllerArgs {
+    std::string network_name;
+    int control_rate = 2000;
+};
+
+State make_empty_state() {
+    State state = {
+        .motor_position = {
+            0.0, 0.9, -1.8,
+            0.0, 0.9, -1.8,
+            0.0, 0.9, -1.8,
+            0.0, 0.9, -1.8,
+        },
+        .motor_velocity = MotorVector::Zero(),
+        .motor_acceleration = MotorVector::Zero(),
+        .torque_estimate = MotorVector::Zero(),
+        .body_rotation = {1, 0, 0, 0},
+        .body_velocity = Vector3::Zero(),
+        .body_acceleration = Vector3::Zero(),
+        .contact_mask = ContactMask::Zero(),
+    };
+
+    return state;
+};
+
 class UnitreeGo2Interface {
     public:
-        UnitreeGo2Interface() {}
+        UnitreeGo2Interface(OperationalSpaceControllerArgs osc_args, MotorControllerArgs mc_args) : 
+            operational_space_controller(osc_args.control_rate, osc_args.osqp_settings),
+            motor_controller(mc_args.control_rate), 
+            xml_path(osc_args.xml_path),
+            network_name(mc_args.network_name),
+            control_rate_us(mc_args.control_rate) {}
         ~UnitreeGo2Interface() {}
 
-        absl::Status initialize_operational_space_controller(const std::filesystem::path xml_path, const State initial_state, const int control_rate = 1000, const osqp::OsqpSettings osqp_settings = osqp::OsqpSettings()) {
-            /*
-                Initialize OperationalSpaceController:
+        absl::Status initialize() {
+            // Initialize Motor Controller and Operational Space Controller:
+            absl::Status result;
+            result.Update(initialize_motor_controller());
+            result.Update(initialize_operational_space_controller());
+            ABSL_CHECK(result.ok()) << result.message();
+            
+            return absl::OkStatus();
+        }
 
-                args:
-                    initial_state: State - Initial Motor / Robot State
-                    control_rate: int - Cotrol rate target of inner control loop in microseconds
-                    osqp_settings: OsqpSettings - Settings for OSQP solver
-                
-                returns:
-                    absl::Status - Status of initialization
+        absl::Status initialize_operational_space_controller() {
+            if(!motor_controller_initialized)
+                return absl::FailedPreconditionError("Motor Controller not initialized. Motor Controller needs to be initialized first to set the initial state of the Operational Space Controller.");
 
-            */
-            // Call Costructor:
-            operational_space_controller = OperationalSpaceController(initial_state, control_rate, osqp_settings);
-            // Load Mujoco Model:
-            operational_space_controller.initialize(xml_path);
+            // Load mujoco model and use initial state from the motor controller:
+            absl::Status result = operational_space_controller.initialize(xml_path, initial_state);
+            if (!result.ok())
+                return result;
             operational_space_controller_initialized = true;
             return absl::OkStatus();
         }
 
-        absl::Status initialize_motor_controller(const std::string& network_name, const int control_rate = 2000) {
-            /*
-                Initialize MotorController:
-
-                args:
-                    control_rate: int - Cotrol rate target of inner communication control loop in microseconds
-                
-                returns:
-                    absl::Status - Status of initialization
-
-            */
-            motor_controller = MotorController(control_rate);
+        absl::Status initialize_motor_controller() {
             motor_controller.initialize(network_name);
             motor_controller_initialized = true;
+
+            // Get and set initial state:
+            absl::Status result = update_state();
+            initial_state = get_state();
+
             return absl::OkStatus();
         }
 
@@ -64,14 +111,17 @@ class UnitreeGo2Interface {
             if (!operational_space_controller_initialized) {
                 return absl::FailedPreconditionError("Operational Space Controller not initialized");
             }
-            operational_space_controller.initialize_control_thread();
+            absl::Status result = operational_space_controller.initialize_control_thread();
+            if (!result.ok())
+                return result;
+            
             return absl::OkStatus();
         }
 
         absl::Status initialize_motor_controller_thread() {
-            if (!motor_controller_initialized) {
+            if (!motor_controller_initialized)
                 return absl::FailedPreconditionError("Motor Controller not initialized");
-            }
+
             motor_controller.initialize_control_thread();
             return absl::OkStatus();
         }
@@ -79,6 +129,7 @@ class UnitreeGo2Interface {
         absl::Status initialize_control_thread() {
             if (!operational_space_controller_initialized && !motor_controller_initialized)
                 return absl::FailedPreconditionError("Operational Space Controller and/or Motor Controller not initialized");
+            
             thread = std::thread(&UnitreeGo2Interface::control_loop, this);
             control_thread_initialized = true;
             return absl::OkStatus();
@@ -86,17 +137,11 @@ class UnitreeGo2Interface {
 
         absl::Status initialize_threads() {
             // Initialize all threads:
-            absl::Status result = initialize_operational_space_controller_thread();
-            if (!result.ok())
-                return result;
-
-            result = initialize_motor_controller_thread();
-            if (!result.ok())
-                return result;
-
-            result = initialize_control_thread();
-            if (!result.ok())
-                return result;
+            absl::Status result;
+            result.Update(initialize_operational_space_controller_thread());
+            result.Update(initialize_motor_controller_thread());
+            result.Update(initialize_control_thread());
+            ABSL_CHECK(result.ok()) << result.message();
 
             return absl::OkStatus();
         }
@@ -125,11 +170,9 @@ class UnitreeGo2Interface {
 
         absl::Status stop_threads() {
             // Stop all threads:
-            absl::Status result = stop_control_thread();
-            if (!result.ok())
-                return result;
-            
-            result = stop_child_threads();
+            absl::Status result;
+            result.Update(stop_control_thread());
+            result.Update(stop_child_threads());
             if (!result.ok())
                 return result;
 
@@ -144,25 +187,160 @@ class UnitreeGo2Interface {
             return absl::OkStatus();
         }
 
-        absl::Status update_taskspace_targets(const Eigen::Matrix<double, constants::model::site_ids_size, 6, Eigen::RowMajor> new_taskspace_targets) {
+        absl::Status update_taskspace_targets(const TaskspaceTargetsMatrix& new_taskspace_targets) {
             if (!operational_space_controller_initialized)
                 return absl::FailedPreconditionError("Operational Space Controller not initialized");
-
-            operational_space_controller.update_taskspace_targets(new_taskspace_targets);
+            
+            std::lock_guard<std::mutex> lock(mutex);
+            taskspace_targets = new_taskspace_targets;
             return absl::OkStatus();
         }
 
+        State get_state() {
+            std::lock_guard<std::mutex> lock(mutex);
+            return state;
+        }
+
     private:
+        /* Shared Variables */
+        State state;
+        TaskspaceTargetsMatrix taskspace_targets = TaskspaceTargetsMatrix::Zero();
+        /* Operational Space Controller and Motor Controller */
         OperationalSpaceController operational_space_controller;
         MotorController motor_controller;
+        State initial_state;
         bool operational_space_controller_initialized = false;
         bool motor_controller_initialized = false;
-        // Thread Variables:
+        const std::filesystem::path xml_path;
+        const std::string network_name;
+        const int control_rate_us; // This should match the control rate of the motor controller.
+        /* Index mappings for Robot and Mujoco Model: mj_model : [FL FR Hl HR] | robot : [FR FL HR HL] */
+        const std::array<int, constants::model::nu_size> motor_idx_map{3, 4, 5, 0, 1, 2, 9, 10, 11, 6, 7, 8};
+        const std::array<int, 4> foot_idx_map{1, 0, 3, 2};
+        const short contact_threshold = 24;
+        /* Thread Variables */
         std::atomic<bool> running{true};
         std::thread thread;
         std::mutex mutex;
         bool control_thread_initialized = false;
+
+        absl::Status update_state() {
+            // Get Current State for Unitree Go2 Motor Driver:
+            lowleveltypes::LowState low_state = motor_controller.get_low_state();
+            lowleveltypes::IMUState imu_state = motor_controller.get_imu_state();
+            lowleveltypes::MotorState motor_state = motor_controller.get_motor_state();
+
+            // Create contact mask:
+            ContactMask contact_mask = ContactMask::Zero();
+            Eigen::Vector<short, 4> foot_force = Eigen::Map<Eigen::Vector<short, 4>>(low_state.foot_force.data())(foot_idx_map);
+            for(int i = 0; i < 4; i++) {
+                contact_mask(i) = foot_force(i) < contact_threshold;
+            }
+
+            // Reformat data to match Mujoco Model: 
+            MotorVectorFloat motor_position = Eigen::Map<MotorVectorFloat>(motor_state.q.data())(motor_idx_map);
+            MotorVectorFloat motor_velocity = Eigen::Map<MotorVectorFloat>(motor_state.qd.data())(motor_idx_map);
+            MotorVectorFloat motor_acceleration = Eigen::Map<MotorVectorFloat>(motor_state.qdd.data())(motor_idx_map);
+            MotorVectorFloat motor_torque_estimate = Eigen::Map<MotorVectorFloat>(motor_state.torque_estimate.data())(motor_idx_map);
+            QuaternionFloat body_rotation = Eigen::Map<QuaternionFloat>(imu_state.quaternion.data());
+            Vector3Float body_velocity = Eigen::Map<Vector3Float>(imu_state.gyroscope.data());
+            Vector3Float body_acceleration = Eigen::Map<Vector3Float>(imu_state.accelerometer.data());
+
+            state.motor_position = motor_position.cast<double>();
+            state.motor_velocity = motor_velocity.cast<double>();
+            state.motor_acceleration = motor_acceleration.cast<double>();
+            state.torque_estimate = motor_torque_estimate.cast<double>();
+            state.body_rotation = body_rotation.cast<double>();
+            state.body_velocity = body_velocity.cast<double>();
+            state.body_acceleration = body_acceleration.cast<double>();
+            state.contact_mask = contact_mask;
+
+            return absl::OkStatus();
+        }
+
+        lowleveltypes::MotorCommand update_motor_command(const TorqueCommand& torque_command) {
+            /*
+                Motor Command Struct:
+                
+                Turning off position based feedback terms.
+                Using velocity feedback terms for damping.
+                Only using built-in Unitree Control Loop.
+            */
+            std::array<float, constants::model::nu_size> q_setpoint = {
+                0.0, 0.9, -1.8,
+                0.0, 0.9, -1.8,
+                0.0, 0.9, -1.8,
+                0.0, 0.9, -1.8,
+            };
+            std::array<float, constants::model::nu_size> qd_setpoint = { 0 };
+            std::array<float, constants::model::nu_size> torque_feedforward;
+            for(int i = 0; i < constants::model::nu_size; i++) {
+                torque_feedforward[i] = torque_command(i);
+            }
+            std::array<float, constants::model::nu_size> stiffness = { 0 };
+            std::array<float, constants::model::nu_size> damping = {
+                5.0, 5.0, 5.0,
+                5.0, 5.0, 5.0,
+                5.0, 5.0, 5.0,
+                5.0, 5.0, 5.0,
+            };
+            std::array<float, constants::model::nu_size> kp = { 0 };
+            std::array<float, constants::model::nu_size> kd = { 0 };
+            
+            lowleveltypes::MotorCommand motor_command = {
+                .q_setpoint = q_setpoint,
+                .qd_setpoint = qd_setpoint,
+                .torque_feedforward = torque_feedforward,
+                .stiffness = stiffness,
+                .damping = damping,
+                .kp = kp,
+                .kd = kd,
+            };
+
+            return motor_command;
+        }
         
         void control_loop() {
+            using Clock = std::chrono::steady_clock;
+            auto next_time = Clock::now();
+            while(running) {
+                // Calculate next time:
+                next_time += std::chrono::microseconds(control_rate_us);
+
+                /* Lock Guard Scope */
+                {
+                    std::lock_guard<std::mutex> lock(mutex);
+
+                    // Get Robot State from Motor Controller and Update State Struct: Shared Variable (state)
+                    absl::Status result = update_state();
+
+                    // Update Operational Space Controller mj_model with State: Shared Variable (state)
+                    operational_space_controller.update_state(state);
+
+                    // Update Operational Space Controller with Taskspace Targets: Shared Variable (taskspace_targets)
+                    operational_space_controller.update_taskspace_targets(taskspace_targets);
+                }
+
+                // Get Torque Command: (OSC Locks this)
+                TorqueCommand torque_command = operational_space_controller.get_torque_command()(motor_idx_map);
+
+                // Create Motor Command: (No Lock Needed)
+                lowleveltypes::MotorCommand motor_command = update_motor_command(torque_command);
+
+                // Send Motor Command: (Motor Controller Locks this)
+                motor_controller.update_command(motor_command);
+
+                // Check for overrun and sleep until next time:
+                auto now = Clock::now();
+                if (now < next_time) {
+                    std::this_thread::sleep_until(next_time);
+                } else {
+                    // Log overrun:
+                    auto overrun = std::chrono::duration_cast<std::chrono::microseconds>(now - next_time);
+                    std::cout << "Interface Control Loop Execution Time Exceeded Control Rate: " 
+                        << overrun.count() << "us" << std::endl;
+                    next_time = now;
+                }
+            }
         }
 };

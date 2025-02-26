@@ -7,6 +7,8 @@ cc_library(
         "@mujoco-bazel//:mujoco",
         "@eigen//:eigen",
         "@osqp-cpp//:osqp++",
+        "@abseil-cpp//absl/log:absl_check",
+        "@abseil-cpp//absl/status:status",
     ],
     visibility = ["//visibility:public"],
 )

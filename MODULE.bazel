@@ -23,21 +23,36 @@ archive_override(
     module_name = "mujoco-bazel",
     strip_prefix = "mujoco-bazel-main",
     urls = ["https://github.com/jeh15/mujoco-bazel/archive/refs/heads/main.zip"],
-    integrity = "sha256-1DPjO/tY5r8DTuvQz/cOYDrKzataaXJCP/DUP6Ktz/o=",
+    integrity = "sha256-GWLqAiunkC0Pfx61ayaQoPrC62O02tnh2gqM9z2Wm/o=",
 )
 
 bazel_dep(name = "operational-space-controller")
+# archive_override(
+#     module_name = "operational-space-controller",
+#     strip_prefix = "operational-space-control-main",
+#     urls = ["https://github.com/jeh15/operational-space-control/archive/refs/heads/main.zip"],
+#     integrity = "sha256-Bo5gKObMoNg6zuYIEeTloKp1dujcQSqdYN1LDNtiloU=",
+# )
+
 archive_override(
     module_name = "operational-space-controller",
-    strip_prefix = "operational-space-control-main",
-    urls = ["https://github.com/jeh15/operational-space-control/archive/refs/heads/main.zip"],
+    strip_prefix = "operational-space-control-feature",
+    urls = ["https://github.com/jeh15/operational-space-control/archive/refs/heads/feature.zip"],
 )
 
 bazel_dep(name = "unitree-bazel")
+# archive_override(
+#     module_name = "unitree-bazel",
+#     strip_prefix = "unitree-bazel-main",
+#     urls = ["https://github.com/jeh15/unitree-bazel/archive/refs/heads/main.zip"],
+#     integrity = "sha256-eUDmYk/zcAAnQJnqw5/tZzkowmWtktJLinUJJf3CHgQ=",
+# )
+
+
 archive_override(
     module_name = "unitree-bazel",
-    strip_prefix = "unitree-bazel-main",
-    urls = ["https://github.com/jeh15/unitree-bazel/archive/refs/heads/main.zip"],
+    strip_prefix = "unitree-bazel-feature",
+    urls = ["https://github.com/jeh15/unitree-bazel/archive/refs/heads/feature.zip"],
 )
 
 # GLFW: (Visualize MuJoCo simulations)

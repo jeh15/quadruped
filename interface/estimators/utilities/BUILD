@@ -10,7 +10,7 @@ cc_library(
     hdrs = ["utilities.h"],
     deps = [
         ":array_safety",
-        "abseil-cpp//absl/base:core_headers",
+        "@abseil-cpp//absl/base:core_headers",
         "@abseil-cpp//absl/container:flat_hash_map",
         "@abseil-cpp//absl/log:check",
         "@abseil-cpp//absl/strings:strings",
