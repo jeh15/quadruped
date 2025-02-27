@@ -320,9 +320,6 @@ class UnitreeGo2Interface {
         }
 
         absl::Status initialize_operational_space_controller_thread() {
-            if(!operational_space_controller_initialized)
-                return absl::FailedPreconditionError("Operational Space Controller not initialized");
-
             absl::Status result = operational_space_controller.initialize_control_thread();
             if(!result.ok())
                 return result;
@@ -331,9 +328,6 @@ class UnitreeGo2Interface {
         }
 
         absl::Status initialize_motor_controller_thread() {
-            if(!motor_controller_initialized)
-                return absl::FailedPreconditionError("Motor Controller not initialized");
-
             absl::Status result;
             result.Update(motor_controller.initialize_control_thread());
             if(!result.ok())
@@ -343,7 +337,7 @@ class UnitreeGo2Interface {
         }
 
         absl::Status initialize_control_thread() {
-            if(!operational_space_controller_initialized && !motor_controller_initialized)
+            if(!operational_space_controller_initialized || !motor_controller_initialized)
                 return absl::FailedPreconditionError("Operational Space Controller and/or Motor Controller not initialized");
             
             thread = std::thread(&UnitreeGo2Interface::control_loop, this);
@@ -373,22 +367,15 @@ class UnitreeGo2Interface {
 
         absl::Status stop_child_threads() {
             absl::Status result;
-            if(operational_space_controller_initialized)
-                operational_space_controller.stop_control_thread();
-
+            result.Update(operational_space_controller.stop_control_thread());
             result.Update(motor_controller.stop_control_thread());
-
             if(!result.ok())
                 return result;
-
-            if(!operational_space_controller_initialized || !motor_controller_initialized)
-                return absl::FailedPreconditionError("Operational Space Controller and/or Motor Controller not initialized");
 
             return absl::OkStatus();
         }
 
         absl::Status stop_threads() {
-            // Stop all threads:
             absl::Status result;
             result.Update(stop_control_thread());
             result.Update(stop_child_threads());
@@ -399,16 +386,8 @@ class UnitreeGo2Interface {
         }
 
         absl::Status clean_up() {
-            // TODO(jeh15): Push error handling down to compontents...
-            if(!operational_space_controller_initialized)
-                return absl::FailedPreconditionError("Operational Space Controller not initialized. Nothing to clean up.");
-            
-            if(!motor_controller_initialized)
-                return absl::FailedPreconditionError("Mock Motor Controller not initialized. Nothing to clean up.");
-            
             absl::Status result;
-            operational_space_controller.close();   
-            // result.Update(operational_space_controller.clean_up());
+            result.Update(operational_space_controller.clean_up());
             result.Update(motor_controller.clean_up());     
             if(!result.ok())
                 return result;
@@ -428,6 +407,11 @@ class UnitreeGo2Interface {
         State get_state() {
             std::lock_guard<std::mutex> lock(mutex);
             return state;
+        }
+
+        TorqueCommand get_torque_command() {
+            std::lock_guard<std::mutex> lock(mutex);
+            return operational_space_controller.get_torque_command();
         }
 
     private:

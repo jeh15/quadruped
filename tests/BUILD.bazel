@@ -3,8 +3,15 @@ load("@rules_cc//cc:defs.bzl", "cc_binary")
 cc_binary(
     name = "osc_interface_test",
     srcs = ["osc_interface_test.cc"],
+    data = ["//models/unitree_go2:unitree_go2"],
     deps = [
         "//interface/unitree_go2:osc_interface",
+        "@eigen//:eigen",
+        "@osqp-cpp//:osqp++",
+        "@abseil-cpp//absl/log:absl_check",
+        "@abseil-cpp//absl/status:status",
+        "@rules_cc//cc/runfiles:runfiles",
+        "@bazel_tools//tools/cpp/runfiles",
     ],
     visibility = ["//visibility:public"],
 )
@@ -18,6 +25,7 @@ cc_binary(
         "@operational-space-controller//:operational_space_controller",
         "@mujoco-bazel//:mujoco",
         "@eigen//:eigen",
+        "@osqp-cpp//:osqp++",
         "@glfw-bazel//:glfw",
         "@abseil-cpp//absl/log:absl_check",
         "@abseil-cpp//absl/status:status",

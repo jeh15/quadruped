@@ -1,10 +1,12 @@
 #include <filesystem>
 
 #include "absl/status/status.h"
+#include "absl/log/absl_check.h"
 #include "rules_cc/cc/runfiles/runfiles.h"
 
 #include "mujoco/mujoco.h"
 #include "Eigen/Dense"
+#include "osqp++.h"
 #include "GLFW/glfw3.h"
 
 #include "interface/unitree_go2/simulation_interface.h"
@@ -34,10 +36,17 @@ int main(int argc, char** argv) {
         runfiles->Rlocation("unitree-interface/models/unitree_go2/scene_mjx_torque.xml");
 
     // OSC Args:
+    OsqpSettings osqp_settings;
+    osqp_settings.verbose = false;
+    osqp_settings.polish = true;
+    osqp_settings.polish_refine_iter = 3;
+    osqp_settings.eps_abs = 1e-3;
+
+    // OSC Args:
     OperationalSpaceControllerArgs osc_args = {
         .xml_path = model_path,
         .control_rate = 1000,
-        .osqp_settings = osqp::OsqpSettings(),
+        .osqp_settings = osqp_settings,
     };
 
     // MC Args:
@@ -89,6 +98,9 @@ int main(int argc, char** argv) {
     // Main Loop:
     int visualize_iter = 0;
     while(unitree_driver.motor_controller.mj_data->time < 30) {
+        auto torque_command = unitree_driver.get_torque_command();
+        std::cout << "Torque Command: " << torque_command.transpose() << std::endl;
+
         auto mj_data = unitree_driver.motor_controller.mj_data;
         if(visualize_iter % 10 == 0) {
             mjv_updateScene(mj_model, mj_data, &opt, &pert, &cam, mjCAT_ALL, &scn);

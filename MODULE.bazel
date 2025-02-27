@@ -34,7 +34,6 @@ archive_override(
     module_name = "operational-space-controller",
     strip_prefix = "operational-space-control-main",
     urls = ["https://github.com/jeh15/operational-space-control/archive/refs/heads/main.zip"],
-    integrity = "sha256-2FICQzpAG9RE1YMfXxyVo8qzzQrWq1hix1Znodn1uBc=",
 )
 
 # archive_override(
@@ -48,7 +47,6 @@ archive_override(
     module_name = "unitree-bazel",
     strip_prefix = "unitree-bazel-main",
     urls = ["https://github.com/jeh15/unitree-bazel/archive/refs/heads/main.zip"],
-    integrity = "sha256-d4N8gsPYVh0A0Ho6/vTM3LPNIhKWJu/zBrNr/Uzo8aM=",
 )
 
 

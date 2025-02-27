@@ -69,7 +69,9 @@ class UnitreeGo2Interface {
                 return absl::FailedPreconditionError("Motor Controller not initialized. Motor Controller needs to be initialized first to set the initial state of the Operational Space Controller.");
 
             // Load mujoco model and use initial state from the motor controller:
-            absl::Status result = operational_space_controller.initialize(xml_path, initial_state);
+            absl::Status result;
+            result.Update(operational_space_controller.initialize(xml_path, initial_state));
+            result.Update(operational_space_controller.initialize_optimization());
             if (!result.ok())
                 return result;
 
@@ -78,37 +80,37 @@ class UnitreeGo2Interface {
         }
 
         absl::Status initialize_motor_controller() {
-            motor_controller.initialize(network_name);
-            motor_controller_initialized = true;
+            absl::Status result;
+            result.Update(motor_controller.initialize(network_name));
+            result.Update(update_state());
+            if(!result.ok())
+                return result;
 
-            // Get and set initial state:
-            absl::Status result = update_state();
             initial_state = get_state();
+            motor_controller_initialized = true;
 
             return absl::OkStatus();
         }
 
         absl::Status initialize_operational_space_controller_thread() {
-            if (!operational_space_controller_initialized)
-                return absl::FailedPreconditionError("Operational Space Controller not initialized");
-
             absl::Status result = operational_space_controller.initialize_control_thread();
-            if (!result.ok())
+            if(!result.ok())
                 return result;
             
             return absl::OkStatus();
         }
 
         absl::Status initialize_motor_controller_thread() {
-            if (!motor_controller_initialized)
-                return absl::FailedPreconditionError("Motor Controller not initialized");
+            absl::Status result;
+            result.Update(motor_controller.initialize_control_thread());
+            if(!result.ok())
+                return result;
 
-            motor_controller.initialize_control_thread();
             return absl::OkStatus();
         }
 
         absl::Status initialize_control_thread() {
-            if (!operational_space_controller_initialized && !motor_controller_initialized)
+            if(!operational_space_controller_initialized || !motor_controller_initialized)
                 return absl::FailedPreconditionError("Operational Space Controller and/or Motor Controller not initialized");
             
             thread = std::thread(&UnitreeGo2Interface::control_loop, this);
@@ -128,7 +130,7 @@ class UnitreeGo2Interface {
         }
 
         absl::Status stop_control_thread() {
-            if (!control_thread_initialized)
+            if(!control_thread_initialized)
                 return absl::FailedPreconditionError("Control Thread not initialized");
 
             running = false;
@@ -137,14 +139,11 @@ class UnitreeGo2Interface {
         }
 
         absl::Status stop_child_threads() {
-            if (operational_space_controller_initialized)
-                operational_space_controller.stop_control_thread();
-
-            if (motor_controller_initialized)
-                motor_controller.stop_control_thread();
-
-            if (!operational_space_controller_initialized || !motor_controller_initialized)
-                return absl::FailedPreconditionError("Operational Space Controller and/or Motor Controller not initialized");
+            absl::Status result;
+            result.Update(operational_space_controller.stop_control_thread());
+            result.Update(motor_controller.stop_control_thread());
+            if(!result.ok())
+                return result;
 
             return absl::OkStatus();
         }
@@ -161,10 +160,19 @@ class UnitreeGo2Interface {
         }
 
         absl::Status clean_up() {
-            if(!operational_space_controller_initialized)
-                return absl::FailedPreconditionError("Operational Space Controller not initialized. Nothing to clean up.");
-            
-            operational_space_controller.close();            
+            absl::Status result;
+            result.Update(operational_space_controller.clean_up());    
+            if(!result.ok())
+                return result;
+
+            return absl::OkStatus();
+        }
+
+        absl::Status activate_operational_space_controller() {
+            if(!control_thread_initialized)
+                return absl::FailedPreconditionError("Control Thread not initialized. Initial Control Commands must come from Default Control.");
+
+            activate_control = true;
             return absl::OkStatus();
         }
 
@@ -180,6 +188,11 @@ class UnitreeGo2Interface {
         State get_state() {
             std::lock_guard<std::mutex> lock(mutex);
             return state;
+        }
+
+        TorqueCommand get_torque_command() {
+            std::lock_guard<std::mutex> lock(mutex);
+            return operational_space_controller.get_torque_command();
         }
 
     private:
@@ -199,8 +212,13 @@ class UnitreeGo2Interface {
         const std::array<int, constants::model::nu_size> motor_idx_map{3, 4, 5, 0, 1, 2, 9, 10, 11, 6, 7, 8};
         const std::array<int, 4> foot_idx_map{1, 0, 3, 2};
         const short contact_threshold = 24;
+        float stiffness_value = 5.0;
+        float damping_value = 5.0;
+        float stiffness_delta = 0.01;
+        float damping_delta = 0.0;
         /* Thread Variables */
         std::atomic<bool> running{true};
+        std::atomic<bool> activate_control{false};
         std::thread thread;
         std::mutex mutex;
         bool control_thread_initialized = false;
@@ -280,6 +298,61 @@ class UnitreeGo2Interface {
 
             return motor_command;
         }
+
+        lowleveltypes::MotorCommand default_motor_command(const float stiffness_value = 5.0, const float damping_value = 5.0) {
+            /*
+                Hold default position.
+            */
+
+            // Clamp values:
+            std::clamp(stiffness_value, 0.0f, 120.0f);
+            std::clamp(damping_value, 0.0f, 5.0f);
+
+            std::array<float, constants::model::nu_size> q_setpoint = {
+                0.0, 0.9, -1.8,
+                0.0, 0.9, -1.8,
+                0.0, 0.9, -1.8,
+                0.0, 0.9, -1.8,
+            };
+            std::array<float, constants::model::nu_size> qd_setpoint = { 0 };
+            std::array<float, constants::model::nu_size> torque_feedforward = { 0 };
+            std::array<float, constants::model::nu_size> stiffness = { 
+                stiffness_value, stiffness_value, stiffness_value,
+                stiffness_value, stiffness_value, stiffness_value,
+                stiffness_value, stiffness_value, stiffness_value,
+                stiffness_value, stiffness_value, stiffness_value,
+            };
+            std::array<float, constants::model::nu_size> damping = {
+                damping_value, damping_value, damping_value,
+                damping_value, damping_value, damping_value,
+                damping_value, damping_value, damping_value,
+                damping_value, damping_value, damping_value,
+            };
+            std::array<float, constants::model::nu_size> kp = { 
+                5.0, 5.0, 5.0,
+                5.0, 5.0, 5.0,
+                5.0, 5.0, 5.0,
+                5.0, 5.0, 5.0,
+             };
+            std::array<float, constants::model::nu_size> kd = { 
+                2.0, 2.0, 2.0,
+                2.0, 2.0, 2.0,
+                2.0, 2.0, 2.0,
+                2.0, 2.0, 2.0,
+             };
+            
+            lowleveltypes::MotorCommand motor_command = {
+                .q_setpoint = q_setpoint,
+                .qd_setpoint = qd_setpoint,
+                .torque_feedforward = torque_feedforward,
+                .stiffness = stiffness,
+                .damping = damping,
+                .kp = kp,
+                .kd = kd,
+            };
+
+            return motor_command;
+        }
         
         void control_loop() {
             using Clock = std::chrono::steady_clock;
@@ -287,7 +360,6 @@ class UnitreeGo2Interface {
             while(running) {
                 // Calculate next time:
                 next_time += std::chrono::microseconds(control_rate_us);
-
                 /* Lock Guard Scope */
                 {
                     std::lock_guard<std::mutex> lock(mutex);
@@ -305,8 +377,16 @@ class UnitreeGo2Interface {
                 // Get Torque Command: (OSC Locks this)
                 TorqueCommand torque_command = operational_space_controller.get_torque_command()(motor_idx_map);
 
-                // Create Motor Command: (No Lock Needed)
-                lowleveltypes::MotorCommand motor_command = update_motor_command(torque_command);
+                // Create Motor Command:
+                lowleveltypes::MotorCommand motor_command;
+                if(activate_control) {
+                    motor_command = update_motor_command(torque_command);
+                }
+                else {
+                    motor_command = default_motor_command(stiffness_value, damping_value);
+                    stiffness_value += stiffness_delta;
+                    damping_value += damping_delta;
+                }
 
                 // Send Motor Command: (Motor Controller Locks this)
                 motor_controller.update_command(motor_command);
