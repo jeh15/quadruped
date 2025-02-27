@@ -55,9 +55,16 @@ int main(int argc, char** argv) {
         .control_rate = 2000,
     };
 
+    // Logger Args:
+    StateLoggerArgs log_args = {
+        .log_filepath = "simulation_test.log",
+        .logging_rate = 100000,
+        .enable_logging = true,
+    };
+
     // Initialize Interface Driver:
     absl::Status result;
-    UnitreeGo2Interface unitree_driver(osc_args, mc_args);
+    UnitreeGo2Interface unitree_driver(osc_args, mc_args, log_args);
     result.Update(unitree_driver.initialize());
 
     auto mj_model = unitree_driver.motor_controller.mj_model;
@@ -89,17 +96,38 @@ int main(int argc, char** argv) {
                          0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
                          0.0, 0.0, 0.0, 0.0, 0.0, 0.0;
     
-    unitree_driver.update_taskspace_targets(taskspace_targets);
+    std::ignore = unitree_driver.update_taskspace_targets(taskspace_targets);
 
     // These initialize or throw:
     result.Update(unitree_driver.initialize_threads());
     ABSL_CHECK(result.ok()) << result.message();
 
     // Main Loop:
+    State state;
+    double kd = 2.0;
+    double magnitude = 0.5;
+    double frequency = 0.5;
+
+    using Clock = std::chrono::steady_clock;
+    auto start = Clock::now();
+
     int visualize_iter = 0;
     while(unitree_driver.motor_controller.mj_data->time < 30) {
-        auto torque_command = unitree_driver.get_torque_command();
-        std::cout << "Torque Command: " << torque_command.transpose() << std::endl;
+        // auto torque_command = unitree_driver.get_torque_command();
+        // std::cout << "Torque Command: " << torque_command.transpose() << std::endl;
+
+        auto now = Clock::now();
+        auto elapsed_time = std::chrono::duration_cast<std::chrono::milliseconds>(now - start);
+        auto time = elapsed_time.count() * 1.0e-3;
+
+        // Sinusoidal Z Targets:
+        state = unitree_driver.get_state();
+        double velocity_target = magnitude * frequency * std::cos(frequency * time);
+        double acceleration_target = -magnitude * frequency * frequency * std::sin(frequency * time);
+        double velocity_error = velocity_target - state.linear_body_velocity(2);
+        double command = acceleration_target + kd * velocity_error;
+        taskspace_targets(0, 2) = command;
+        std::ignore = unitree_driver.update_taskspace_targets(taskspace_targets);
 
         auto mj_data = unitree_driver.motor_controller.mj_data;
         if(visualize_iter % 10 == 0) {

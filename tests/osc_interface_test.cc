@@ -1,6 +1,7 @@
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <thread>
 
 #include "absl/status/status.h"
 #include "absl/log/absl_check.h"
@@ -9,6 +10,7 @@
 #include "Eigen/Dense"
 #include "osqp++.h"
 
+#include "interface/unitree_go2/logger.h"
 #include "interface/unitree_go2/osc_interface.h"
 
 using rules_cc::cc::runfiles::Runfiles;
@@ -42,9 +44,16 @@ int main(int argc, char** argv) {
         .control_rate = 2000,
     };
 
+    // Logger Args:
+    StateLoggerArgs log_args = {
+        .log_filepath = "hardware_test.log",
+        .logging_rate = 100000,
+        .enable_logging = true,
+    };
+
     // Initialize Interface Driver:
     absl::Status result;
-    UnitreeGo2Interface unitree_driver(osc_args, mc_args);
+    UnitreeGo2Interface unitree_driver(osc_args, mc_args, log_args);
     result.Update(unitree_driver.initialize());
 
     // Update Taskspace Targets:
@@ -55,7 +64,7 @@ int main(int argc, char** argv) {
                          0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
                          0.0, 0.0, 0.0, 0.0, 0.0, 0.0;
     
-    unitree_driver.update_taskspace_targets(taskspace_targets);
+    std::ignore = unitree_driver.update_taskspace_targets(taskspace_targets);
 
     // Initialize Threads:
     result.Update(unitree_driver.initialize_threads());
@@ -66,20 +75,32 @@ int main(int argc, char** argv) {
     while(true) {
         auto now = Clock::now();
         auto elapsed_time_seconds = std::chrono::duration_cast<std::chrono::seconds>(now - start);
-        if(elapsed_time_seconds.count() % 1 == 0) {
-            auto torque_command = unitree_driver.get_torque_command();
-            std::cout << "Torque Command: " << torque_command.transpose() << std::endl;
-        }
-        if(elapsed_time_seconds.count() > 30) {
+        if(elapsed_time_seconds.count() > 15) {
             break;
         }
     }
 
     // Activate Operational Space Controller:
+    State state;
+    double kd = 2.0;
+    double magnitude = 0.5;
+    double frequency = 0.5;
     result.Update(unitree_driver.activate_operational_space_controller());
     ABSL_CHECK(result.ok()) << result.message();
     std::cout << "Press Enter to Terminate Process: " << std::endl;
+    start = Clock::now();
     while(true) {
+        auto now = Clock::now();
+        auto elapsed_time = std::chrono::duration_cast<std::chrono::milliseconds>(now - start);
+        auto time = elapsed_time.count() * 1.0e-3;
+        // Sinusoidal Z Targets:
+        state = unitree_driver.get_state();
+        double velocity_target = magnitude * frequency * std::cos(frequency * time);
+        double acceleration_target = -magnitude * frequency * frequency * std::sin(frequency * time);
+        double velocity_error = velocity_target - state.linear_body_velocity(2);
+        double command = acceleration_target + kd * velocity_error;
+        taskspace_targets(0, 2) = command;
+        std::ignore = unitree_driver.update_taskspace_targets(taskspace_targets);
     }
 
     // Stop threads and clean up:

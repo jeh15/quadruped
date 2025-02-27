@@ -6,6 +6,7 @@ cc_binary(
     data = ["//models/unitree_go2:unitree_go2"],
     deps = [
         "//interface/unitree_go2:osc_interface",
+        "//interface/unitree_go2:logger",
         "@eigen//:eigen",
         "@osqp-cpp//:osqp++",
         "@abseil-cpp//absl/log:absl_check",
