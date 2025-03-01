@@ -43,18 +43,17 @@ archive_override(
 # )
 
 bazel_dep(name = "unitree-bazel")
-archive_override(
-    module_name = "unitree-bazel",
-    strip_prefix = "unitree-bazel-main",
-    urls = ["https://github.com/jeh15/unitree-bazel/archive/refs/heads/main.zip"],
-)
-
-
 # archive_override(
 #     module_name = "unitree-bazel",
-#     strip_prefix = "unitree-bazel-feature",
-#     urls = ["https://github.com/jeh15/unitree-bazel/archive/refs/heads/feature.zip"],
+#     strip_prefix = "unitree-bazel-main",
+#     urls = ["https://github.com/jeh15/unitree-bazel/archive/refs/heads/main.zip"],
 # )
+
+archive_override(
+    module_name = "unitree-bazel",
+    strip_prefix = "unitree-bazel-feature",
+    urls = ["https://github.com/jeh15/unitree-bazel/archive/refs/heads/feature.zip"],
+)
 
 # GLFW: (Visualize MuJoCo simulations)
 bazel_dep(name = "glfw-bazel")
