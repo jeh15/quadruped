@@ -55,21 +55,20 @@ struct OperationalSpaceControllerArgs {
     osqp::OsqpSettings osqp_settings = osqp::OsqpSettings();
 };
 
-struct MotorControllerArgs {
-    std::string network_name;
-    int control_rate = 2000;
-};
-
 class UnitreeGo2Interface {
     public:
-        UnitreeGo2Interface(OperationalSpaceControllerArgs osc_args, MotorControllerArgs mc_args, StateLoggerArgs log_args) : 
+        UnitreeGo2Interface(
+            std::shared_ptr<UnitreeDriver> unitree_drv,
+            OperationalSpaceControllerArgs osc_args, 
+            EstimatorArgs estimator_args, 
+            StateLoggerArgs log_args
+        ) : 
+            unitree_driver(unitree_drv),
+            estimator(unitree_drv, estimator_args.xml_path, estimator_args.control_rate),
             operational_space_controller(osc_args.control_rate, osc_args.osqp_settings),
-            motor_controller(mc_args.control_rate),
             logger(log_args.log_filepath, log_args.logging_rate),
             enable_logger(log_args.enable_logging),
-            xml_path(osc_args.xml_path),
-            network_name(mc_args.network_name),
-            control_rate_us(mc_args.control_rate) {}
+            xml_path(osc_args.xml_path) {}
         ~UnitreeGo2Interface() {}
 
         absl::Status initialize() {
@@ -88,47 +87,18 @@ class UnitreeGo2Interface {
         }
 
         absl::Status initialize_operational_space_controller() {
-            if(!motor_controller_initialized)
-                return absl::FailedPreconditionError("Motor Controller not initialized. Motor Controller needs to be initialized first to set the initial state of the Operational Space Controller.");
+            if(!estimator->is_initialized())
+                return absl::FailedPreconditionError("State Estimator not initialized. State Estimator needs to be initialized first to set the initial state of the Operational Space Controller.");
 
             // Load mujoco model and use initial state from the motor controller:
             absl::Status result;
+            result.Update(update_state());
             result.Update(operational_space_controller.initialize(xml_path, initial_state));
             result.Update(operational_space_controller.initialize_optimization());
             if (!result.ok())
                 return result;
 
             operational_space_controller_initialized = true;
-            return absl::OkStatus();
-        }
-
-        absl::Status initialize_motor_controller() {
-            absl::Status result;
-            result.Update(motor_controller.initialize(network_name));
-            result.Update(update_state());
-            if(!result.ok())
-                return result;
-
-            initial_state = get_state();
-            motor_controller_initialized = true;
-
-            return absl::OkStatus();
-        }
-
-        absl::Status initialize_operational_space_controller_thread() {
-            absl::Status result = operational_space_controller.initialize_control_thread();
-            if(!result.ok())
-                return result;
-            
-            return absl::OkStatus();
-        }
-
-        absl::Status initialize_motor_controller_thread() {
-            absl::Status result;
-            result.Update(motor_controller.initialize_control_thread());
-            if(!result.ok())
-                return result;
-
             return absl::OkStatus();
         }
 
@@ -145,7 +115,8 @@ class UnitreeGo2Interface {
             // Initialize all threads:
             absl::Status result;
             result.Update(operational_space_controller.initialize_control_thread());
-            result.Update(motor_controller.initialize_control_thread());
+            result.Update(estimator.initialize_estimator_thread());
+            result.Update(unitree_driver->initialize_control_thread());
             result.Update(initialize_control_thread());
             if(enable_logger)
                 result.Update(logger.initialize_log_thread());
@@ -169,7 +140,8 @@ class UnitreeGo2Interface {
             result.Update(stop_control_thread());
             result.Update(logger.stop_log_thread());
             result.Update(operational_space_controller.stop_control_thread());
-            result.Update(motor_controller.stop_control_thread());
+            result.Update(estimator.stop_estimator_thread());
+            result.Update(unitree_driver->stop_control_thread());
             if(!result.ok())
                 return result;
 
@@ -219,7 +191,7 @@ class UnitreeGo2Interface {
         TaskspaceTargetsMatrix taskspace_targets = TaskspaceTargetsMatrix::Zero();
         /* Operational Space Controller and Motor Controller */
         OperationalSpaceController operational_space_controller;
-        MotorController motor_controller;
+        std::shared_ptr<UnitreeDriver> unitree_driver;
         StateLogger logger;
         State initial_state;
         bool enable_logger;
@@ -300,7 +272,7 @@ class UnitreeGo2Interface {
 
         absl::Status initialize_filter() {
             // Initialize Filter:
-            lowleveltypes::IMUState imu_state = motor_controller.get_imu_state();
+            lowleveltypes::IMUState imu_state = unitree_driver.get_imu_state();
 
             // Reformat data to match Mujoco Model:
             Vector3Float linear_body_acceleration = Eigen::Map<Vector3Float>(imu_state.accelerometer.data());
@@ -315,9 +287,9 @@ class UnitreeGo2Interface {
 
         absl::Status update_state() {
             // Get Current State for Unitree Go2 Motor Driver:
-            lowleveltypes::LowState low_state = motor_controller.get_low_state();
-            lowleveltypes::IMUState imu_state = motor_controller.get_imu_state();
-            lowleveltypes::MotorState motor_state = motor_controller.get_motor_state();
+            lowleveltypes::LowState low_state = unitree_driver.get_low_state();
+            lowleveltypes::IMUState imu_state = unitree_driver.get_imu_state();
+            lowleveltypes::MotorState motor_state = unitree_driver.get_motor_state();
 
             // Create contact mask:
             ContactMask contact_mask = ContactMask::Zero();
@@ -558,7 +530,7 @@ class UnitreeGo2Interface {
                 }
 
                 // Send Motor Command: (Motor Controller Locks this)
-                motor_controller.update_command(motor_command);
+                unitree_driver.update_command(motor_command);
 
                 // Check for overrun and sleep until next time:
                 auto now = Clock::now();
