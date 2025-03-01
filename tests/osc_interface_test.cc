@@ -82,25 +82,27 @@ int main(int argc, char** argv) {
 
     // Activate Operational Space Controller:
     State state;
-    double kd = 2.0;
-    double magnitude = 0.5;
-    double frequency = 0.5;
+    double kd = 5.0;
+    Eigen::Vector<double, 3> zero_taskspace = Eigen::Vector<double, 3>::Zero();
     result.Update(unitree_driver.activate_operational_space_controller());
     ABSL_CHECK(result.ok()) << result.message();
     std::cout << "Press Enter to Terminate Process: " << std::endl;
     start = Clock::now();
     while(true) {
-        auto now = Clock::now();
-        auto elapsed_time = std::chrono::duration_cast<std::chrono::milliseconds>(now - start);
-        auto time = elapsed_time.count() * 1.0e-3;
+        // auto now = Clock::now();
+        // auto elapsed_time = std::chrono::duration_cast<std::chrono::milliseconds>(now - start);
+        // auto time = elapsed_time.count() * 1.0e-3;
         // Sinusoidal Z Targets:
         state = unitree_driver.get_state();
-        double velocity_target = magnitude * frequency * std::cos(frequency * time);
-        double acceleration_target = -magnitude * frequency * frequency * std::sin(frequency * time);
-        double velocity_error = velocity_target - state.linear_body_velocity(2);
-        double command = acceleration_target + kd * velocity_error;
-        taskspace_targets(0, 2) = command;
-        std::ignore = unitree_driver.update_taskspace_targets(taskspace_targets);
+        Eigen::Vector<double, 3> linear_velocity_feedback = kd * (zero_taskspace -  state.linear_body_velocity);
+        Eigen::Vector<double, 3> angular_velocity_feedback = kd * (zero_taskspace -  state.angular_body_velocity);
+        for(int i = 0; i < 3; i++) {
+            taskspace_targets(0, i) = linear_velocity_feedback[i];
+            taskspace_targets(0, i + 3) = angular_velocity_feedback[i];
+        }
+        // std::ignore = unitree_driver.update_taskspace_targets(taskspace_targets);
+        std::cout << "Linear Velocity Feedback: " << linear_velocity_feedback.transpose() << std::endl;
+        std::cout << "Angular Velocity Feedback: " << angular_velocity_feedback.transpose() << std::endl;
     }
 
     // Stop threads and clean up:
