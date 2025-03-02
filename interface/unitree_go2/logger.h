@@ -48,16 +48,16 @@ class FileLogSink : public absl::LogSink {
 
 
 struct StateLoggerArgs {
-    std::filesystem::path log_filepath;
-    int logging_rate;
+    std::filesystem::path filepath;
+    int log_rate_us;
     bool enable_logging;
 };
 
 
 class StateLogger {
     public:
-        StateLogger(const std::filesystem::path& log_filepath, const int logging_rate) : 
-            filepath(log_filepath), log_rate_us(logging_rate) {}
+        StateLogger(const std::filesystem::path& filepath, const int log_rate_us) : 
+            filepath(filepath), log_rate_us(log_rate_us) {}
         ~StateLogger() {}
 
         absl::Status initialize() {

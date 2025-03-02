@@ -21,8 +21,8 @@
 
 #include "operational-space-control/unitree_go2/operational_space_controller.h"
 #include "operational-space-control/unitree_go2/autogen/autogen_defines.h"
-#include "unitree-api/lowlevelapi.h"
-#include "unitree-api/lowlevelapi_types.h"
+#include "unitree-api/unitree_driver.h"
+#include "unitree-api/containers.h"
 
 
 namespace {
@@ -51,34 +51,33 @@ namespace {
 
 struct OperationalSpaceControllerArgs {
     std::filesystem::path xml_path;
-    int control_rate = 1000;
+    int control_rate_us = 1000;
     osqp::OsqpSettings osqp_settings = osqp::OsqpSettings();
 };
 
+template <typename RobotDriver = UnitreeDriver>
 class UnitreeGo2Interface {
     public:
         UnitreeGo2Interface(
-            std::shared_ptr<UnitreeDriver> unitree_drv,
+            std::shared_ptr<RobotDriver> unitree_driver,
             OperationalSpaceControllerArgs osc_args, 
             EstimatorArgs estimator_args, 
             StateLoggerArgs log_args
         ) : 
-            unitree_driver(unitree_drv),
-            estimator(unitree_drv, estimator_args.xml_path, estimator_args.control_rate),
-            operational_space_controller(osc_args.control_rate, osc_args.osqp_settings),
+            unitree_driver(unitree_driver),
+            estimator(unitree_driver, estimator_args.xml_path, estimator_args.control_rate_us),
+            operational_space_controller(osc_args.control_rate_us, osc_args.osqp_settings),
             logger(log_args.log_filepath, log_args.logging_rate),
-            enable_logger(log_args.enable_logging),
+            enable_logging(log_args.enable_logging),
             xml_path(osc_args.xml_path) {}
         ~UnitreeGo2Interface() {}
 
         absl::Status initialize() {
-            // Initialize Motor Controller and Operational Space Controller:
             absl::Status result;
-            result.Update(initialize_motor_controller());
             result.Update(initialize_operational_space_controller());
 
             // Initialize Logger:
-            if(enable_logger)
+            if(enable_logging)
                 result.Update(logger.initialize());
 
             ABSL_CHECK(result.ok()) << result.message();
@@ -118,7 +117,7 @@ class UnitreeGo2Interface {
             result.Update(estimator.initialize_estimator_thread());
             result.Update(unitree_driver->initialize_control_thread());
             result.Update(initialize_control_thread());
-            if(enable_logger)
+            if(enable_logging)
                 result.Update(logger.initialize_log_thread());
 
             ABSL_CHECK(result.ok()) << result.message();
@@ -191,10 +190,10 @@ class UnitreeGo2Interface {
         TaskspaceTargetsMatrix taskspace_targets = TaskspaceTargetsMatrix::Zero();
         /* Operational Space Controller and Motor Controller */
         OperationalSpaceController operational_space_controller;
-        std::shared_ptr<UnitreeDriver> unitree_driver;
+        std::shared_ptr<RobotDriver> unitree_driver;
         StateLogger logger;
         State initial_state;
-        bool enable_logger;
+        bool enable_logging;
         bool operational_space_controller_initialized = false;
         bool motor_controller_initialized = false;
         const std::filesystem::path xml_path;
@@ -272,7 +271,7 @@ class UnitreeGo2Interface {
 
         absl::Status initialize_filter() {
             // Initialize Filter:
-            lowleveltypes::IMUState imu_state = unitree_driver.get_imu_state();
+            unitree::containers::IMUState imu_state = unitree_driver.get_imu_state();
 
             // Reformat data to match Mujoco Model:
             Vector3Float linear_body_acceleration = Eigen::Map<Vector3Float>(imu_state.accelerometer.data());
@@ -285,45 +284,46 @@ class UnitreeGo2Interface {
             return absl::OkStatus();
         }
 
-        absl::Status update_state() {
-            // Get Current State for Unitree Go2 Motor Driver:
-            lowleveltypes::LowState low_state = unitree_driver.get_low_state();
-            lowleveltypes::IMUState imu_state = unitree_driver.get_imu_state();
-            lowleveltypes::MotorState motor_state = unitree_driver.get_motor_state();
+        // Update State comes from Estimator now...
+        // absl::Status update_state() {
+        //     // Get Current State for Unitree Go2 Motor Driver:
+        //     unitree::containers::LowState low_state = unitree_driver.get_low_state();
+        //     unitree::containers::IMUState imu_state = unitree_driver.get_imu_state();
+        //     unitree::containers::MotorState motor_state = unitree_driver.get_motor_state();
 
-            // Create contact mask:
-            ContactMask contact_mask = ContactMask::Zero();
-            Eigen::Vector<short, 4> foot_force = Eigen::Map<Eigen::Vector<short, 4>>(low_state.foot_force.data())(foot_idx_map);
-            for(int i = 0; i < 4; i++) {
-                contact_mask(i) = foot_force(i) > contact_threshold;
-            }
+        //     // Create contact mask:
+        //     ContactMask contact_mask = ContactMask::Zero();
+        //     Eigen::Vector<short, 4> foot_force = Eigen::Map<Eigen::Vector<short, 4>>(low_state.foot_force.data())(foot_idx_map);
+        //     for(int i = 0; i < 4; i++) {
+        //         contact_mask(i) = foot_force(i) > contact_threshold;
+        //     }
 
-            // Reformat data to match Mujoco Model: 
-            MotorVectorFloat motor_position = Eigen::Map<MotorVectorFloat>(motor_state.q.data())(motor_idx_map);
-            MotorVectorFloat motor_velocity = Eigen::Map<MotorVectorFloat>(motor_state.qd.data())(motor_idx_map);
-            MotorVectorFloat motor_acceleration = Eigen::Map<MotorVectorFloat>(motor_state.qdd.data())(motor_idx_map);
-            MotorVectorFloat motor_torque_estimate = Eigen::Map<MotorVectorFloat>(motor_state.torque_estimate.data())(motor_idx_map);
-            QuaternionFloat body_rotation = Eigen::Map<QuaternionFloat>(imu_state.quaternion.data());
-            Vector3Float angular_body_velocity = Eigen::Map<Vector3Float>(imu_state.gyroscope.data());
-            Vector3Float linear_body_acceleration = Eigen::Map<Vector3Float>(imu_state.accelerometer.data());
+        //     // Reformat data to match Mujoco Model: 
+        //     MotorVectorFloat motor_position = Eigen::Map<MotorVectorFloat>(motor_state.q.data())(motor_idx_map);
+        //     MotorVectorFloat motor_velocity = Eigen::Map<MotorVectorFloat>(motor_state.qd.data())(motor_idx_map);
+        //     MotorVectorFloat motor_acceleration = Eigen::Map<MotorVectorFloat>(motor_state.qdd.data())(motor_idx_map);
+        //     MotorVectorFloat motor_torque_estimate = Eigen::Map<MotorVectorFloat>(motor_state.torque_estimate.data())(motor_idx_map);
+        //     QuaternionFloat body_rotation = Eigen::Map<QuaternionFloat>(imu_state.quaternion.data());
+        //     Vector3Float angular_body_velocity = Eigen::Map<Vector3Float>(imu_state.gyroscope.data());
+        //     Vector3Float linear_body_acceleration = Eigen::Map<Vector3Float>(imu_state.accelerometer.data());
 
-            // Unitree does not provide linear velocity:
-            smooth_acceleration = alpha * linear_body_acceleration + (1 - alpha) * previous_smooth_acceleration;
-            linear_body_velocity = previous_linear_body_velocity + smooth_acceleration * control_rate_us * 1.0e-6f;
-            smooth_velocity = alpha * linear_body_velocity + (1 - alpha) * previous_smooth_velocity;
+        //     // Unitree does not provide linear velocity:
+        //     smooth_acceleration = alpha * linear_body_acceleration + (1 - alpha) * previous_smooth_acceleration;
+        //     linear_body_velocity = previous_linear_body_velocity + smooth_acceleration * control_rate_us * 1.0e-6f;
+        //     smooth_velocity = alpha * linear_body_velocity + (1 - alpha) * previous_smooth_velocity;
 
-            state.motor_position = motor_position.cast<double>();
-            state.motor_velocity = motor_velocity.cast<double>();
-            state.motor_acceleration = motor_acceleration.cast<double>();
-            state.torque_estimate = motor_torque_estimate.cast<double>();
-            state.body_rotation = body_rotation.cast<double>();
-            state.angular_body_velocity = angular_body_velocity.cast<double>();
-            state.linear_body_velocity = smooth_velocity.cast<double>();
-            state.linear_body_acceleration = linear_body_acceleration.cast<double>();
-            state.contact_mask = contact_mask;
+        //     state.motor_position = motor_position.cast<double>();
+        //     state.motor_velocity = motor_velocity.cast<double>();
+        //     state.motor_acceleration = motor_acceleration.cast<double>();
+        //     state.torque_estimate = motor_torque_estimate.cast<double>();
+        //     state.body_rotation = body_rotation.cast<double>();
+        //     state.angular_body_velocity = angular_body_velocity.cast<double>();
+        //     state.linear_body_velocity = smooth_velocity.cast<double>();
+        //     state.linear_body_acceleration = linear_body_acceleration.cast<double>();
+        //     state.contact_mask = contact_mask;
 
-            return absl::OkStatus();
-        }
+        //     return absl::OkStatus();
+        // }
 
         // TODO(jeh15): Log these values.
         ActuatorCommandFloat safety_controller(ActuatorCommandFloat& torque_command) {
@@ -368,7 +368,7 @@ class UnitreeGo2Interface {
             return torque_command;
         }
 
-        lowleveltypes::MotorCommand update_motor_command(
+        unitree::containers::MotorCommand update_motor_command(
             ActuatorCommandFloat& torque_command,
             const ActuatorCommandFloat& velocity_setpoint = ActuatorCommandFloat::Zero(),
             const ActuatorCommandFloat& position_setpoint = ActuatorCommandFloat::Zero(),
@@ -413,7 +413,7 @@ class UnitreeGo2Interface {
             std::array<float, constants::model::nu_size> kp = { 0 };
             std::array<float, constants::model::nu_size> kd = { 0 };
             
-            lowleveltypes::MotorCommand motor_command = {
+            unitree::containers::MotorCommand motor_command = {
                 .q_setpoint = q_setpoint,
                 .qd_setpoint = qd_setpoint,
                 .torque_feedforward = torque_feedforward,
@@ -426,7 +426,7 @@ class UnitreeGo2Interface {
             return motor_command;
         }
 
-        lowleveltypes::MotorCommand default_motor_command(const float stiffness_value = 5.0, const float damping_value = 5.0) {
+        unitree::containers::MotorCommand default_motor_command(const float stiffness_value = 5.0, const float damping_value = 5.0) {
             /*
                 Hold default position.
             */
@@ -468,7 +468,7 @@ class UnitreeGo2Interface {
                 2.0, 2.0, 2.0,
              };
             
-            lowleveltypes::MotorCommand motor_command = {
+            unitree::containers::MotorCommand motor_command = {
                 .q_setpoint = q_setpoint,
                 .qd_setpoint = qd_setpoint,
                 .torque_feedforward = torque_feedforward,
@@ -500,7 +500,7 @@ class UnitreeGo2Interface {
                     // Update Operational Space Controller with Taskspace Targets: Shared Variable (taskspace_targets)
                     operational_space_controller.update_taskspace_targets(taskspace_targets);
 
-                    if(enable_logger)
+                    if(enable_logging)
                         result.Update(logger.update_state(state));
                 }
 
@@ -519,7 +519,7 @@ class UnitreeGo2Interface {
 
 
                 // Create Motor Command:
-                lowleveltypes::MotorCommand motor_command;
+                unitree::containers::MotorCommand motor_command;
                 if(activate_control) {
                     motor_command = update_motor_command(torque_command_f);
                 }

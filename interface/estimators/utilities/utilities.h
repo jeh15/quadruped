@@ -25,8 +25,8 @@
 #include <type_traits>
 #include <vector>
 
-#include <absl/container/flat_hash_map.h>
-#include <mujoco/mujoco.h>
+#include "absl/container/flat_hash_map.h"
+#include "mujoco/mujoco.h"
 
 namespace mjpc {
 

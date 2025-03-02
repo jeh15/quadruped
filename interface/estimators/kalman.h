@@ -20,8 +20,8 @@
 
 #include <mujoco/mujoco.h>
 
-#include "mjpc/estimators/estimator.h"
-#include "mjpc/utilities.h"
+#include "interface/estimators/estimator.h"
+#include "interface/estimators/utilities/utilities.h"
 
 namespace mjpc {
 
@@ -36,9 +36,18 @@ class Kalman : public Estimator {
   }
 
   // destructor
-  ~Kalman() override {
-    if (data_) mj_deleteData(data_);
-    if (model) mj_deleteModel(model);
+  ~Kalman() override {}
+
+  // Clean up: Its up to the user to clean up the memory
+  void CleanUp() {
+    if (data_) {
+      mj_deleteData(data_);
+      data_ = nullptr;
+    }
+    if (model) {
+      mj_deleteModel(model);
+      model = nullptr;
+    }
   }
 
   // initialize

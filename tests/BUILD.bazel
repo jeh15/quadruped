@@ -35,3 +35,21 @@ cc_binary(
     ],
     visibility = ["//visibility:public"],
 )
+
+cc_binary(
+    name = "estimator_test",
+    srcs = ["estimator_test.cc"],
+    data = ["@mujoco-models//:unitree_go2"],
+    deps = [
+        "//interface/unitree_go2:estimator_interface",
+        "//interface/unitree_go2:simulation_interface",
+        "@mujoco-bazel//:mujoco",
+        "@eigen//:eigen",
+        "@glfw-bazel//:glfw",
+        "@abseil-cpp//absl/log:absl_check",
+        "@abseil-cpp//absl/status:status",
+        "@rules_cc//cc/runfiles:runfiles",
+        "@bazel_tools//tools/cpp/runfiles",
+    ],
+    visibility = ["//visibility:public"],
+)

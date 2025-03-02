@@ -1,0 +1,32 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@rules_python//python:defs.bzl", "py_binary")
+
+py_binary(
+    name = "autogen",
+    srcs = ["autogen.py"],
+    data = [
+        "@mujoco-models//:unitree_go2",
+    ],
+    deps = [
+        "@rules_python//python/runfiles",
+        "@pypi//mujoco:pkg",
+        "@pypi//absl_py:pkg",
+    ],
+)
+
+genrule(
+    name = "autogen_rule",
+    srcs = [
+        "@mujoco-models//:unitree_go2",
+    ],
+    tools = [":autogen"],
+    outs = ["estimator_defines.h"],
+    cmd = "$(location :autogen) --filepath=$(RULEDIR)",
+)
+
+cc_library(
+    name = "estimator_defines",
+    srcs = [":estimator_defines.h"],
+    deps = [":autogen_rule"],
+    visibility = ["//visibility:public"],
+)
