@@ -536,7 +536,8 @@ class UnitreeGo2Interface {
                 auto now = Clock::now();
                 if (now < next_time) {
                     std::this_thread::sleep_until(next_time);
-                } else {
+                } 
+                else {
                     // Log overrun:
                     auto overrun = std::chrono::duration_cast<std::chrono::microseconds>(now - next_time);
                     std::cout << "Interface Control Loop Execution Time Exceeded Control Rate: " 

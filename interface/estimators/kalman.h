@@ -106,7 +106,7 @@ class Kalman : public Estimator {
 
   // set state
   void SetState(const double* state) override {
-    mju_copy(this->state.data(), state, ndstate_);
+    mju_copy(this->state.data(), state, nstate_);
   };
 
   // set time

@@ -23,6 +23,9 @@ class AutoGen():
         self.nu = self.mj_model.nu
         self.state_size = self.mj_model.nq + self.mj_model.nv + self.mj_model.na
         self.sensor_size = self.mj_model.nsensor
+        self.sensordata_size = 0
+        for i in range(self.sensor_size):
+            self.sensordata_size += self.mj_model.sensor_dim[i]
 
     def generate_defines(self):
         cc_code = f"""#pragma once
@@ -35,6 +38,7 @@ namespace constants::estimator {{
     constexpr int nu = {self.nu};
     constexpr int state_size = {self.state_size};
     constexpr int sensor_size = {self.sensor_size};
+    constexpr int sensordata_size = {self.sensordata_size};
 }}
         """
         filepath = os.path.join(FLAGS.filepath, "estimator_defines.h")

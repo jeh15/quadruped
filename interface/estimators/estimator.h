@@ -128,6 +128,7 @@ class GroundTruth : public Estimator {
                                                    model, "estimator_timestep");
 
     // -- dimensions -- //
+    nstate_ = model->nq + model->nv + model->na;
     ndstate_ = 2 * model->nv + model->na;
 
     // sensor start index
@@ -241,7 +242,7 @@ class GroundTruth : public Estimator {
 
   // set state
   void SetState(const double* state) override {
-    mju_copy(this->state.data(), state, ndstate_);
+    mju_copy(this->state.data(), state, nstate_);
   };
 
   // set time
@@ -283,6 +284,7 @@ class GroundTruth : public Estimator {
   mjData* data_ = nullptr;
 
   // dimensions
+  int nstate_;
   int ndstate_;
   int nsensordata_;
 };

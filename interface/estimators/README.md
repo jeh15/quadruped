@@ -1,6 +1,6 @@
 # MuJoCo MPC (MJPC) Estimators
 
-All code in this directory includes the minimum dependencies necessary to use the Estimators from MJPC and was taken directly from the MJPC repository with some modifications.
+All code in this directory includes the minimum dependencies necessary to use the Estimators from MJPC and was taken directly from the MJPC repository with some modifications and bug fixes.
 
 The original source code can be found at: <https://github.com/google-deepmind/mujoco_mpc/tree/main>
 

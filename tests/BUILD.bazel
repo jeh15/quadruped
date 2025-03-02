@@ -41,6 +41,7 @@ cc_binary(
     srcs = ["estimator_test.cc"],
     data = ["@mujoco-models//:unitree_go2"],
     deps = [
+        "//interface/unitree_go2:aliases",
         "//interface/unitree_go2:estimator_interface",
         "//interface/unitree_go2:simulation_interface",
         "@mujoco-bazel//:mujoco",

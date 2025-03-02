@@ -38,7 +38,6 @@ namespace {
     using QuaternionFloat = Eigen::Vector<float, 4>;
     using Vector3 = Eigen::Vector<double, 3>;
     using Vector3Float = Eigen::Vector<float, 3>;
-    using ContactMask = Eigen::Vector<double, constants::model::contact_site_ids_size>;
 }
 
 struct MockUnitreeDriverArgs {
@@ -168,6 +167,18 @@ class MockUnitreeDriver {
                 motor_state.torque_estimate[i] = mj_data->qfrc_actuator[velocity_offset + i];
             }
             return motor_state;
+        }
+
+        int get_control_rate() {
+            return control_rate_us;
+        }
+
+        bool is_initialized() {
+            return initialized;
+        }
+
+        bool is_control_thread_initialized() {
+            return control_thread_initialized;
         }
 
         private:

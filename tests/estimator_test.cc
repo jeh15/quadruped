@@ -10,7 +10,10 @@
 
 #include "interface/unitree_go2/simulation_interface.h"
 #include "interface/unitree_go2/estimator.h"
+
 #include "operational-space-control/unitree_go2/autogen/autogen_defines.h"
+#include "interface/estimators/autogen/estimator_defines.h"
+#include "interface/unitree_go2/aliases.h"
 
 using rules_cc::cc::runfiles::Runfiles;
 
@@ -47,14 +50,6 @@ int main(int argc, char** argv) {
 
     EstimatorInterface<MockUnitreeDriver> estimator_interface(unitree_driver, estimator_args.xml_path, estimator_args.control_rate);
 
-    // Iterate over estimator state:
-    int ndstate = estimator_interface.estimator.DimensionProcess();
-    double* state = estimator_interface.estimator.State();
-    std::cout << "Numbers of states: " << ndstate << std::endl;
-    for(int i = 0; i <= ndstate; i++) {
-        std::cout << state[i] << std::endl;
-    }
-
     /* 
         State Structure:
         Base Position: x, y, z
@@ -65,8 +60,15 @@ int main(int argc, char** argv) {
         Joint Velocities x 4: abduction, hip, knee
     */
 
+    // Initialize Estimator:
+    result.Update(estimator_interface.initialize());
+
+    // Print New State:
+    auto state = estimator_interface.get_state();
+    std::cout << "New State: " << state.transpose() << std::endl;
+
     // Clean up estimator:
-    estimator_interface.clean_up();
+    std::ignore = estimator_interface.clean_up();
 
     return 0;
 }
