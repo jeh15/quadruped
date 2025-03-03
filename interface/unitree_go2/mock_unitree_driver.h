@@ -8,25 +8,23 @@
 #include <mutex>
 #include <atomic>
 #include <chrono>
-#include <fstream>
-#include <memory>
 
 #include "absl/status/status.h"
-#include "absl/log/log.h"
-#include "absl/log/log_sink.h"
-#include "absl/log/log_sink_registry.h"
-#include "absl/log/initialize.h"
 #include "absl/strings/string_view.h"
 #include "absl/log/absl_check.h"
 
 #include "Eigen/Dense"
-#include "osqp++.h"
 
 #include "operational-space-control/unitree_go2/operational_space_controller.h"
 #include "operational-space-control/unitree_go2/autogen/autogen_defines.h"
+#include "interface/unitree_go2/logger.h"
 #include "unitree-api/containers.h"
 
 #include "mujoco/mujoco.h"
+
+
+using namespace interface::containers::mock_unitree_driver;
+using namespace interface::containers::logger;
 
 
 namespace {
@@ -40,15 +38,11 @@ namespace {
     using Vector3Float = Eigen::Vector<float, 3>;
 }
 
-struct MockUnitreeDriverArgs {
-    std::filesystem::path xml_path;
-    int control_rate_us = 2000;
-};
-
 
 class MockUnitreeDriver {
     public:
-        MockUnitreeDriver(std::filesystem::path xml_path, int control_rate_us) : xml_path(xml_path), control_rate_us(control_rate_us) {}
+        MockUnitreeDriver(std::filesystem::path xml_path, int control_rate_us, LoggerArgs log_args) :
+            xml_path(xml_path), control_rate_us(control_rate_us), logger(log_args.filepath, log_args.log_rate_us), enable_logging(log_args.enable_logging) {}
         ~MockUnitreeDriver() {}
 
         // Mujoco Model and Data public for visualization and testing:
@@ -76,6 +70,14 @@ class MockUnitreeDriver {
 
             mj_forward(mj_model, mj_data);
 
+            // Initialize Logger:
+            absl::Status result;
+            if(enable_logging)
+                result.Update(logger.initialize());
+
+            // Assert Initialization:
+            ABSL_CHECK(result.ok()) << result.message();
+
             initialized = true;
             return absl::OkStatus();
         }
@@ -84,18 +86,30 @@ class MockUnitreeDriver {
             if(!initialized)
                 return absl::FailedPreconditionError("Unitree Driver not initialized");
 
+            absl::Status result;
             thread = std::thread(&MockUnitreeDriver::control_loop, this);
             control_thread_initialized = true;
+            if(enable_logging)
+                result.Update(logger.initialize_log_thread());
+
+            // Assert Initialization:
+            ABSL_CHECK(result.ok()) << result.message();
+
             return absl::OkStatus();
         }
 
         absl::Status stop_control_thread() {
+            absl::Status result;
             if(!initialized || !control_thread_initialized)
                 return absl::FailedPreconditionError("Unitree Driver not initialized");
 
             running = false;
             thread.join();
-            return absl::OkStatus();
+
+            if(enable_logging)
+                result.Update(logger.stop_log_thread());
+
+            return result;
         }
 
         absl::Status clean_up() {
@@ -230,6 +244,21 @@ class MockUnitreeDriver {
         std::thread thread;
         bool initialized = false;
         bool control_thread_initialized = false;
+        // Logging:
+        EstimatorLogger logger;
+        bool enable_logging;
+        interface::containers::estimator::EstimatorState state;
+
+        absl::Status update_state(const aliases::estimator::StateVector& state_vector) {
+            // Update State:
+            state.body_position = state_vector.segment(0, 3);
+            state.body_rotation = state_vector.segment(3, 4);
+            state.motor_position = state_vector.segment(7, 12);
+            state.linear_body_velocity = state_vector.segment(19, 3);
+            state.angular_body_velocity = state_vector.segment(22, 3);
+            state.motor_velocity = state_vector.segment(25, 12);
+            return absl::OkStatus();
+        }
 
         void control_loop() {
             using Clock = std::chrono::steady_clock;
@@ -256,6 +285,15 @@ class MockUnitreeDriver {
 
                     // Step Simulation Model:
                     mj_step(mj_model, mj_data);
+
+                    if(enable_logging) {
+                        aliases::estimator::StateVector state_vector;
+                        Eigen::Vector<double, constants::model::nq_size> qpos = Eigen::Map<Eigen::Vector<double, constants::model::nq_size>>(mj_data->qpos);
+                        Eigen::Vector<double, constants::model::nv_size> qvel = Eigen::Map<Eigen::Vector<double, constants::model::nv_size>>(mj_data->qvel);
+                        state_vector << qpos, qvel;
+                        std::ignore = update_state(state_vector);
+                        std::ignore = logger.update_state(state);
+                    }
                 }
                 // Check for overrun and sleep until next execution time
                 auto now = Clock::now();

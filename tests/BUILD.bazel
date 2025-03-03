@@ -54,3 +54,23 @@ cc_binary(
     ],
     visibility = ["//visibility:public"],
 )
+
+cc_binary(
+    name = "simulation_test",
+    srcs = ["simulation_test.cc"],
+    data = ["@mujoco-models//:unitree_go2"],
+    deps = [
+        "//interface/unitree_go2:aliases",
+        "//interface/unitree_go2:estimator_interface",
+        "//interface/unitree_go2:mock_unitree_driver",
+        "@unitree-bazel//:unitree_go2_api",
+        "@mujoco-bazel//:mujoco",
+        "@eigen//:eigen",
+        "@glfw-bazel//:glfw",
+        "@abseil-cpp//absl/log:absl_check",
+        "@abseil-cpp//absl/status:status",
+        "@rules_cc//cc/runfiles:runfiles",
+        "@bazel_tools//tools/cpp/runfiles",
+    ],
+    visibility = ["//visibility:public"],
+)

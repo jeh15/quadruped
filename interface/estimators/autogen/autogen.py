@@ -51,7 +51,7 @@ def main(argv):
     r = Runfiles.Create()
     mj_model = mujoco.MjModel.from_xml_path(
         r.Rlocation(
-            path="mujoco-models/models/unitree_go2/go2_estimation.xml",
+            path="mujoco-models/models/unitree_go2/go2_estimation_2.xml",
         )
     )
 

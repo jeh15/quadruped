@@ -6,7 +6,8 @@
 #include "interface/estimators/autogen/estimator_defines.h"
 
 
-namespace aliases {
+// Push some of these to a common namespace
+namespace interface::aliases {
     namespace estimator {
             using MotorVector = Eigen::Vector<double, constants::estimator::nu>;
             using MotorVectorFloat = Eigen::Vector<float, constants::estimator::nu>;
@@ -18,7 +19,7 @@ namespace aliases {
             using SensorVectorFloat = Eigen::Vector<float, constants::estimator::sensordata_size>;
             using StateVector = Eigen::Vector<double, constants::estimator::state_size>;
     }
-    namespace interface {
+    namespace controller {
         using ContactMask = Eigen::Vector<double, constants::model::contact_site_ids_size>;
     }
 }
