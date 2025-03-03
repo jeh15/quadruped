@@ -182,14 +182,14 @@ class EstimatorInterface {
             MotorVectorFloat qd = Eigen::Map<MotorVectorFloat>(motor_state.qd.data());
             MotorVectorFloat torque_estimate = Eigen::Map<MotorVectorFloat>(motor_state.torque_estimate.data());
             QuaternionFloat quaternion = Eigen::Map<QuaternionFloat>(imu_state.quaternion.data());
-            Vector3Float gyroscop = Eigen::Map<Vector3Float>(imu_state.gyroscope.data());
+            Vector3Float gyroscope = Eigen::Map<Vector3Float>(imu_state.gyroscope.data());
             Vector3Float accelerometer = Eigen::Map<Vector3Float>(imu_state.accelerometer.data());
             
             SensorVectorFloat sensor_vector;
             // With Torque Estimate:
-            // sensor_vector << q, qd, torque_estimate, quaternion, gyroscop, accelerometer;
+            // sensor_vector << q, qd, torque_estimate, quaternion, gyroscope, accelerometer;
             // Without Torque Estimate:
-            sensor_vector << q, qd, quaternion, gyroscop, accelerometer;
+            sensor_vector << q, qd, quaternion, gyroscope, accelerometer;
 
 
             // Update estimator measurements:
