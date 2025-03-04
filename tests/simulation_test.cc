@@ -10,22 +10,21 @@
 #include "GLFW/glfw3.h"
 
 #include "interface/unitree_go2/mock_unitree_driver.h"
-#include "interface/unitree_go2/estimator.h"
+#include "interface/estimators/imu_estimator.h"
 
 #include "operational-space-control/unitree_go2/autogen/autogen_defines.h"
 #include "unitree-api/containers.h"
-#include "interface/estimators/autogen/estimator_defines.h"
 #include "interface/unitree_go2/aliases.h"
 #include "interface/unitree_go2/containers.h"
 
 using rules_cc::cc::runfiles::Runfiles;
 
 
-mjvCamera cam;                      // abstract camera
-mjvPerturb pert;                    // perturbation object
-mjvOption opt;                      // visualization options
-mjvScene scn;                       // abstract scene
-mjrContext con;                     // custom GPU context
+mjvCamera cam;
+mjvPerturb pert;
+mjvOption opt;
+mjvScene scn;
+mjrContext con;
 
 
 int main(int argc, char** argv) {
