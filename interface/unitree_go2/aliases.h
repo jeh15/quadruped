@@ -8,6 +8,14 @@
 
 // Push some of these to a common namespace
 namespace interface::aliases {
+
+    namespace common {
+        template<typename T> 
+        using Vector3 = Eigen::Vector<T, 3>;
+        template<typename T> 
+        using Quaternion = Eigen::Vector<T, 4>;
+    }
+
     namespace estimator {
             using MotorVector = Eigen::Vector<double, constants::estimator::nu>;
             using MotorVectorFloat = Eigen::Vector<float, constants::estimator::nu>;
