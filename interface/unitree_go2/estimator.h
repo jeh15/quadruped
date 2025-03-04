@@ -215,7 +215,7 @@ class EstimatorInterface {
             auto next_time = Clock::now();
             while(running) {
                 // Calculate next time:
-                next_time += std::chrono::milliseconds(control_rate_us);
+                next_time += std::chrono::microseconds(control_rate_us);
                 /* Lock Guard Scope */
                 {
                     std::lock_guard<std::mutex> lock(mutex);

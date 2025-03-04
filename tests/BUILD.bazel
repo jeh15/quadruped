@@ -41,9 +41,29 @@ cc_binary(
     srcs = ["estimator_test.cc"],
     data = ["@mujoco-models//:unitree_go2"],
     deps = [
+        "//interface/estimators:imu_estimator",
         "//interface/unitree_go2:aliases",
-        "//interface/unitree_go2:estimator_interface",
-        "//interface/unitree_go2:simulation_interface",
+        "//interface/unitree_go2:containers",
+        "//interface/unitree_go2:mock_unitree_driver",
+        "@mujoco-bazel//:mujoco",
+        "@eigen//:eigen",
+        "@abseil-cpp//absl/log:absl_check",
+        "@abseil-cpp//absl/status:status",
+        "@rules_cc//cc/runfiles:runfiles",
+        "@bazel_tools//tools/cpp/runfiles",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+cc_binary(
+    name = "hardware_estimator_test",
+    srcs = ["hardware_estimator_test.cc"],
+    data = ["@mujoco-models//:unitree_go2"],
+    deps = [
+        "//interface/estimators:imu_estimator",
+        "//interface/unitree_go2:aliases",
+        "//interface/unitree_go2:containers",
+        "@unitree-bazel//:unitree_go2_api",
         "@mujoco-bazel//:mujoco",
         "@eigen//:eigen",
         "@glfw-bazel//:glfw",

@@ -4,7 +4,6 @@ cc_library(
     name = "aliases",
     hdrs = ["aliases.h"],
     deps = [
-        "//interface/estimators/autogen:estimator_defines",
         "@operational-space-controller//:operational_space_controller",
         "@eigen//:eigen",
     ],
@@ -17,6 +16,7 @@ cc_library(
     deps = [
         ":aliases",
     ],
+    visibility = ["//visibility:public"],
 )
 
 cc_library(
@@ -76,7 +76,6 @@ cc_library(
     deps = [
         ":aliases",
         ":containers",
-        ":logger",
         "@unitree-bazel//:unitree_go2_api",
         "@operational-space-controller//:operational_space_controller",
         "@mujoco-bazel//:mujoco",

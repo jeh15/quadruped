@@ -1,21 +1,22 @@
 #include <filesystem>
 
 #include "absl/status/status.h"
-#include "absl/log/absl_check.h"
 #include "rules_cc/cc/runfiles/runfiles.h"
 
 #include "mujoco/mujoco.h"
 #include "Eigen/Dense"
-#include "GLFW/glfw3.h"
 
-#include "interface/unitree_go2/simulation_interface.h"
-#include "interface/unitree_go2/estimator.h"
+#include "interface/unitree_go2/mock_unitree_driver.h"
+#include "interface/estimators/imu_estimator.h"
 
 #include "operational-space-control/unitree_go2/autogen/autogen_defines.h"
-#include "interface/estimators/autogen/estimator_defines.h"
 #include "interface/unitree_go2/aliases.h"
+#include "interface/unitree_go2/containers.h"
 
 using rules_cc::cc::runfiles::Runfiles;
+
+
+using namespace interface::containers::mock_unitree_driver;
 
 
 int main(int argc, char** argv) {
@@ -25,17 +26,8 @@ int main(int argc, char** argv) {
         Runfiles::Create(argv[0], BAZEL_CURRENT_REPOSITORY, &error)
     );
 
-    std::filesystem::path estimator_model_path = 
-        runfiles->Rlocation("mujoco-models/models/unitree_go2/go2_estimation.xml");
-
     std::filesystem::path mock_model_path = 
         runfiles->Rlocation("mujoco-models/models/unitree_go2/scene_estimation.xml");
-
-    // Estimator Args:
-    EstimatorArgs estimator_args = {
-        .xml_path = estimator_model_path,
-        .control_rate = 1000,
-    };
 
     // Unitree Driver Args:
     MockUnitreeDriverArgs driver_args = {
@@ -48,27 +40,27 @@ int main(int argc, char** argv) {
     std::shared_ptr<MockUnitreeDriver> unitree_driver = std::make_shared<MockUnitreeDriver>(driver_args.xml_path, driver_args.control_rate_us);
     result.Update(unitree_driver->initialize());
 
-    EstimatorInterface<MockUnitreeDriver> estimator_interface(unitree_driver, estimator_args.xml_path, estimator_args.control_rate);
+    std::cout << "Unitree Driver Initialized" << std::endl;
 
-    /* 
-        State Structure:
-        Base Position: x, y, z
-        Base Orientation: w, wx, wy, wz
-        Joint Positions x 4: abduction, hip, knee
-        Base Linear Velocity: x, y, z
-        Base Angular Velocity: wx, wy, wz
-        Joint Velocities x 4: abduction, hip, knee
-    */
+    int estimator_control_rate = 1000;
+    IMUEstimator<MockUnitreeDriver> estimator_interface(unitree_driver, estimator_control_rate);
 
     // Initialize Estimator:
     result.Update(estimator_interface.initialize());
 
+    std::cout << "Estimator Initialized" << std::endl;
+
     // Print New State:
     auto state = estimator_interface.get_state();
-    std::cout << "New State: " << state.transpose() << std::endl;
-
-    // Clean up estimator:
-    std::ignore = estimator_interface.clean_up();
+    std::cout << "Estimator State: " << std::endl;
+    std::cout << "Body Position: " << state.body_position.transpose() << std::endl;
+    std::cout << "Body Rotation: " << state.body_rotation.w() << " " << state.body_rotation.vec().transpose() << std::endl;
+    std::cout << "Joint Position: " << state.joint_position.transpose() << std::endl;
+    std::cout << "Linear Body Velocity: " << state.linear_body_velocity.transpose() << std::endl;
+    std::cout << "Angular Body Velocity: " << state.angular_body_velocity.transpose() << std::endl;
+    std::cout << "Joint Velocity: " << state.joint_velocity.transpose() << std::endl;
+    std::cout << "Linear Body Acceleration: " << state.linear_body_acceleration.transpose() << std::endl;
+    std::cout << "Contact Mask: " << state.contact_mask.transpose() << std::endl;
 
     return 0;
-}
+};

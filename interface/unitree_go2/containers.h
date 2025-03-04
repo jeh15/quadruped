@@ -1,4 +1,5 @@
 #pragma once
+
 #include <filesystem>
 
 #include "interface/unitree_go2/aliases.h"
@@ -24,12 +25,14 @@ namespace interface::containers {
         };
 
         struct EstimatorState {
-            aliases::estimator::Vector3 body_position =aliases::estimator::Vector3::Zero(); 
-            aliases::estimator::Quaternion body_rotation = aliases::estimator::Quaternion::Identity();
-            aliases::estimator::MotorVector motor_position = aliases::estimator::MotorVector::Zero();
-            aliases::estimator::Vector3 linear_body_velocity = aliases::estimator::Vector3::Zero();
-            aliases::estimator::Vector3 angular_body_velocity = aliases::estimator::Vector3::Zero();
-            aliases::estimator::MotorVector motor_velocity = aliases::estimator::MotorVector::Zero();
+            interface::aliases::common::Vector3<float> body_position;
+            Eigen::Quaternion<float> body_rotation;
+            interface::aliases::common::MotorVector<float> joint_position;
+            interface::aliases::common::Vector3<float> linear_body_velocity;
+            interface::aliases::common::Vector3<float> angular_body_velocity;
+            interface::aliases::common::MotorVector<float> joint_velocity;
+            interface::aliases::common::Vector3<float> linear_body_acceleration;
+            interface::aliases::controller::ContactMask<float> contact_mask;
         };
 
     }

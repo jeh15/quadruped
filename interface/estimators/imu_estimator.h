@@ -4,91 +4,212 @@
 #include <vector>
 #include <thread>
 #include <mutex>
+#include <atomic>
+#include <iostream>
 #include <chrono>
 
+#include "absl/status/status.h"
+#include "absl/log/absl_check.h"
 
 #include "Eigen/Dense"
 #include "Eigen/Geometry"
 
 #include "interface/unitree_go2/aliases.h"
+#include "interface/unitree_go2/containers.h"
+
+using namespace interface::aliases;
+using namespace interface::containers::estimator;
 
 
-using namespace interface::aliases::common;
-
-
-template <typename T>
-struct IMUState {
-    Quaternion<T> quaternion;
-    Vector3<T> position;
-    Vector3<T> linear_velocity;
-    Vector3<T> gyroscope_bias;
-    Vector3<T> accelerometer_bias;
-};
-
+template <typename RobotDriver>
 class IMUEstimator {
     public:
-        IMUEstimator(const int control_rate_us) : control_rate_us(control_rate_us) {};
+        IMUEstimator(std::shared_ptr<RobotDriver> unitree_driver, const int control_rate_us) : unitree_driver(unitree_driver), control_rate_us(control_rate_us) {};
         ~IMUEstimator() {};
 
         absl::Status initialize() {
-            // Initialize IMU Estimator:
-            calculate_bias();
+            absl::Status result;
+            if(!unitree_driver->is_initialized())
+                return absl::FailedPreconditionError("Unitree Driver not initialized");
+
+            // Calculate Bias and initial Quaternion:
+            result.Update(initialize_estimator_variables());
+
+            // Initialize Measurements:
+            result.Update(get_measurements());
+
+            // Initialize State:
+            result.Update(update_state());
+
+            // Assert Initialization:
+            ABSL_CHECK(result.ok()) << result.message();
+
+            initialized = true;
             return absl::OkStatus();
         }
 
-        // Push to autogen?
-        void calculate_bias() {
-            std::vector<Vector3<float>> gyroscope_vector;
-            std::vector<Vector3<float>> accelerometer_vector;
-            using Clock = std::chrono::steady_clock;
-            auto start = Clock::now();
-            while(Clock::now() - start < std::chrono::seconds(start_up_time)) {
-                unitree::containers::IMUState imu_state = unitree_driver->get_imu_state();
-                Vector3Float gyroscope = Eigen::Map<Vector3Float>(imu_state.gyroscope.data());
-                Vector3Float accelerometer = Eigen::Map<Vector3Float>(imu_state.accelerometer.data());
-                gyroscope_vector.push_back(gyroscope);
-                accelerometer_vector.push_back(accelerometer);
+        absl::Status initialize_estimator_thread() {
+            if(!initialized)
+                return absl::FailedPreconditionError("Estimator not initialized");
 
-                std::this_thread::sleep_for(std::chrono::milliseconds(10));
-            }
-            
-            // Calculate average:
-            for(auto& vector : gyroscope_vector) {
-                gyroscope_bias += vector;
-            }
-            if(!gyroscope_vector.empty())
-                gyroscope_bias /= static_cast<float>(gyroscope_vector.size());
-            
-            for(auto& vector : accelerometer_vector) {
-                accelerometer_bias += vector;
-            }
-            if(!accelerometer_vector.empty())
-                accelerometer_bias /= static_cast<float>(accelerometer_vector.size());
+            thread = std::thread(&IMUEstimator::estimator_loop, this);
+            estimator_thread_initialized = true;
 
+            return absl::OkStatus();
         }
 
+        absl::Status stop_estimator_thread() {
+            if(!estimator_thread_initialized)
+                return absl::FailedPreconditionError("Estimator thread not initialized");
+
+            running = false;
+            thread.join();
+
+            return absl::OkStatus();
+        }
+
+        EstimatorState get_state() {
+            std::lock_guard<std::mutex> lock(mutex);
+            return estimator_state;
+        }
 
         private:
+            /* UnitreeDriver */
+            std::shared_ptr<RobotDriver> unitree_driver;
+            // Shared Variables:
+            EstimatorState estimator_state;
+            // Thread Variables:
+            std::thread thread;
+            std::mutex mutex;
+            std::atomic<bool> running = true;
+            int control_rate_us;
+            bool initialized = false;
+            bool estimator_thread_initialized = false;
             // Constants:
             const float gyroscope_measurement_error = M_PI * (5.0f / 180.0f);
             const float beta = std::sqrt(3.0f / 4.0f) * gyroscope_measurement_error;
+            // Unitree Measurements:
+            common::MotorVector<float> q_estimate;
+            common::MotorVector<float> qd_estimate;
+            common::MotorVector<float> torque_estimate;
+            // Estimation Variables:
             int start_up_time = 5;
-            Vector3<float> gyroscope_bias = Vector3<float>::Zero();
-            Vector3<float> accelerometer_bias = Vector3<float>::Zero();
+            common::Vector3<float> gyroscope_bias = common::Vector3<float>::Zero();
+            common::Vector3<float> accelerometer_bias = common::Vector3<float>::Zero();
+            common::Vector3<float> g = common::Vector3<float>(0.0f, 0.0f, 9.81f);
+            common::Vector3<float> gyroscope_estimate = common::Vector3<float>::Zero();
+            common::Vector3<float> accelerometer_estimate = common::Vector3<float>::Zero();
             Eigen::Quaternion<float> quaternion_estimate = Eigen::Quaternion<float>::Identity();
-            Vector3<float> r = Vector3<float>::Zero();
-            Vector3<float> v = Vector3<float>::Zero();
-            int control_rate_us;
+            common::Vector3<float> position_estimate = common::Vector3<float>::Zero();
+            common::Vector3<float> velocity_estimate = common::Vector3<float>::Zero();
             float delta_t = std::chrono::duration<float>(std::chrono::microseconds(control_rate_us)).count();
+            /* Contact -- Need better estimation */
+            interface::aliases::controller::ContactMask<float> contact_mask;
+            const short contact_threshold = 5;
 
-            void quaternion_estimation_update(const Vector3<float>& gyroscope_measurement, const Vector3<float>& accelerometer_measurement) {
+            absl::Status initialize_estimator_variables() {
+                std::vector<common::Vector3<float>> gyroscope_vector;
+                std::vector<common::Vector3<float>> accelerometer_vector;
+                std::vector<common::Vector4<float>> quaternion_vector;
+                common::Vector4<float> quaternion_estimate_ = common::Vector4<float>::Zero();
+    
+                std::cout << "Calculating Gyroscope and Accelerometer Bias for " << start_up_time << " seconds" << std::endl;
+    
+                using Clock = std::chrono::steady_clock;
+                auto start = Clock::now();
+                while(Clock::now() - start < std::chrono::seconds(start_up_time)) {
+                    unitree::containers::IMUState imu_state = unitree_driver->get_imu_state();
+                    common::Vector3<float> gyroscope = Eigen::Map<common::Vector3<float>>(imu_state.gyroscope.data());
+                    common::Vector3<float> accelerometer = Eigen::Map<common::Vector3<float>>(imu_state.accelerometer.data());
+                    common::Vector4<float> quaternion = Eigen::Map<common::Vector4<float>>(imu_state.quaternion.data());
+                    gyroscope_vector.push_back(gyroscope);
+                    accelerometer_vector.push_back(accelerometer);
+                    quaternion_vector.push_back(quaternion);
+    
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                }
+                
+                // Calculate average:
+                for(auto& vector : gyroscope_vector) {
+                    gyroscope_bias += vector;
+                }
+                if(!gyroscope_vector.empty()) {
+                    gyroscope_bias /= static_cast<float>(gyroscope_vector.size());
+                }
+                else {
+                    return absl::InternalError("Gyroscope Vector is Empty");
+                }
+                
+                for(auto& vector : accelerometer_vector) {
+                    accelerometer_bias += vector;
+                }
+                if(!accelerometer_vector.empty()) {
+                    accelerometer_bias /= static_cast<float>(accelerometer_vector.size());
+                }
+                else {
+                    return absl::InternalError("Accelerometer Vector is Empty");
+                }
+
+                for(auto& vector : quaternion_vector) {
+                    quaternion_estimate_ += vector;
+                }
+                if(!quaternion_vector.empty()) {
+                    quaternion_estimate_ /= static_cast<float>(quaternion_vector.size());
+                    quaternion_estimate = Eigen::Quaternion<float>(quaternion_estimate_(0), quaternion_estimate_(1), quaternion_estimate_(2), quaternion_estimate_(3));
+                    quaternion_estimate.normalize();
+                }
+                else {
+                    return absl::InternalError("Quaternion Vector is Empty");
+                }
+                
+                std::cout << "Gyroscope and Accelerometer Initialization Complete" << std::endl;
+                std::cout << "Gyroscope Bias: " << gyroscope_bias.transpose() << std::endl;
+                std::cout << "Accelerometer Bias: " << accelerometer_bias.transpose() << std::endl;
+                std::cout << "Quaternion Estimate: " << quaternion_estimate.w() << " " << quaternion_estimate.vec().transpose() << std::endl;
+
+                // Debug:
+                unitree::containers::IMUState imu_state = unitree_driver->get_imu_state();
+                common::Vector4<float> unitree_quaternion = Eigen::Map<common::Vector4<float>>(imu_state.quaternion.data());
+                std::cout << "Unitree Quaternion: " << unitree_quaternion.transpose() << std::endl;
+
+                return absl::OkStatus();
+            }
+
+            absl::Status get_measurements() {
+                // Get Measurements:
+                unitree::containers::LowState low_state = unitree_driver->get_low_state();
+                unitree::containers::IMUState imu_state = unitree_driver->get_imu_state();
+                unitree::containers::MotorState motor_state = unitree_driver->get_motor_state();
+                common::Vector3<float> gyroscope_measurement = Eigen::Map<common::Vector3<float>>(imu_state.gyroscope.data());
+                common::Vector3<float> accelerometer_measurement = Eigen::Map<common::Vector3<float>>(imu_state.accelerometer.data());
+
+                 // Calculate Contact Mask:
+                contact_mask = interface::aliases::controller::ContactMask<float>::Zero();
+                Eigen::Vector<short, 4> foot_force = Eigen::Map<Eigen::Vector<short, 4>>(low_state.foot_force.data());
+                for(int i = 0; i < 4; i++) {
+                    contact_mask(i) = foot_force(i) > contact_threshold;
+                }
+                
+                // Parse Measurements:
+                q_estimate = Eigen::Map<common::MotorVector<float>>(motor_state.q.data());
+                qd_estimate = Eigen::Map<common::MotorVector<float>>(motor_state.qd.data());
+                torque_estimate = Eigen::Map<common::MotorVector<float>>(motor_state.torque_estimate.data());
+                
+                // Correct Gyroscope and Accelerometer for Bias:
+                gyroscope_estimate = gyroscope_measurement - gyroscope_bias;
+                accelerometer_estimate = accelerometer_measurement - accelerometer_bias;
+
+                return absl::OkStatus();
+            }
+
+            absl::Status quaternion_estimation_update() {
                 // Unpack Gyroscope and Accelerometer Measurements:
-                float w_x = gyroscope_measurement(0);
-                float w_y = gyroscope_measurement(1);
-                float w_z = gyroscope_measurement(2);
-                float a_x = accelerometer_measurement(0);
-                float a_y = accelerometer_measurement(1);
-                float a_z = accelerometer_measurement(2);
+                float w_x = gyroscope_estimate(0);
+                float w_y = gyroscope_estimate(1);
+                float w_z = gyroscope_estimate(2);
+                float a_x = accelerometer_estimate(0);
+                float a_y = accelerometer_estimate(1);
+                float a_z = accelerometer_estimate(2);
 
                 // Quaternion Estimation Update:
                 float SEq_1 = quaternion_estimate.w();
@@ -163,17 +284,18 @@ class IMUEstimator {
 
                 // Update Quaternion Estimate:
                 quaternion_estimate = Eigen::Quaternion<float>(SEq_1, SEq_2, SEq_3, SEq_4);
+
+                return absl::OkStatus();
             }
 
-            absl::Status integrate_measurements() {
+            absl::Status motion_estimation_update() {
                 // Precompute Values:
-                Matrix3<float> C = quaternion_estimate.toRotationMatrix();
-                Vector3<float> f = accelerometer_measurement - accelerometer_bias;
-                Vector3<float> a = C.transpose() * f + g;
+                Eigen::Matrix3<float> C = quaternion_estimate.toRotationMatrix();
+                common::Vector3<float> acceleration_step = delta_t * (C.transpose() * accelerometer_estimate);
 
                 // Integrate:
-                Vector3<float> position_next = position_estimate + delta_t * velocity_estimate + 0.5 * delta_t * delta_t * a;
-                Vector3<float> velocity_next = velocity_estimate + delta_t * a;
+                common::Vector3<float> position_next = position_estimate + delta_t * velocity_estimate + 0.5 * delta_t * acceleration_step;
+                common::Vector3<float> velocity_next = velocity_estimate + acceleration_step;
                 
                 // Update State:
                 position_estimate = position_next;
@@ -182,10 +304,58 @@ class IMUEstimator {
                 return absl::OkStatus();
             }
 
+            absl::Status update_state() {
+                // Update Estimation Struct:
+                estimator_state.body_position = position_estimate;
+                estimator_state.body_rotation = quaternion_estimate;
+                estimator_state.joint_position = q_estimate;
+                estimator_state.linear_body_velocity = velocity_estimate;
+                estimator_state.angular_body_velocity = gyroscope_estimate;
+                estimator_state.joint_velocity = qd_estimate;
+                estimator_state.linear_body_acceleration = accelerometer_estimate;
+                estimator_state.contact_mask = contact_mask;
 
-}
+                return absl::OkStatus();
+            }
 
-
+            void estimator_loop() {
+                using Clock = std::chrono::steady_clock;
+                auto next_time = Clock::now();
+                while(running) {
+                    absl::Status result;
+                    next_time += std::chrono::microseconds(control_rate_us);
+                    /* Lock Guard Scope */
+                    {
+                        std::lock_guard<std::mutex> lock(mutex);
+                        
+                        // Get Measurements:
+                        result.Update(get_measurements());
+    
+                        // Update Quaternion Estimate:
+                        result.Update(quaternion_estimation_update());
+    
+                        // Update Position and Velocity Estimate:
+                        result.Update(motion_estimation_update());
+    
+                        // Update Estimation Struct:
+                        result.Update(update_state());
+                    }
+    
+                    // Check for overrun and sleep until next time:
+                    auto now = Clock::now();
+                    if (now < next_time) {
+                        std::this_thread::sleep_until(next_time);
+                    } 
+                    else {
+                        // Log overrun:
+                        auto overrun = std::chrono::duration_cast<std::chrono::microseconds>(now - next_time);
+                        std::cout << "Estimator Loop Execution Time Exceeded Control Rate: " 
+                            << overrun.count() << "us" << std::endl;
+                        next_time = now;
+                    }
+                }
+            }
+};
 
 /* 
     Potential KF Formulation for IMU:
