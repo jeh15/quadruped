@@ -18,11 +18,15 @@
 #include "osqp++.h"
 
 #include "interface/unitree_go2/logger.h"
+#include "interface/estimators/imu_estimator.h"
+
+#include "interfrace/unitree_go2/aliases.h"
+#include "interface/unitree_go2/containers.h"
+#include "unitree-api/containers.h"
 
 #include "operational-space-control/unitree_go2/operational_space_controller.h"
 #include "operational-space-control/unitree_go2/autogen/autogen_defines.h"
 #include "unitree-api/unitree_driver.h"
-#include "unitree-api/containers.h"
 
 
 namespace {
@@ -49,11 +53,6 @@ namespace {
 
 }
 
-struct OperationalSpaceControllerArgs {
-    std::filesystem::path xml_path;
-    int control_rate_us = 1000;
-    osqp::OsqpSettings osqp_settings = osqp::OsqpSettings();
-};
 
 template <typename RobotDriver = UnitreeDriver>
 class UnitreeGo2Interface {
@@ -62,10 +61,10 @@ class UnitreeGo2Interface {
             std::shared_ptr<RobotDriver> unitree_driver,
             OperationalSpaceControllerArgs osc_args, 
             EstimatorArgs estimator_args, 
-            StateLoggerArgs log_args
+            LoggerArgs log_args
         ) : 
             unitree_driver(unitree_driver),
-            estimator(unitree_driver, estimator_args.xml_path, estimator_args.control_rate_us),
+            estimator(unitree_driver, estimator_args.control_rate_us),
             operational_space_controller(osc_args.control_rate_us, osc_args.osqp_settings),
             logger(log_args.log_filepath, log_args.logging_rate),
             enable_logging(log_args.enable_logging),
@@ -74,6 +73,11 @@ class UnitreeGo2Interface {
 
         absl::Status initialize() {
             absl::Status result;
+            // Initialize Unitree Driver:
+            result.Update(unitree_driver->initialize());
+            // Initialize Estimator:
+            result.Update(estimator.initialize());
+            // Initialize Operational Space Controller:
             result.Update(initialize_operational_space_controller());
 
             // Initialize Logger:

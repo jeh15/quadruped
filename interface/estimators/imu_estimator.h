@@ -162,15 +162,20 @@ class IMUEstimator {
                     return absl::InternalError("Quaternion Vector is Empty");
                 }
                 
+                // Check Quaternion Estimate:
+                Eigen::Quaternion<float> q = Eigen::Quaternion<float>(1, 0, 0, 0);
+                Eigen::Quaternion<float> dq = quaternion_estimate * q.inverse();
+                dq.normalize();
+                if( dq.w() > 0.2 || dq.w() < -0.2) {
+                    return absl::InternalError("Quaternion Estimate is not Valid");
+                }
+
                 std::cout << "Gyroscope and Accelerometer Initialization Complete" << std::endl;
                 std::cout << "Gyroscope Bias: " << gyroscope_bias.transpose() << std::endl;
                 std::cout << "Accelerometer Bias: " << accelerometer_bias.transpose() << std::endl;
                 std::cout << "Quaternion Estimate: " << quaternion_estimate.w() << " " << quaternion_estimate.vec().transpose() << std::endl;
 
-                // Debug:
-                unitree::containers::IMUState imu_state = unitree_driver->get_imu_state();
-                common::Vector4<float> unitree_quaternion = Eigen::Map<common::Vector4<float>>(imu_state.quaternion.data());
-                std::cout << "Unitree Quaternion: " << unitree_quaternion.transpose() << std::endl;
+                
 
                 return absl::OkStatus();
             }

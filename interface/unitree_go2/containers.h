@@ -2,11 +2,20 @@
 
 #include <filesystem>
 
+#include "osqp++.h"
+
 #include "interface/unitree_go2/aliases.h"
 
 
 namespace interface::containers {
 
+    namespace controller{
+        struct OperationalSpaceControllerArgs {
+            std::filesystem::path xml_path;
+            int control_rate_us = 1000;
+            osqp::OsqpSettings osqp_settings = osqp::OsqpSettings();
+        };
+    }
     namespace logger {
 
         struct LoggerArgs {
