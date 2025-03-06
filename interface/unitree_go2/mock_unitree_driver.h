@@ -17,7 +17,7 @@
 #include "mujoco/mujoco.h"
 
 #include "operational-space-control/unitree_go2/operational_space_controller.h"
-#include "operational-space-control/unitree_go2/autogen/constants.h"
+#include "operational-space-control/unitree_go2/constants.h"
 #include "unitree-api/containers.h"
 
 #include "interface/unitree_go2/aliases.h"
@@ -26,18 +26,6 @@
 
 using namespace interface::containers::mock_unitree_driver;
 using namespace operational_space_controller;
-
-
-namespace {
-    using TaskspaceTargetsMatrix = Eigen::Matrix<double, constants::model::site_ids_size, 6, Eigen::RowMajor>;
-    using TorqueCommand = Eigen::Vector<double, constants::model::nu_size>;
-    using MotorVector = Eigen::Vector<double, constants::model::nu_size>;
-    using MotorVectorFloat = Eigen::Vector<float, constants::model::nu_size>;
-    using Quaternion = Eigen::Vector<double, 4>;
-    using QuaternionFloat = Eigen::Vector<float, 4>;
-    using Vector3 = Eigen::Vector<double, 3>;
-    using Vector3Float = Eigen::Vector<float, 3>;
-}
 
 
 class MockUnitreeDriver {
@@ -75,19 +63,19 @@ class MockUnitreeDriver {
             return absl::OkStatus();
         }
 
-        absl::Status initialize_control_thread() {
+        absl::Status initialize_thread() {
             if(!initialized)
                 return absl::FailedPreconditionError("Unitree Driver not initialized");
 
             thread = std::thread(&MockUnitreeDriver::control_loop, this);
-            control_thread_initialized = true;
+            thread_initialized = true;
 
             return absl::OkStatus();
         }
 
-        absl::Status stop_control_thread() {
+        absl::Status stop_thread() {
             absl::Status result;
-            if(!initialized || !control_thread_initialized)
+            if(!initialized || !thread_initialized)
                 return absl::FailedPreconditionError("Unitree Driver not initialized");
 
             running = false;
@@ -175,8 +163,8 @@ class MockUnitreeDriver {
             return initialized;
         }
 
-        bool is_control_thread_initialized() {
-            return control_thread_initialized;
+        bool is_thread_initialized() {
+            return thread_initialized;
         }
 
         private:
@@ -227,7 +215,7 @@ class MockUnitreeDriver {
         std::mutex mutex;
         std::thread thread;
         bool initialized = false;
-        bool control_thread_initialized = false;
+        bool thread_initialized = false;
 
         void control_loop() {
             using Clock = std::chrono::steady_clock;

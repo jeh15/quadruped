@@ -16,7 +16,7 @@
 #include "interface/unitree_go2/containers.h"
 
 
-using namespace interface;
+namespace osc = operational_space_controller;
 
 
 class FileLogSink : public absl::LogSink {
@@ -90,7 +90,7 @@ class ControllerLogger {
             return absl::OkStatus();
         }
 
-        absl::Status update_state(const State& new_state) {
+        absl::Status update_state(const osc::containers::State& new_state) {
             std::lock_guard<std::mutex> lock(mutex);
             state = new_state;
             return absl::OkStatus();
@@ -98,7 +98,7 @@ class ControllerLogger {
     
     private:
         /* Shared Variables */
-        State state;
+        osc::containers::State state;
         /* Log Variables */
         std::filesystem::path filepath;
         std::unique_ptr<FileLogSink> file_sink;
@@ -136,110 +136,7 @@ class ControllerLogger {
                 {
                     std::lock_guard<std::mutex> lock(mutex);
 
-                    // Log State:
-                    absl::Status result = log_state();
-                    if(!result.ok()) {
-                        LOG(ERROR) << "Failed to log state";
-                    }
-
-                }
-
-                // Check for overrun and sleep until next time:
-                auto now = Clock::now();
-                if(now < next_time) {
-                    std::this_thread::sleep_until(next_time);
-                } else {
-                    // Log overrun:
-                    auto overrun = std::chrono::duration_cast<std::chrono::microseconds>(now - next_time);
-                    std::cout << "Log Loop Execution Time Exceeded Log Rate: " 
-                        << overrun.count() << "us" << std::endl;
-                    next_time = now;
-                }
-            }
-        }
-};
-
-class EstimatorLogger {
-    public:
-        EstimatorLogger(const std::filesystem::path& filepath, const int log_rate_us) : 
-            filepath(filepath), log_rate_us(log_rate_us) {}
-        ~EstimatorLogger() {}
-
-        absl::Status initialize() {
-            // Initialize Logger:
-            file_sink = std::make_unique<FileLogSink>(filepath.c_str());
-            absl::AddLogSink(file_sink.get());
-            absl::InitializeLog(); 
-            LOG(INFO) << "Logger Initialized";
-            log_initialized = true;
-            return absl::OkStatus();
-        }
-
-        absl::Status initialize_thread() {
-            if(!log_initialized) {
-                return absl::FailedPreconditionError("Logger not initialized");
-            }
-
-            // Start Logger Thread:
-            thread = std::thread(&EstimatorLogger::log_loop, this);
-            thread_initialized = true;
-            return absl::OkStatus();
-        }
-
-        absl::Status stop_thread() {
-            if(!thread_initialized) {
-                return absl::FailedPreconditionError("Log Thread not initialized");
-            }
-
-            running = false;
-            thread.join();
-            return absl::OkStatus();
-        }
-
-        absl::Status update_state(const containers::estimator::EstimatorState& new_state) {
-            std::lock_guard<std::mutex> lock(mutex);
-            state = new_state;
-            return absl::OkStatus();
-        }
-    
-    private:
-        /* Shared Variables */
-        containers::estimator::EstimatorState state;
-        /* Log Variables */
-        std::filesystem::path filepath;
-        std::unique_ptr<FileLogSink> file_sink;
-        bool log_initialized = false;
-        /* Thread Variables */
-        std::atomic<bool> running{true};
-        std::thread thread;
-        std::mutex mutex;
-        bool thread_initialized = false;
-        int log_rate_us;
-
-        absl::Status log_state() {
-            // Log State:
-            LOG(INFO) << "Body Position (m): " << state.body_position.transpose();
-            LOG(INFO) << "Body Rotation (Quaternion): " << state.body_rotation.transpose();
-            LOG(INFO) << "Linear Body Velocity (m/s): " << state.linear_body_velocity.transpose();
-            LOG(INFO) << "Angular Body Velocity (rad/s): " << state.angular_body_velocity.transpose();
-            LOG(INFO) << "Motor Position (rad): " << state.motor_position.transpose();
-            LOG(INFO) << "Motor Velocity (rad/s): " << state.motor_velocity.transpose();
-
-            return absl::OkStatus();
-        }
-
-        void log_loop() {
-            using Clock = std::chrono::steady_clock;
-            auto next_time = Clock::now();
-            while(running) {
-                // Calculate next time:
-                next_time += std::chrono::microseconds(log_rate_us);
-
-                /* Lock Guard Scope */
-                {
-                    std::lock_guard<std::mutex> lock(mutex);
-
-                    // Log State:
+                    // Log osc::containers::State:
                     absl::Status result = log_state();
                     if(!result.ok()) {
                         LOG(ERROR) << "Failed to log state";

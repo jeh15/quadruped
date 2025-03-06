@@ -87,8 +87,8 @@ class SafetyController {
             position_setpoint = position_setpoints.cwiseMin(upper_hard).cwiseMax(lower_hard);
             velocity_setpoint = velocity_setpoints.cwiseMin(velocity_hard).cwiseMax(-velocity_hard);
 
-            stiffness = stiffness_value;
-            damping = damping_value;
+            stiffness = stiffness_default;
+            damping = damping_default;
 
             return absl::OkStatus();
         }
@@ -102,7 +102,7 @@ class SafetyController {
             stiffness = stiffness_override;
             damping = damping_override;
 
-            stop_control_ = true;
+            stop_flag = true;
 
             return absl::OkStatus();
         }
@@ -117,8 +117,8 @@ class SafetyController {
             return state;
         }
 
-        bool stop_control() {
-            return stop_control_;
+        bool safety_stop() {
+            return stop_flag;
         }
 
         private:
@@ -128,61 +128,63 @@ class SafetyController {
             MotorVector<double> torque_command = MotorVector<double>::Zero();
             double stiffness_default;
             double damping_default;
+            double stiffness = stiffness_default;
+            double damping = damping_default;
             /* Override */
-            bool stop_control_ = false;
-            MotorVector<double> default_position = MotorVector<double>(
+            bool stop_flag = false;
+            MotorVector<double> default_position {
                 0.0, 0.9, -1.8,
                 0.0, 0.9, -1.8,
                 0.0, 0.9, -1.8,
                 0.0, 0.9, -1.8
-            );
-            double stiffness_override = 20;
-            double damping_override = 10;
+            };
+            double stiffness_override = 0.0;
+            double damping_override = 20;
             /* Safety Controller Variables */
             double kp_lb = 2.0;
             double kp_ub = 20.0;
             double kd_lb = 2.0;
             double kd_ub = 10.0;
             // Position Soft and Hard Limits:
-            MotorVector<double> lower_soft = MotorVector<double>(
+            MotorVector<double> lower_soft {
                 -0.546, -0.5708, -1.7227,
                 -0.546, -0.5708, -1.7227,
                 -0.546, -0.0, -1.7227,
                 -0.546, -0.0, -1.7227
-            );
-            MotorVector<double> lower_hard = MotorVector<double>(
+            };
+            MotorVector<double> lower_hard {
                 -0.8472, -1.3708, -2.5227,
                 -0.8472, -1.3708, -2.5227,
                 -0.8472, -0.3236, -2.5227,
                 -0.8472, -0.3236, -2.5227
-            );
-            MotorVector<double> upper_soft = MotorVector<double>(
+            };
+            MotorVector<double> upper_soft {
                 0.546, 2.4907, 0.162,
                 0.546, 2.4907, 0.162,
                 0.546, 3.5379, 0.162,
                 0.546, 3.5379, 0.162,
-            );
-            MotorVector<double> upper_hard = MotorVector<double>(
+            };
+            MotorVector<double> upper_hard {
                 0.8472, 3.2907, -0.63776,
                 0.8472, 3.2907, -0.63776,
                 0.8472, 4.3379, -0.63776,
                 0.8472, 4.3379, -0.63776,
-            );
+            };
             // Velocity Soft and Hard Limits:
             double v_lb = std::numbers::pi;
             double v_ub = 2 * std::numbers::pi;
-            MotorVector<double> velocity_soft = MotorVector<double>(
+            MotorVector<double> velocity_soft {
                 v_lb, v_lb, v_lb,
                 v_lb, v_lb, v_lb,
                 v_lb, v_lb, v_lb,
                 v_lb, v_lb, v_lb,
-            );
-            MotorVector<double> velocity_hard = MotorVector<double>(
+            };
+            MotorVector<double> velocity_hard {
                 v_ub, v_ub, v_ub,
                 v_ub, v_ub, v_ub,
                 v_ub, v_ub, v_ub,
                 v_ub, v_ub, v_ub,
-            );
+            };
             // Torque Saturation Limits:
             double torque_ub = 10.0;
             double torque_lb = -10.0;

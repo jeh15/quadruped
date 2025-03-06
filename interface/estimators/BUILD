@@ -5,6 +5,7 @@ cc_library(
     srcs = ["imu_estimator.h"],
     deps = [
         "//interface/unitree_go2:aliases",
+        "//interface/unitree_go2:containers",
         "@eigen//:eigen",
         "@abseil-cpp//absl/log:absl_check",
         "@abseil-cpp//absl/status:status",
