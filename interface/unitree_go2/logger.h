@@ -11,6 +11,7 @@
 #include "absl/strings/string_view.h"
 
 #include "operational-space-control/unitree_go2/operational_space_controller.h"
+
 #include "interface/unitree_go2/aliases.h"
 #include "interface/unitree_go2/containers.h"
 
@@ -68,19 +69,19 @@ class ControllerLogger {
             return absl::OkStatus();
         }
 
-        absl::Status initialize_log_thread() {
+        absl::Status initialize_thread() {
             if(!log_initialized) {
                 return absl::FailedPreconditionError("Logger not initialized");
             }
 
             // Start Logger Thread:
             thread = std::thread(&ControllerLogger::log_loop, this);
-            log_thread_initialized = true;
+            thread_initialized = true;
             return absl::OkStatus();
         }
 
-        absl::Status stop_log_thread() {
-            if(!log_thread_initialized) {
+        absl::Status stop_thread() {
+            if(!thread_initialized) {
                 return absl::FailedPreconditionError("Log Thread not initialized");
             }
 
@@ -106,7 +107,7 @@ class ControllerLogger {
         std::atomic<bool> running{true};
         std::thread thread;
         std::mutex mutex;
-        bool log_thread_initialized = false;
+        bool thread_initialized = false;
         int log_rate_us;
 
         absl::Status log_state() {
@@ -174,19 +175,19 @@ class EstimatorLogger {
             return absl::OkStatus();
         }
 
-        absl::Status initialize_log_thread() {
+        absl::Status initialize_thread() {
             if(!log_initialized) {
                 return absl::FailedPreconditionError("Logger not initialized");
             }
 
             // Start Logger Thread:
             thread = std::thread(&EstimatorLogger::log_loop, this);
-            log_thread_initialized = true;
+            thread_initialized = true;
             return absl::OkStatus();
         }
 
-        absl::Status stop_log_thread() {
-            if(!log_thread_initialized) {
+        absl::Status stop_thread() {
+            if(!thread_initialized) {
                 return absl::FailedPreconditionError("Log Thread not initialized");
             }
 
@@ -212,7 +213,7 @@ class EstimatorLogger {
         std::atomic<bool> running{true};
         std::thread thread;
         std::mutex mutex;
-        bool log_thread_initialized = false;
+        bool thread_initialized = false;
         int log_rate_us;
 
         absl::Status log_state() {

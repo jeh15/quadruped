@@ -48,24 +48,32 @@ class IMUEstimator {
             return absl::OkStatus();
         }
 
-        absl::Status initialize_estimator_thread() {
+        absl::Status initialize_thread() {
             if(!initialized)
                 return absl::FailedPreconditionError("Estimator not initialized");
 
             thread = std::thread(&IMUEstimator::estimator_loop, this);
-            estimator_thread_initialized = true;
+            thread_initialized = true;
 
             return absl::OkStatus();
         }
 
-        absl::Status stop_estimator_thread() {
-            if(!estimator_thread_initialized)
+        absl::Status stop_thread() {
+            if(!thread_initialized)
                 return absl::FailedPreconditionError("Estimator thread not initialized");
 
             running = false;
             thread.join();
 
             return absl::OkStatus();
+        }
+
+        bool is_initialized() {
+            return initialized;
+        }
+
+        bool is_thread_initialized() {
+            return thread_initialized;
         }
 
         EstimatorState get_state() {
@@ -84,7 +92,7 @@ class IMUEstimator {
             std::atomic<bool> running = true;
             int control_rate_us;
             bool initialized = false;
-            bool estimator_thread_initialized = false;
+            bool thread_initialized = false;
             // Constants:
             const float gyroscope_measurement_error = M_PI * (5.0f / 180.0f);
             const float beta = std::sqrt(3.0f / 4.0f) * gyroscope_measurement_error;
@@ -318,6 +326,7 @@ class IMUEstimator {
                 estimator_state.angular_body_velocity = gyroscope_estimate;
                 estimator_state.joint_velocity = qd_estimate;
                 estimator_state.linear_body_acceleration = accelerometer_estimate;
+                estimator_state.torque_estimate = torque_estimate;
                 estimator_state.contact_mask = contact_mask;
 
                 return absl::OkStatus();

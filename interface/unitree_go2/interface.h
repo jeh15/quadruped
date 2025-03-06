@@ -17,41 +17,20 @@
 #include "Eigen/Dense"
 #include "osqp++.h"
 
-#include "interface/unitree_go2/logger.h"
-#include "interface/estimators/imu_estimator.h"
-
-#include "interfrace/unitree_go2/aliases.h"
-#include "interface/unitree_go2/containers.h"
+#include "unitree-api/unitree_driver.h"
 #include "unitree-api/containers.h"
 
+
 #include "operational-space-control/unitree_go2/operational_space_controller.h"
-#include "operational-space-control/unitree_go2/autogen/autogen_defines.h"
-#include "unitree-api/unitree_driver.h"
+#include "operational-space-control/unitree_go2/constants.h"
+#include "operational-space-control/unitree_go2/containers.h"
 
+#include "interface/unitree_go2/logger.h"
+#include "interface/estimators/imu_estimator.h"
+#include "interfrace/unitree_go2/aliases.h"
+#include "interface/unitree_go2/containers.h"
 
-namespace {
-    using TaskspaceTargetsMatrix = Eigen::Matrix<double, constants::model::site_ids_size, 6, Eigen::RowMajor>;
-    using ActuatorCommand = Eigen::Vector<double, constants::model::nu_size>;
-    using ActuatorCommandFloat = Eigen::Vector<float, constants::model::nu_size>;
-    using MotorVector = Eigen::Vector<double, constants::model::nu_size>;
-    using MotorVectorFloat = Eigen::Vector<float, constants::model::nu_size>;
-    using Quaternion = Eigen::Vector<double, 4>;
-    using QuaternionFloat = Eigen::Vector<float, 4>;
-    using Vector3 = Eigen::Vector<double, 3>;
-    using Vector3Float = Eigen::Vector<float, 3>;
-    using ContactMask = Eigen::Vector<double, constants::model::contact_site_ids_size>;
-    using OptimizationSolution = Eigen::Vector<double, constants::optimization::design_vector_size>;
-
-    template <typename T> int sgn(T val) {
-        return (T(0) < val) - (val < T(0));
-    }
-
-    template<typename Derived>
-    void clamp_vector(Eigen::MatrixBase<Derived>& vector, typename Derived::Scalar min, typename Derived::Scalar max) {
-        vector = vector.cwiseMin(max).cwiseMax(min);
-    }
-
-}
+namespace osc = operational_space_controller;
 
 
 template <typename RobotDriver = UnitreeDriver>
@@ -93,10 +72,9 @@ class UnitreeGo2Interface {
             if(!estimator->is_initialized())
                 return absl::FailedPreconditionError("State Estimator not initialized. State Estimator needs to be initialized first to set the initial state of the Operational Space Controller.");
 
-            // Load mujoco model and use initial state from the motor controller:
             absl::Status result;
             result.Update(update_state());
-            result.Update(operational_space_controller.initialize(xml_path, initial_state));
+            result.Update(operational_space_controller.initialize(xml_path, state));
             result.Update(operational_space_controller.initialize_optimization());
             if (!result.ok())
                 return result;
@@ -105,32 +83,32 @@ class UnitreeGo2Interface {
             return absl::OkStatus();
         }
 
-        absl::Status initialize_control_thread() {
-            if(!operational_space_controller_initialized || !motor_controller_initialized)
-                return absl::FailedPreconditionError("Operational Space Controller and/or Motor Controller not initialized");
+        absl::Status initialize_thread() {
+            if(!operational_space_controller_initialized)
+                return absl::FailedPreconditionError("Operational Space Controller and/or Estimator not initialized");
             
             thread = std::thread(&UnitreeGo2Interface::control_loop, this);
-            control_thread_initialized = true;
+            thread_initialized = true;
             return absl::OkStatus();
         }
 
         absl::Status initialize_threads() {
             // Initialize all threads:
             absl::Status result;
-            result.Update(operational_space_controller.initialize_control_thread());
-            result.Update(estimator.initialize_estimator_thread());
-            result.Update(unitree_driver->initialize_control_thread());
-            result.Update(initialize_control_thread());
+            result.Update(estimator.initialize_thread());
+            result.Update(operational_space_controller.initialize_thread());
+            result.Update(unitree_driver->initialize_thread());
+            result.Update(initialize_thread());
             if(enable_logging)
-                result.Update(logger.initialize_log_thread());
+                result.Update(logger.initialize_thread());
 
             ABSL_CHECK(result.ok()) << result.message();
 
             return absl::OkStatus();
         }
 
-        absl::Status stop_control_thread() {
-            if(!control_thread_initialized)
+        absl::Status stop_thread() {
+            if(!thread_initialized)
                 return absl::FailedPreconditionError("Control Thread not initialized");
 
             running = false;
@@ -140,15 +118,14 @@ class UnitreeGo2Interface {
 
         absl::Status stop_threads() {
             absl::Status result;
-            result.Update(stop_control_thread());
-            result.Update(logger.stop_log_thread());
-            result.Update(operational_space_controller.stop_control_thread());
+            result.Update(stop_thread());
+            result.Update(operational_space_controller.stop_thread());
             result.Update(estimator.stop_estimator_thread());
-            result.Update(unitree_driver->stop_control_thread());
-            if(!result.ok())
-                return result;
+            result.Update(unitree_driver->stop_thread());
+            if(enable_logging)
+                result.Update(logger.stop_thread());
 
-            return absl::OkStatus();
+            return result;
         }
 
         absl::Status clean_up() {
@@ -161,7 +138,7 @@ class UnitreeGo2Interface {
         }
 
         absl::Status activate_operational_space_controller() {
-            if(!control_thread_initialized)
+            if(!thread_initialized)
                 return absl::FailedPreconditionError("Control Thread not initialized. Initial Control Commands must come from Default Control.");
             
             LOG(INFO) << "Activating Operational Space Controller";
@@ -169,7 +146,7 @@ class UnitreeGo2Interface {
             return absl::OkStatus();
         }
 
-        absl::Status update_taskspace_targets(const TaskspaceTargetsMatrix& new_taskspace_targets) {
+        absl::Status update_taskspace_targets(const osc::aliases::TaskspaceTargets& new_taskspace_targets) {
             if (!operational_space_controller_initialized)
                 return absl::FailedPreconditionError("Operational Space Controller not initialized");
             
@@ -178,115 +155,43 @@ class UnitreeGo2Interface {
             return absl::OkStatus();
         }
 
-        State get_state() {
+        osc::containers::State get_state() {
             std::lock_guard<std::mutex> lock(mutex);
             return state;
         }
 
-        ActuatorCommand get_torque_command() {
+        MotorVector<double> get_torque_command() {
             std::lock_guard<std::mutex> lock(mutex);
             return operational_space_controller.get_torque_command();
         }
 
     private:
         /* Shared Variables */
-        State state;
-        TaskspaceTargetsMatrix taskspace_targets = TaskspaceTargetsMatrix::Zero();
-        /* Operational Space Controller and Motor Controller */
+        osc::containers::State state;
+        osc::aliases::TaskspaceTargets taskspace_targets = osc::aliases::TaskspaceTargets::Zero();
+        /* Components */
         OperationalSpaceController operational_space_controller;
+        IMUEstimator<RobotDriver> estimator;
         std::shared_ptr<RobotDriver> unitree_driver;
-        StateLogger logger;
-        State initial_state;
+        ControllerLogger logger;
         bool enable_logging;
         bool operational_space_controller_initialized = false;
-        bool motor_controller_initialized = false;
         const std::filesystem::path xml_path;
-        const std::string network_name;
-        const int control_rate_us; // This should match the control rate of the motor controller.
-        /* Index mappings for Robot and Mujoco Model: mj_model : [FL FR Hl HR] | robot : [FR FL HR HL] */
-        const std::array<int, constants::model::nu_size> motor_idx_map{3, 4, 5, 0, 1, 2, 9, 10, 11, 6, 7, 8};
-        const std::array<int, 4> foot_idx_map{1, 0, 3, 2};
-        const short contact_threshold = 5;
+        const int control_rate_us = unitree_driver->get_control_rate(); // This should match the control rate of the motor controller.
+        /* Setpoint Integration */
+        const double alpha = 0.9;
+        const double timestep = std::chrono::duration<double>(std::chrono::microseconds(control_rate_us)).count();
+        /* Initial PD Controller */
         float stiffness_value = 5.0;
         float damping_value = 5.0;
         float stiffness_delta = 0.01;
         float damping_delta = 0.0;
-        /* Approximate Linear Body Velocity */
-        float alpha = 0.9;
-        Vector3Float previous_smooth_acceleration = Vector3Float::Zero();
-        Vector3Float smooth_acceleration = Vector3Float::Zero();
-        Vector3Float previous_linear_body_velocity = Vector3Float::Zero();
-        Vector3Float linear_body_velocity = Vector3Float::Zero();
-        Vector3Float previous_smooth_velocity = Vector3Float::Zero();
-        Vector3Float smooth_velocity = Vector3Float::Zero();
         /* Thread Variables */
         std::atomic<bool> running{true};
         std::atomic<bool> activate_control{false};
         std::thread thread;
         std::mutex mutex;
-        bool control_thread_initialized = false;
-        /* Safety Controller Variables */
-        double kp_lb = 2.0;
-        double kp_ub = 20.0;
-        double kd_lb = 2.0;
-        double kd_ub = 10.0;
-        // Position Soft and Hard Limits:
-        std::array<double, constants::model::nu_size> lower_lb = {
-            -0.546, -0.5708, -1.7227,
-            -0.546, -0.5708, -1.7227,
-            -0.546, -0.0, -1.7227,
-            -0.546, -0.0, -1.7227
-        };
-        std::array<double, constants::model::nu_size> lower_ub = {
-            -0.8472, -1.3708, -2.5227,
-            -0.8472, -1.3708, -2.5227,
-            -0.8472, -0.3236, -2.5227,
-            -0.8472, -0.3236, -2.5227
-        };
-        std::array<double, constants::model::nu_size> upper_lb = {
-            0.546, 2.4907, 0.162,
-            0.546, 2.4907, 0.162,
-            0.546, 3.5379, 0.162,
-            0.546, 3.5379, 0.162,
-        };
-        std::array<double, constants::model::nu_size> upper_ub = {
-            0.8472, 3.2907, -0.63776,
-            0.8472, 3.2907, -0.63776,
-            0.8472, 4.3379, -0.63776,
-            0.8472, 4.3379, -0.63776,
-        };
-        // Velocity Soft and Hard Limits:
-        std::array<double, constants::model::nu_size> velocity_lb = {
-            std::numbers::pi, std::numbers::pi, std::numbers::pi,
-            std::numbers::pi, std::numbers::pi, std::numbers::pi,
-            std::numbers::pi, std::numbers::pi, std::numbers::pi,
-            std::numbers::pi, std::numbers::pi, std::numbers::pi,
-        };
-        std::array<double, constants::model::nu_size> velocity_ub = {
-            2 * std::numbers::pi, 2 * std::numbers::pi, 2 * std::numbers::pi,
-            2 * std::numbers::pi, 2 * std::numbers::pi, 2 * std::numbers::pi,
-            2 * std::numbers::pi, 2 * std::numbers::pi, 2 * std::numbers::pi,
-            2 * std::numbers::pi, 2 * std::numbers::pi, 2 * std::numbers::pi,
-        };
-        // Torque Saturation Limits:
-        float torque_ub = 10.0;
-        float torque_lb = -10.0;
-
-
-        absl::Status initialize_filter() {
-            // Initialize Filter:
-            unitree::containers::IMUState imu_state = unitree_driver.get_imu_state();
-
-            // Reformat data to match Mujoco Model:
-            Vector3Float linear_body_acceleration = Eigen::Map<Vector3Float>(imu_state.accelerometer.data());
-
-            // Initialize Previous Values:
-            previous_smooth_acceleration = linear_body_acceleration;
-            previous_linear_body_velocity = Vector3Float::Zero();
-            previous_smooth_velocity = Vector3Float::Zero();
-
-            return absl::OkStatus();
-        }
+        bool thread_initialized = false;
 
         // Update State comes from Estimator now...
         // absl::Status update_state() {
@@ -329,93 +234,37 @@ class UnitreeGo2Interface {
         //     return absl::OkStatus();
         // }
 
-        // TODO(jeh15): Log these values.
-        ActuatorCommandFloat safety_controller(ActuatorCommandFloat& torque_command) {
-            /*
-                Saturates control input if past soft constraint 
-                and terminates the process if past the hard constraint.
-            */
-            Eigen::Vector<double, constants::model::nu_size> position_command = Eigen::Vector<double, constants::model::nu_size>::Zero();
-            Eigen::Vector<double, constants::model::nu_size> velocity_command = Eigen::Vector<double, constants::model::nu_size>::Zero();
-            double kp = 0.0;
-            double kd = 0.0;
-            for(int i = 0; i < constants::model::nu_size; i++){
-                double motor_position = state.motor_position[i];
-                double motor_velocity = state.motor_velocity[i];
-                if(motor_position > upper_lb[i]) {
-                    ABSL_CHECK(motor_position < upper_ub[i]) << "Motor Position Exceeded Upper Bound";
-                    kp = kp_lb + (abs(motor_position) - abs(upper_lb[i])) * (kp_ub - kp_lb) / ( abs(upper_ub[i]) - abs(upper_lb[i]));
-                    position_command(i) = kp * (upper_lb[i] - motor_position);
-                }
-                else if(motor_position < lower_lb[i]) {
-                    ABSL_CHECK(motor_position < upper_ub[i]) << "Motor Position Exceeded Lower Bound";
-                    kp = kp_lb + (abs(motor_position) - abs(lower_lb[i])) * (kp_ub - kp_lb) / ( abs(lower_ub[i]) - abs(lower_lb[i]));
-                    position_command(i) = kp * (lower_lb[i] - motor_position);
-                }
-
-                if(abs(motor_velocity) > velocity_lb[i]) {
-                    ABSL_CHECK(abs(motor_velocity) < velocity_ub[i]) << "Motor Velocity Exceeded Limit";
-                    kd = kd_lb + (motor_velocity - velocity_lb[i]) * (kd_ub - kd_lb) / (velocity_ub[i] - velocity_lb[i]);
-                    double velocity_setpoint = sgn<double>(motor_velocity) * velocity_lb[i];
-                    velocity_command(i) = kd * (velocity_setpoint - motor_velocity);
-                }
-            }
-
-            // Add Safety Controller to Torque Command:
-            ActuatorCommandFloat position_command_f = position_command.cast<float>();
-            ActuatorCommandFloat velocity_command_f = velocity_command.cast<float>();
-            torque_command = torque_command + position_command_f + velocity_command_f;
-            
-            // Saturate Torque Command:
-            clamp_vector(torque_command , torque_lb, torque_ub);
-
-            return torque_command;
-        }
-
         unitree::containers::MotorCommand update_motor_command(
-            ActuatorCommandFloat& torque_command,
-            const ActuatorCommandFloat& velocity_setpoint = ActuatorCommandFloat::Zero(),
-            const ActuatorCommandFloat& position_setpoint = ActuatorCommandFloat::Zero(),
-            const float stiffness_value = 0.0,
-            const float damping_value = 5.0
+            MotorVector<float>& torque_commands,
+            MotorVector<float>& velocity_setpoints = MotorVector<float>::Zero(),
+            MotorVector<float>& position_setpoints = MotorVector<float>::Zero(),
         ) {
-            /*
-                Motor Command Struct:
-                
-                Turning off position based feedback terms.
-                Using velocity feedback terms for damping.
-                Only using built-in Unitree Control Loop.
-            */
+            // Run safety controller on commands:
+            absl::Status result;
+            result.Update(safety_controller.torque_saturator(torque_commands, state));
+            result.Update(safety_controller.setpoint_saturator(position_setpoints, velocity_setpoints));
+            if(!result.ok()) {
+                result.Update(safety_controller.setpoint_override());
+            }
+            // Alternatively, kill process: However, this will not stop the inertia of the robot.
+            // ABSL_CHECK(result.ok()) << result.message();
+            
+            // Get Safety Controller State
+            SafetyControllerState safety_controller_state = safety_controller.get_state();
+            bool stop_control = safety_controller.stop_control();
 
-            // Run safety controller on torque command:
-            torque_command = safety_controller(torque_command);
+            // Create Motor Command: Cast to float for motor controller:
+            std::array<float, osc::constants::model::nu_size> q_setpoint;
+            std::array<float, osc::constants::model::nu_size> qd_setpoint;
+            std::array<float, osc::constants::model::nu_size> torque_feedforward;
+            std::array<float, osc::constants::model::nu_size> stiffness;
+            std::array<float, osc::constants::model::nu_size> damping;
 
-            std::array<float, constants::model::nu_size> q_setpoint;
-            for(int i = 0; i < constants::model::nu_size; i++) {
-                q_setpoint[i] = position_setpoint(i);
-            }
-            std::array<float, constants::model::nu_size> qd_setpoint;
-            for(int i = 0; i < constants::model::nu_size; i++) {
-                qd_setpoint[i] = velocity_setpoint(i);
-            }
-            std::array<float, constants::model::nu_size> torque_feedforward;
-            for(int i = 0; i < constants::model::nu_size; i++) {
-                torque_feedforward[i] = torque_command(i);
-            }
-            std::array<float, constants::model::nu_size> stiffness = { 
-                stiffness_value, stiffness_value, stiffness_value,
-                stiffness_value, stiffness_value, stiffness_value,
-                stiffness_value, stiffness_value, stiffness_value,
-                stiffness_value, stiffness_value, stiffness_value,
-            };
-            std::array<float, constants::model::nu_size> damping = {
-                damping_value, damping_value, damping_value,
-                damping_value, damping_value, damping_value,
-                damping_value, damping_value, damping_value,
-                damping_value, damping_value, damping_value,
-            };
-            std::array<float, constants::model::nu_size> kp = { 0 };
-            std::array<float, constants::model::nu_size> kd = { 0 };
+            Eigen::Map<MotorVector<float>>(q_setpoint.data()) = safety_controller_state.position_setpoint.cast<float>();
+            Eigen::Map<MotorVector<float>>(qd_setpoint.data()) = safety_controller_state.velocity_setpoint.cast<float>();
+            Eigen::Map<MotorVector<float>>(torque_feedforward.data()) = afety_controller_state.torque_command.cast<float>();
+            Eigen::Map<MotorVector<float>>(stiffness.data()) = MotorVector<float>::Constant(static_cast<float>(safety_controller_state.stiffness));
+            Eigen::Map<MotorVector<float>>(damping.data()) = MotorVector<float>::Constant(static_cast<float>(safety_controller_state.damping));
             
             unitree::containers::MotorCommand motor_command = {
                 .q_setpoint = q_setpoint,
@@ -423,8 +272,6 @@ class UnitreeGo2Interface {
                 .torque_feedforward = torque_feedforward,
                 .stiffness = stiffness,
                 .damping = damping,
-                .kp = kp,
-                .kd = kd,
             };
 
             return motor_command;
@@ -439,33 +286,33 @@ class UnitreeGo2Interface {
             std::clamp(stiffness_value, 0.0f, 120.0f);
             std::clamp(damping_value, 0.0f, 5.0f);
 
-            std::array<float, constants::model::nu_size> q_setpoint = {
+            std::array<float, osc::constants::model::nu_size> q_setpoint = {
                 0.0, 0.9, -1.8,
                 0.0, 0.9, -1.8,
                 0.0, 0.9, -1.8,
                 0.0, 0.9, -1.8,
             };
-            std::array<float, constants::model::nu_size> qd_setpoint = { 0 };
-            std::array<float, constants::model::nu_size> torque_feedforward = { 0 };
-            std::array<float, constants::model::nu_size> stiffness = { 
+            std::array<float, osc::constants::model::nu_size> qd_setpoint = { 0 };
+            std::array<float, osc::constants::model::nu_size> torque_feedforward = { 0 };
+            std::array<float, osc::constants::model::nu_size> stiffness = { 
                 stiffness_value, stiffness_value, stiffness_value,
                 stiffness_value, stiffness_value, stiffness_value,
                 stiffness_value, stiffness_value, stiffness_value,
                 stiffness_value, stiffness_value, stiffness_value,
             };
-            std::array<float, constants::model::nu_size> damping = {
+            std::array<float, osc::constants::model::nu_size> damping = {
                 damping_value, damping_value, damping_value,
                 damping_value, damping_value, damping_value,
                 damping_value, damping_value, damping_value,
                 damping_value, damping_value, damping_value,
             };
-            std::array<float, constants::model::nu_size> kp = { 
+            std::array<float, osc::constants::model::nu_size> kp = { 
                 5.0, 5.0, 5.0,
                 5.0, 5.0, 5.0,
                 5.0, 5.0, 5.0,
                 5.0, 5.0, 5.0,
              };
-            std::array<float, constants::model::nu_size> kd = { 
+            std::array<float, osc::constants::model::nu_size> kd = { 
                 2.0, 2.0, 2.0,
                 2.0, 2.0, 2.0,
                 2.0, 2.0, 2.0,
@@ -478,8 +325,6 @@ class UnitreeGo2Interface {
                 .torque_feedforward = torque_feedforward,
                 .stiffness = stiffness,
                 .damping = damping,
-                .kp = kp,
-                .kd = kd,
             };
 
             return motor_command;

@@ -2,10 +2,11 @@
 
 #include "Eigen/Dense"
 
-#include "operational-space-control/unitree_go2/autogen/autogen_defines.h"
+#include "operational-space-control/unitree_go2/constants.h"
+
+using namespace operational_space_controller;
 
 
-// Push some of these to a common namespace
 namespace interface::aliases {
 
     namespace common {

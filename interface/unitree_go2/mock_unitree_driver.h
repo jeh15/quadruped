@@ -14,17 +14,18 @@
 #include "absl/log/absl_check.h"
 
 #include "Eigen/Dense"
+#include "mujoco/mujoco.h"
 
 #include "operational-space-control/unitree_go2/operational_space_controller.h"
-#include "operational-space-control/unitree_go2/autogen/autogen_defines.h"
-#include "interface/unitree_go2/aliases.h"
-#include "interface/unitree_go2/containers.h"
+#include "operational-space-control/unitree_go2/autogen/constants.h"
 #include "unitree-api/containers.h"
 
-#include "mujoco/mujoco.h"
+#include "interface/unitree_go2/aliases.h"
+#include "interface/unitree_go2/containers.h"
 
 
 using namespace interface::containers::mock_unitree_driver;
+using namespace operational_space_controller;
 
 
 namespace {
