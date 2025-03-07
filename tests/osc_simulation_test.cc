@@ -98,13 +98,6 @@ int main(int argc, char** argv) {
     // Expose mj_model and mj_data for visualization:
     auto mj_model = unitree_driver->mj_model;
     auto mj_data = unitree_driver->mj_data;
-
-    double* sensordata = mj_data->sensordata;
-    for(int i = 0; i < mj_model->nsensordata; i++) {
-        std::cout << "Sensor Data: " << sensordata[i] << std::endl;
-    }
-
-    return 0;
     
     // Visualization:
     glfwInit();
@@ -128,23 +121,37 @@ int main(int argc, char** argv) {
     result.Update(interface.initialize_threads());
     ABSL_CHECK(result.ok()) << result.message();
 
+    // Set OSC Control Mode:
+    interface::containers::controller::ControlMode mode = 
+        interface::containers::controller::ControlMode::OperationalSpaceController;
+    std::ignore = interface.set_control_mode(mode);
+
     double visualization_timer = unitree_driver->mj_data->time;
     double visualization_start_time = visualization_timer;
     double visualization_interval = 0.01;
-    double simulation_time = 2.0;
+    double simulation_time = 5.0;
+
     while(unitree_driver->mj_data->time < simulation_time) {
         mj_data = unitree_driver->mj_data;
 
         visualization_timer = mj_data->time - visualization_start_time;
 
+
+        // Update Taskspace Targets:
+        double kp = 100.0;
+        auto state = interface.get_state();
+        interface::aliases::common::Vector3<double> control = kp * (interface::aliases::common::Vector3<double>::Zero() - state.linear_body_velocity);
+        Eigen::Vector<double, 6> cmd {control(0), control(1), control(2), 0.0, 0.0, 0.0};
+        osc::aliases::TaskspaceTargets taskspace_targets;
+        taskspace_targets.row(0) = cmd;
+
         if(visualization_timer > visualization_interval) {
             // Print State:
-            auto state = interface.get_state();
-            std::cout << "Body Rotation: " << state.body_rotation.transpose() << std::endl;
-            std::cout << "Linear Body Velocity: " << state.linear_body_velocity.transpose() << std::endl;
-            std::cout << "Angular Body Velocity: " << state.angular_body_velocity.transpose() << std::endl;
-            std::cout << "Motor Position: " << state.motor_position.transpose() << std::endl;
-            std::cout << "Motor Velocity: " << state.motor_velocity.transpose() << std::endl;
+            std::cout << "Safety Stop: " << interface.is_safety_stop() << std::endl;
+            auto control_mode = interface.get_control_mode();
+            std::cout << "Control Mode: " << static_cast<int>(control_mode) << std::endl;
+            auto ctrl = interface.get_torque_command();
+            std::cout << "Control: " << ctrl.transpose() << std::endl;
 
             visualization_start_time = mj_data->time;
 

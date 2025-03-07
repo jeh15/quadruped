@@ -183,8 +183,6 @@ class IMUEstimator {
                 std::cout << "Accelerometer Bias: " << accelerometer_bias.transpose() << std::endl;
                 std::cout << "Quaternion Estimate: " << quaternion_estimate.w() << " " << quaternion_estimate.vec().transpose() << std::endl;
 
-                
-
                 return absl::OkStatus();
             }
 
@@ -196,7 +194,7 @@ class IMUEstimator {
                 common::Vector3<float> gyroscope_measurement = Eigen::Map<common::Vector3<float>>(imu_state.gyroscope.data());
                 common::Vector3<float> accelerometer_measurement = Eigen::Map<common::Vector3<float>>(imu_state.accelerometer.data());
 
-                 // Calculate Contact Mask:
+                // Calculate Contact Mask:
                 contact_mask = interface::aliases::controller::ContactMask<float>::Zero();
                 Eigen::Vector<short, 4> foot_force = Eigen::Map<Eigen::Vector<short, 4>>(low_state.foot_force.data());
                 for(int i = 0; i < 4; i++) {

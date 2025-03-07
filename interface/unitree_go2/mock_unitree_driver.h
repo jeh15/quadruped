@@ -56,8 +56,24 @@ class MockUnitreeDriver {
             mj_data->qpos = mj_model->key_qpos;
             mj_data->qvel = mj_model->key_qvel;
             mj_data->ctrl = mj_model->key_ctrl;
+            interface::aliases::common::MotorVector<double> qpos_setpoint = 
+                Eigen::Map<interface::aliases::common::MotorVector<double>>(mj_model->key_qpos + 7);
 
             mj_forward(mj_model, mj_data);
+            
+            const int initialization_steps = 1000;
+            for(int i = 0; i < initialization_steps; i++) {
+                double kp = 60.0;
+                double kd = 5.0;
+                interface::aliases::common::MotorVector<double> qpos = 
+                    Eigen::Map<interface::aliases::common::MotorVector<double>>(mj_data->qpos + 7);
+                interface::aliases::common::MotorVector<double> qvel = 
+                    Eigen::Map<interface::aliases::common::MotorVector<double>>(mj_data->qvel + 6);
+                interface::aliases::common::MotorVector<double> ctrl = kp * (qpos_setpoint - qpos) - kd * qvel;
+                Eigen::Map<interface::aliases::common::MotorVector<double>>(mj_data->ctrl) = ctrl;
+
+                mj_step(mj_model, mj_data);
+            }
 
             initialized = true;
             return absl::OkStatus();
@@ -135,11 +151,15 @@ class MockUnitreeDriver {
             }
             for(int i = 0; i < vector3_size ; i++) {
                 imu_state.gyroscope[i] = static_cast<float>(mj_data->qvel[gyroscope_start + i]);
-                imu_state.accelerometer[i] = static_cast<float>(mj_data->qacc[i]);
                 // Unused
                 imu_state.rpy[i] = 0.0f;
             }
-            std::cout << imu_state.accelerometer[2] << std::endl;
+            interface::aliases::common::Vector3<double> acceleration_vector {mj_data->qacc[0], mj_data->qacc[1], mj_data->qacc[2]};
+            Eigen::Quaternion<double> quaternion = Eigen::Quaternion<double>(mj_data->qpos[3], mj_data->qpos[4], mj_data->qpos[5], mj_data->qpos[6]);
+            Eigen::Matrix3d C = quaternion.toRotationMatrix();
+            interface::aliases::common::Vector3<double> acceleration_body = C * acceleration_vector;
+            Eigen::Map<interface::aliases::common::Vector3<float>>(imu_state.accelerometer.data()) = acceleration_body.cast<float>();
+
             return imu_state;
         }
 

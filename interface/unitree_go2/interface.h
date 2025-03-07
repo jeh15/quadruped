@@ -181,6 +181,15 @@ class UnitreeGo2Interface {
             return absl::OkStatus();
         }
 
+        ControlMode get_control_mode() {
+            std::lock_guard<std::mutex> lock(mutex);
+            return control_mode;
+        }
+
+        bool is_safety_stop() {
+            return safety_stop;
+        }
+
     private:
         /* Shared Variables */
         osc::containers::State state;
@@ -216,13 +225,20 @@ class UnitreeGo2Interface {
 
         absl::Status update_state() {
             EstimatorState estimator_state = estimator.get_state();
-            
+            // Convert Quaternion to Vector4
+            Vector4<float> body_rotation {
+                estimator_state.body_rotation.w(), 
+                estimator_state.body_rotation.x(), 
+                estimator_state.body_rotation.y(), 
+                estimator_state.body_rotation.z()
+            };
+
             state.motor_position = estimator_state.joint_position.cast<double>();
             state.motor_velocity = estimator_state.joint_velocity.cast<double>();
             // Unitree returns vector of zeros, estimator is not tracking this...
             state.motor_acceleration = MotorVector<double>::Zero();
             state.torque_estimate = estimator_state.torque_estimate.cast<double>();
-            state.body_rotation = estimator_state.body_rotation.cast<double>().coeffs();
+            state.body_rotation = body_rotation.cast<double>();
             state.linear_body_velocity = estimator_state.linear_body_velocity.cast<double>();
             state.angular_body_velocity = estimator_state.angular_body_velocity.cast<double>();
             state.linear_body_acceleration = estimator_state.linear_body_acceleration.cast<double>();
@@ -252,7 +268,6 @@ class UnitreeGo2Interface {
                 control_mode = ControlMode::Damping;
                 return interface::constants::controller::damping_motor_command;
             }
-
 
             // Create Motor Command: Cast to float for motor controller:
             std::array<float, osc::constants::model::nu_size> q_setpoint;
