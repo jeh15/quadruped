@@ -69,7 +69,7 @@ int main(int argc, char** argv) {
     // Safety Controller Args:
     interface::containers::controller::SafetyControllerArgs safety_args = {
         .stiffness = 0.0,
-        .damping = 5.0,
+        .damping = 20.0,
     };
 
     // Logger Args:
@@ -138,18 +138,21 @@ int main(int argc, char** argv) {
 
 
         // Update Taskspace Targets:
-        double kp = 100.0;
         auto state = interface.get_state();
-        interface::aliases::common::Vector3<double> control = kp * (interface::aliases::common::Vector3<double>::Zero() - state.linear_body_velocity);
-        Eigen::Vector<double, 6> cmd {control(0), control(1), control(2), 0.0, 0.0, 0.0};
+        // Eigen::Vector<double, 18> qvel = Eigen::Map<Eigen::Vector<double, 18>>(mj_data->qvel);
+        interface::aliases::common::Vector3<double> linear_control = 150.0 * (interface::aliases::common::Vector3<double>::Zero() - state.linear_body_velocity);
+        // interface::aliases::common::Vector3<double> linear_control = 150.0 * (interface::aliases::common::Vector3<double>::Zero() - qvel(Eigen::seqN(0, 3)));
+        interface::aliases::common::Vector3<double> angular_control = 100.0 * (interface::aliases::common::Vector3<double>::Zero() - state.angular_body_velocity);
+        Eigen::Vector<double, 6> cmd {linear_control(0), linear_control(1), linear_control(2), angular_control(0), angular_control(1), angular_control(2)};
         osc::aliases::TaskspaceTargets taskspace_targets;
         taskspace_targets.row(0) = cmd;
+        result.Update(interface.update_taskspace_targets(taskspace_targets));
 
         if(visualization_timer > visualization_interval) {
             // Print State:
-            std::cout << "Safety Stop: " << interface.is_safety_stop() << std::endl;
-            auto control_mode = interface.get_control_mode();
-            std::cout << "Control Mode: " << static_cast<int>(control_mode) << std::endl;
+            if(interface.is_safety_stop()){
+                return 0;
+            }
             auto ctrl = interface.get_torque_command();
             std::cout << "Control: " << ctrl.transpose() << std::endl;
 

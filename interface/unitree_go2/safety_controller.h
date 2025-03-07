@@ -204,8 +204,8 @@ class SafetyController {
             };
 
             // Velocity Soft and Hard Limits:
-            double v_lb = std::numbers::pi;
-            double v_ub = 2 * std::numbers::pi;
+            double v_lb = 1.0 * std::numbers::pi;
+            double v_ub = 2.0 * std::numbers::pi;
             MotorVector<double> velocity_soft {
                 v_lb, v_lb, v_lb,
                 v_lb, v_lb, v_lb,
@@ -219,7 +219,7 @@ class SafetyController {
                 v_ub, v_ub, v_ub,
             };
             // Torque Saturation Limits:
-            double torque_ub = 10.0;
-            double torque_lb = -10.0;
+            double torque_ub = 20.0;
+            double torque_lb = -20.0;
 
 };

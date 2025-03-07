@@ -355,40 +355,40 @@ class UnitreeGo2Interface {
 
                     if(enable_logging)
                         result.Update(logger.update_state(state));
+
+                    // Get Solution to get Joint Accelerations and Torques:
+                    osc::aliases::OptimizationSolution solution = operational_space_controller.get_solution();
+                    MotorVector<double> joint_accelerations = Eigen::Map<MotorVector<double>>(
+                        solution(Eigen::seqN(0, osc::constants::optimization::dv_size)).data()
+                    );
+                    MotorVector<double> torque_command = Eigen::Map<MotorVector<double>>(
+                        solution(Eigen::seqN(osc::constants::optimization::dv_idx, osc::constants::optimization::u_size)).data()
+                    );
+
+                    // Integrate to get velocity setpoints:
+                    MotorVector<double> velocity_desired = state.motor_velocity + joint_accelerations * timestep;
+                    MotorVector<double> velocity_setpoint = alpha * velocity_desired + (1.0 - alpha) * previous_motor_velocity;
+                    previous_motor_velocity = state.motor_velocity;
+
+                    // Create Motor Command:
+                    unitree::containers::MotorCommand motor_command;
+                    switch(control_mode) {
+                        case ControlMode::Damping:
+                            motor_command = interface::constants::controller::damping_motor_command;
+                            break;
+                        case ControlMode::Default:
+                            motor_command = default_motor_command(stiffness_value, damping_value);
+                            stiffness_value += stiffness_delta;
+                            damping_value += damping_delta;
+                            break;
+                        case ControlMode::OperationalSpaceController:
+                            motor_command = update_motor_command(torque_command, velocity_setpoint);
+                            break;
+                    }
+
+                    // Send Motor Command:
+                    unitree_driver->update_command(motor_command);
                 }
-
-                // Get Solution to get Joint Accelerations and Torques:
-                osc::aliases::OptimizationSolution solution = operational_space_controller.get_solution();
-                MotorVector<double> joint_accelerations = Eigen::Map<MotorVector<double>>(
-                    solution(Eigen::seqN(0, osc::constants::optimization::dv_size)).data()
-                );
-                MotorVector<double> torque_command = Eigen::Map<MotorVector<double>>(
-                    solution(Eigen::seqN(osc::constants::optimization::dv_idx, osc::constants::optimization::u_size)).data()
-                );
-
-                // Integrate to get velocity setpoints:
-                MotorVector<double> velocity_desired = state.motor_velocity + joint_accelerations * timestep;
-                MotorVector<double> velocity_setpoint = alpha * velocity_desired + (1.0 - alpha) * previous_motor_velocity;
-                previous_motor_velocity = state.motor_velocity;
-
-                // Create Motor Command:
-                unitree::containers::MotorCommand motor_command;
-                switch(control_mode) {
-                    case ControlMode::Damping:
-                        motor_command = interface::constants::controller::damping_motor_command;
-                        break;
-                    case ControlMode::Default:
-                        motor_command = default_motor_command(stiffness_value, damping_value);
-                        stiffness_value += stiffness_delta;
-                        damping_value += damping_delta;
-                        break;
-                    case ControlMode::OperationalSpaceController:
-                        motor_command = update_motor_command(torque_command, velocity_setpoint);
-                        break;
-                }
-
-                // Send Motor Command:
-                unitree_driver->update_command(motor_command);
 
                 // Check for overrun and sleep until next time:
                 auto now = Clock::now();
