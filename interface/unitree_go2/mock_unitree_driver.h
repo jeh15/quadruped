@@ -139,6 +139,7 @@ class MockUnitreeDriver {
                 // Unused
                 imu_state.rpy[i] = 0.0f;
             }
+            std::cout << imu_state.accelerometer[2] << std::endl;
             return imu_state;
         }
 

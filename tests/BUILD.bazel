@@ -1,42 +1,6 @@
 load("@rules_cc//cc:defs.bzl", "cc_binary")
 
 cc_binary(
-    name = "osc_interface_test",
-    srcs = ["osc_interface_test.cc"],
-    data = ["//models/unitree_go2:unitree_go2"],
-    deps = [
-        "//interface/unitree_go2:osc_interface",
-        "//interface/unitree_go2:logger",
-        "@eigen//:eigen",
-        "@osqp-cpp//:osqp++",
-        "@abseil-cpp//absl/log:absl_check",
-        "@abseil-cpp//absl/status:status",
-        "@rules_cc//cc/runfiles:runfiles",
-        "@bazel_tools//tools/cpp/runfiles",
-    ],
-    visibility = ["//visibility:public"],
-)
-
-cc_binary(
-    name = "simulation_interface_test",
-    srcs = ["simulation_interface_test.cc"],
-    data = ["//models/unitree_go2:unitree_go2"],
-    deps = [
-        "//interface/unitree_go2:simulation_interface",
-        "@operational-space-controller//:operational_space_controller",
-        "@mujoco-bazel//:mujoco",
-        "@eigen//:eigen",
-        "@osqp-cpp//:osqp++",
-        "@glfw-bazel//:glfw",
-        "@abseil-cpp//absl/log:absl_check",
-        "@abseil-cpp//absl/status:status",
-        "@rules_cc//cc/runfiles:runfiles",
-        "@bazel_tools//tools/cpp/runfiles",
-    ],
-    visibility = ["//visibility:public"],
-)
-
-cc_binary(
     name = "estimator_test",
     srcs = ["estimator_test.cc"],
     data = ["@mujoco-models//:unitree_go2"],
@@ -47,46 +11,6 @@ cc_binary(
         "//interface/unitree_go2:mock_unitree_driver",
         "@mujoco-bazel//:mujoco",
         "@eigen//:eigen",
-        "@abseil-cpp//absl/log:absl_check",
-        "@abseil-cpp//absl/status:status",
-        "@rules_cc//cc/runfiles:runfiles",
-        "@bazel_tools//tools/cpp/runfiles",
-    ],
-    visibility = ["//visibility:public"],
-)
-
-cc_binary(
-    name = "hardware_estimator_test",
-    srcs = ["hardware_estimator_test.cc"],
-    data = ["@mujoco-models//:unitree_go2"],
-    deps = [
-        "//interface/estimators:imu_estimator",
-        "//interface/unitree_go2:aliases",
-        "//interface/unitree_go2:containers",
-        "@unitree-bazel//:unitree_go2_api",
-        "@mujoco-bazel//:mujoco",
-        "@eigen//:eigen",
-        "@glfw-bazel//:glfw",
-        "@abseil-cpp//absl/log:absl_check",
-        "@abseil-cpp//absl/status:status",
-        "@rules_cc//cc/runfiles:runfiles",
-        "@bazel_tools//tools/cpp/runfiles",
-    ],
-    visibility = ["//visibility:public"],
-)
-
-cc_binary(
-    name = "simulation_test",
-    srcs = ["simulation_test.cc"],
-    data = ["@mujoco-models//:unitree_go2"],
-    deps = [
-        "//interface/unitree_go2:aliases",
-        "//interface/unitree_go2:estimator_interface",
-        "//interface/unitree_go2:mock_unitree_driver",
-        "@unitree-bazel//:unitree_go2_api",
-        "@mujoco-bazel//:mujoco",
-        "@eigen//:eigen",
-        "@glfw-bazel//:glfw",
         "@abseil-cpp//absl/log:absl_check",
         "@abseil-cpp//absl/status:status",
         "@rules_cc//cc/runfiles:runfiles",

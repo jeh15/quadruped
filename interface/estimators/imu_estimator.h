@@ -174,7 +174,7 @@ class IMUEstimator {
                 Eigen::Quaternion<float> q = Eigen::Quaternion<float>(1, 0, 0, 0);
                 Eigen::Quaternion<float> dq = quaternion_estimate * q.inverse();
                 dq.normalize();
-                if( dq.w() > 0.2 || dq.w() < -0.2) {
+                if( dq.w() < 0.9 && dq.w() > -0.9) {
                     return absl::InternalError("Quaternion Estimate is not Valid");
                 }
 

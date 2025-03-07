@@ -8,6 +8,7 @@
 #include "mujoco/mujoco.h"
 #include "Eigen/Dense"
 #include "GLFW/glfw3.h"
+#include "osqp++.h"
 
 #include "interface/unitree_go2/mock_unitree_driver.h"
 #include "interface/unitree_go2/interface.h"
@@ -54,9 +55,15 @@ int main(int argc, char** argv) {
     };
 
     // OSC Args:
+    osqp::OsqpSettings osqp_settings;
+    osqp_settings.verbose = false;
+    osqp_settings.polish = true;
+    osqp_settings.polish_refine_iter = 3;
+
     interface::containers::controller::OperationalSpaceControllerArgs osc_args = {
         .xml_path = osc_model_path,
         .control_rate_us = 1000,
+        .osqp_settings = osqp_settings,
     };
 
     // Safety Controller Args:
@@ -88,97 +95,69 @@ int main(int argc, char** argv) {
     result.Update(interface.initialize());
     ABSL_CHECK(result.ok()) << result.message();
 
-    // // Expose mj_model and mj_data for visualization:
-    // auto mj_model = unitree_driver->mj_model;
-    // auto mj_data = unitree_driver->mj_data;
+    // Expose mj_model and mj_data for visualization:
+    auto mj_model = unitree_driver->mj_model;
+    auto mj_data = unitree_driver->mj_data;
 
-    // // Visualization:
-    // glfwInit();
-    // GLFWwindow* window = glfwCreateWindow(800, 600, "Demo", NULL, NULL);
-    // glfwMakeContextCurrent(window);
-    // glfwSwapInterval(1);
+    double* sensordata = mj_data->sensordata;
+    for(int i = 0; i < mj_model->nsensordata; i++) {
+        std::cout << "Sensor Data: " << sensordata[i] << std::endl;
+    }
 
-    // // initialize visualization data structures
-    // mjv_defaultCamera(&cam);
-    // mjv_defaultPerturb(&pert);
-    // mjv_defaultOption(&opt);
-    // mjr_defaultContext(&con);
-    // mjv_makeScene(mj_model, &scn, 1000);
-    // mjr_makeContext(mj_model, &con, mjFONTSCALE_100);
+    return 0;
+    
+    // Visualization:
+    glfwInit();
+    GLFWwindow* window = glfwCreateWindow(800, 600, "Demo", NULL, NULL);
+    glfwMakeContextCurrent(window);
+    glfwSwapInterval(1);
 
-    // // get framebuffer viewport
-    // mjrRect viewport = {0, 0, 0, 0};
-    // glfwGetFramebufferSize(window, &viewport.width, &viewport.height);
+    // initialize visualization data structures
+    mjv_defaultCamera(&cam);
+    mjv_defaultPerturb(&pert);
+    mjv_defaultOption(&opt);
+    mjr_defaultContext(&con);
+    mjv_makeScene(mj_model, &scn, 1000);
+    mjr_makeContext(mj_model, &con, mjFONTSCALE_100);
 
-    // // Initialize Estimator and Unitree Driver Threads:
-    // result.Update(estimator_interface.initialize_estimator_thread());
-    // result.Update(unitree_driver->initialize_control_thread());
-    // ABSL_CHECK(result.ok()) << result.message();
+    // get framebuffer viewport
+    mjrRect viewport = {0, 0, 0, 0};
+    glfwGetFramebufferSize(window, &viewport.width, &viewport.height);
 
-    // double visualization_timer = unitree_driver->mj_data->time;
-    // double visualization_start_time = visualization_timer;
-    // double visualization_interval = 0.01;
-    // double simulation_time = 2.0;
-    // while(unitree_driver->mj_data->time < simulation_time) {
-    //     visualization_timer = unitree_driver->mj_data->time - visualization_start_time;
+    // Initialize Estimator and Unitree Driver Threads:
+    result.Update(interface.initialize_threads());
+    ABSL_CHECK(result.ok()) << result.message();
 
-    //     // Update Motor Commands:
-    //     unitree::containers::MotorCommand motor_commands;
-    //     motor_commands.q_setpoint = {
-    //         0.0, 0.9, -1.8,
-    //         0.0, 0.9, -1.8,
-    //         0.0, 0.9, -1.8,
-    //         0.0, 0.9, -1.8, 
-    //     };
-    //     motor_commands.qd_setpoint = {
-    //         0.0, 0.0, 0.0,
-    //         0.0, 0.0, 0.0,
-    //         0.0, 0.0, 0.0,
-    //         0.0, 0.0, 0.0,
-    //     };
-    //     motor_commands.torque_feedforward = {
-    //         0.0, 0.0, 0.0,
-    //         0.0, 0.0, 0.0,
-    //         0.0, 0.0, 0.0,
-    //         0.0, 0.0, 0.0,
-    //     };
-    //     motor_commands.stiffness = {
-    //         60.0, 60.0, 60.0,
-    //         60.0, 60.0, 60.0,
-    //         60.0, 60.0, 60.0,
-    //         60.0, 60.0, 60.0,
-    //     };
-    //     motor_commands.damping = {
-    //         5.0, 5.0, 5.0,
-    //         5.0, 5.0, 5.0,
-    //         5.0, 5.0, 5.0,
-    //         5.0, 5.0, 5.0,
-    //     };
-    //     // unitree_driver->update_command(motor_commands);
+    double visualization_timer = unitree_driver->mj_data->time;
+    double visualization_start_time = visualization_timer;
+    double visualization_interval = 0.01;
+    double simulation_time = 2.0;
+    while(unitree_driver->mj_data->time < simulation_time) {
+        mj_data = unitree_driver->mj_data;
 
-    //     mj_data = unitree_driver->mj_data;
-    //     if(visualization_timer > visualization_interval) {
-    //         // Print State:
-    //         auto state = estimator_interface.get_state();
-    //         std::cout << "Body Position: " << state.body_position.transpose() << std::endl;
-    //         std::cout << "Body Rotation: " << state.body_rotation.transpose() << std::endl;
-    //         std::cout << "Linear Body Velocity: " << state.linear_body_velocity.transpose() << std::endl;
-    //         std::cout << "Angular Body Velocity: " << state.angular_body_velocity.transpose() << std::endl;
-    //         std::cout << "Motor Position: " << state.motor_position.transpose() << std::endl;
-    //         std::cout << "Motor Velocity: " << state.motor_velocity.transpose() << std::endl;
+        visualization_timer = mj_data->time - visualization_start_time;
 
-    //         visualization_start_time = unitree_driver->mj_data->time;
+        if(visualization_timer > visualization_interval) {
+            // Print State:
+            auto state = interface.get_state();
+            std::cout << "Body Rotation: " << state.body_rotation.transpose() << std::endl;
+            std::cout << "Linear Body Velocity: " << state.linear_body_velocity.transpose() << std::endl;
+            std::cout << "Angular Body Velocity: " << state.angular_body_velocity.transpose() << std::endl;
+            std::cout << "Motor Position: " << state.motor_position.transpose() << std::endl;
+            std::cout << "Motor Velocity: " << state.motor_velocity.transpose() << std::endl;
 
-    //         mjv_updateScene(mj_model, mj_data, &opt, &pert, &cam, mjCAT_ALL, &scn);
-    //         mjr_render(viewport, &scn, &con);
+            visualization_start_time = mj_data->time;
 
-    //         // swap OpenGL buffers (blocking call due to v-sync)
-    //         glfwSwapBuffers(window);
+            mjv_updateScene(mj_model, mj_data, &opt, &pert, &cam, mjCAT_ALL, &scn);
+            mjr_render(viewport, &scn, &con);
 
-    //         // process pending GUI events, call GLFW callbacks
-    //         glfwPollEvents();
-    //     }
-    // }
+            // swap OpenGL buffers (blocking call due to v-sync)
+            glfwSwapBuffers(window);
+
+            // process pending GUI events, call GLFW callbacks
+            glfwPollEvents();
+        }
+    }
 
     // Clean up visualization:
     glfwTerminate();
