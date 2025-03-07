@@ -61,6 +61,7 @@ class MockUnitreeDriver {
 
             mj_forward(mj_model, mj_data);
             
+            // Accelerations are initially extremely unstable...
             const int initialization_steps = 1000;
             for(int i = 0; i < initialization_steps; i++) {
                 double kp = 60.0;

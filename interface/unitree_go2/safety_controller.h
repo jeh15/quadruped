@@ -7,7 +7,7 @@
 
 #include "Eigen/Dense"
 
-#include "operational-space-control/unitree_go2/constants.h"
+#include "operational-space-control/unitree_go2/containers.h"
 
 #include "interface/unitree_go2/aliases.h"
 #include "interface/unitree_go2/containers.h"
@@ -48,26 +48,27 @@ class SafetyController {
             for(int i = 0; i < osc::constants::model::nu_size; i++){
                 double motor_position = state.motor_position[i];
                 double motor_velocity = state.motor_velocity[i];
-                if(motor_position > upper_soft[i]) {
+                double abs_motor_velocity = std::abs(motor_velocity);
+                if(motor_position >= upper_soft[i]) {
                     if(motor_position >= upper_hard[i]) {
                         return absl::InternalError("Motor Position Exceeded Upper Bound");
                     }
-                    kp = kp_lb + (abs(motor_position) - abs(upper_soft[i])) * (kp_ub - kp_lb) / ( abs(upper_hard[i]) - abs(upper_soft[i]));
+                    kp = kp_lb + (std::abs(motor_position - upper_soft[i])) * (kp_ub - kp_lb) / (std::abs(upper_hard[i] - upper_soft[i]));
                     position_command(i) = kp * (upper_soft[i] - motor_position);
                 }
-                else if(motor_position < lower_soft[i]) {
-                    if(motor_position >= lower_hard[i]) {
+                else if(motor_position <= lower_soft[i]) {
+                    if(motor_position <= lower_hard[i]) {
                         return absl::InternalError("Motor Position Exceeded Lower Bound");
                     }
-                    kp = kp_lb + (abs(motor_position) - abs(lower_soft[i])) * (kp_ub - kp_lb) / ( abs(lower_hard[i]) - abs(lower_soft[i]));
+                    kp = kp_lb + (std::abs(motor_position - lower_soft[i])) * (kp_ub - kp_lb) / (std::abs(lower_hard[i] - lower_soft[i]));
                     position_command(i) = kp * (lower_soft[i] - motor_position);
                 }
 
-                if(abs(motor_velocity) > velocity_soft[i]) {
-                    if(abs(motor_velocity) >= velocity_hard[i]) {
+                if(abs_motor_velocity >= velocity_soft[i]) {
+                    if(abs_motor_velocity >= velocity_hard[i]) {
                         return absl::InternalError("Motor Velocity Exceeded Limit");
                     }
-                    kd = kd_lb + (motor_velocity - velocity_soft[i]) * (kd_ub - kd_lb) / (velocity_hard[i] - velocity_soft[i]);
+                    kd = kd_lb + (abs_motor_velocity - velocity_soft[i]) * (kd_ub - kd_lb) / (velocity_hard[i] - velocity_soft[i]);
                     double velocity_setpoint = sgn<double>(motor_velocity) * velocity_soft[i];
                     velocity_command(i) = kd * (velocity_setpoint - motor_velocity);
                 }
@@ -145,31 +146,63 @@ class SafetyController {
             double kp_ub = 20.0;
             double kd_lb = 2.0;
             double kd_ub = 10.0;
-            // Position Soft and Hard Limits:
+            /* 
+            Position Soft and Hard Limits: 
+                Note: These poses are already extreme and should probably result in damping much sooner...
+                Soft limits [50%] from hardware limits relative to default position
+                Hard limits [10%] from hardware limits relative to default position
+            */
+            // Mirrored Poses:
+            // MotorVector<double> lower_soft {
+            //     0.5236 , -0.3354 , -2.26135,
+            //     -0.5236 , -0.3354 , -2.26135,
+            //     0.5236 ,  0.1882 , -2.26135,
+            //     -0.5236 ,  0.1882 , -2.26135
+            // };
+            // MotorVector<double> lower_hard {
+            //     0.83776, -1.07664, -2.53816,
+            //     -0.83776, -1.07664, -2.53816,
+            //     0.83776, -0.23888, -2.53816,
+            //     -0.83776, -0.23888, -2.53816
+            // };
+            // MotorVector<double> upper_soft {
+            //     -0.5236, 2.19535, -1.31888,
+            //     0.5236, 2.19535, -1.31888,
+            //     -0.5236, 2.71895, -1.31888,
+            //     0.5236, 2.71895, -1.31888
+            // };
+            // MotorVector<double> upper_hard {
+            //     -0.83776, 2.97256, -1.030208,
+            //     0.83776, 2.97256, -1.030208,
+            //     -0.83776, 2.97256, -1.030208,
+            //     0.83776, 2.97256, -1.030208
+            // };
+            // Non-Mirrored Poses:
             MotorVector<double> lower_soft {
-                -0.546, -0.5708, -1.7227,
-                -0.546, -0.5708, -1.7227,
-                -0.546, -0.0, -1.7227,
-                -0.546, -0.0, -1.7227
+                -0.5236, -0.3354, -2.26135,
+                -0.5236, -0.3354, -2.26135,
+                -0.5236,  0.1882, -2.26135,
+                -0.5236,  0.1882, -2.26135
             };
             MotorVector<double> lower_hard {
-                -0.8472, -1.3708, -2.5227,
-                -0.8472, -1.3708, -2.5227,
-                -0.8472, -0.3236, -2.5227,
-                -0.8472, -0.3236, -2.5227
+                -0.83776, -1.07664, -2.53816,
+                -0.83776, -1.07664, -2.53816,
+                -0.83776, -0.23888, -2.53816,
+                -0.83776, -0.23888, -2.53816
             };
             MotorVector<double> upper_soft {
-                0.546, 2.4907, 0.162,
-                0.546, 2.4907, 0.162,
-                0.546, 3.5379, 0.162,
-                0.546, 3.5379, 0.162,
+                0.5236, 2.19535, -1.31888,
+                0.5236, 2.19535, -1.31888,
+                0.5236, 2.71895, -1.31888,
+                0.5236, 2.71895, -1.31888
             };
             MotorVector<double> upper_hard {
-                0.8472, 3.2907, -0.63776,
-                0.8472, 3.2907, -0.63776,
-                0.8472, 4.3379, -0.63776,
-                0.8472, 4.3379, -0.63776,
+                0.83776, 2.97256, -1.030208,
+                0.83776, 2.97256, -1.030208,
+                0.83776, 2.97256, -1.030208,
+                0.83776, 2.97256, -1.030208
             };
+
             // Velocity Soft and Hard Limits:
             double v_lb = std::numbers::pi;
             double v_ub = 2 * std::numbers::pi;
