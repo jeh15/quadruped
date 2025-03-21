@@ -111,6 +111,25 @@ class IMUEstimator {
             common::Vector3<float> position_estimate = common::Vector3<float>::Zero();
             common::Vector3<float> velocity_estimate = common::Vector3<float>::Zero();
             float delta_t = std::chrono::duration<float>(std::chrono::microseconds(control_rate_us)).count();
+            // Integration Variables:
+            const float h = delta_t / 3.0f;
+            common::Vector3<float> acceleration_i = common::Vector3<float>::Zero();
+            common::Vector3<float> acceleration_j = common::Vector3<float>::Zero();
+            common::Vector3<float> acceleration_k = common::Vector3<float>::Zero();
+            common::Vector3<float> velocity_i = common::Vector3<float>::Zero();
+            common::Vector3<float> velocity_j = common::Vector3<float>::Zero();
+            common::Vector3<float> velocity_k = common::Vector3<float>::Zero();
+            common::Vector3<float> position = common::Vector3<float>::Zero();
+            // Filter Variables:
+            const float cutoff_frequency = 10.0f;
+            const int lowpass_size = 10;
+            const int highpass_size = 10;
+            const float alpha = 0.9;
+            const float time_constant = 1.0f / (2.0f * M_PI * cutoff_frequency);
+            const float beta = time_constant / (time_constant + delta_t);
+            std::deque<common::Vector3<float>> acceleration_queue (highpass_size, common::Vector3<float>::Zero());
+            std::deque<common::Vector3<float>> velocity_queue (highpass_size, common::Vector3<float>::Zero());
+            std::deque<common::Vector3<float>> position_queue (highpass_size, common::Vector3<float>::Zero());
             /* Contact -- Need better estimation */
             interface::aliases::controller::ContactMask<float> contact_mask;
             const short contact_threshold = 5;
@@ -299,18 +318,60 @@ class IMUEstimator {
                 return absl::OkStatus();
             }
 
+            common::Vector3<float> lowpass_filter(std::deque<common::Vector3<float>>& queue, const common::Vector3<float>& value) {
+                // Add value to queue:
+                queue.push_back(value);
+
+                // Filter Value:
+                std::array<common::Vector3<float>, lowpass_size> filtered_values;
+                filtered_values[0] = alpha * queue.front();
+                for (int i = 1; i < lowpass_size; i++) {
+                    filtered_values[i] = alpha * queue[i] + (1.0f - alpha) * filtered_values[i - 1];
+                }
+
+                // Remove oldest value:
+                queue.pop_front();
+                 
+                return filtered_values[-1];
+            }
+
+            common::Vector3<float> highpass_filter(std::deque<common::Vector3<float>>& queue, const common::Vector3<float>& value) {
+                // Add value to queue:
+                queue.push_back(value);
+
+                // Filter Value:
+                std::array<common::Vector3<float>, highpass_size> filtered_values;
+                filtered_values[0] = queue.front();
+                for (int i = 1; i < highpass_size; i++) {
+                    filtered_values[i] = beta * (filtered_values[i - 1] + queue[i] - queue[i - 1]);
+                }
+
+                // Remove oldest value:
+                queue.pop_front();
+                 
+                return filtered_values[-1];
+            }
+
             absl::Status motion_estimation_update() {
                 // Precompute Values:
                 Eigen::Matrix3<float> C = quaternion_estimate.toRotationMatrix();
-                common::Vector3<float> acceleration_step = delta_t * (C.transpose() * accelerometer_estimate);
 
-                // Integrate:
-                common::Vector3<float> position_next = position_estimate + delta_t * velocity_estimate + 0.5 * delta_t * acceleration_step;
-                common::Vector3<float> velocity_next = velocity_estimate + acceleration_step;
-                
+                // Simpson's Rule:
+                acceleration_i = C.transpose() * accelerometer_estimate;
+                velocity_i = velocity_estimate + h * (acceleration_k + 4.0f * acceleration_j + acceleration_i);
+                acceleration_j = acceleration_i;
+                acceleration_k = acceleration_j;
+
+                position = position_estimate + h * (velocity_k + 4.0f * velocity_j + velocity_i);
+                velocity_j = velocity_i;
+                velocity_k = velocity_j;
+
+                // Filter Estimation:
+                common::Vector3<float> velocity = highpass_filter(velocity_queue, velocity_i);
+
                 // Update State:
-                position_estimate = position_next;
-                velocity_estimate = velocity_next;
+                position_estimate = position;
+                velocity_estimate = velocity;
 
                 return absl::OkStatus();
             }
@@ -368,40 +429,3 @@ class IMUEstimator {
                 }
             }
 };
-
-/* 
-    Potential KF Formulation for IMU:
-    Mesurements Gyroscope, Accelerometer, and Quaternion:
-
-    x = [r, v, a, b_f] or x = [r, v, a]
-    y = [a]
-
-    r_k+1 = r_k + v_k * delta_t + 0.5 * delta_t^2 (C.T * (tilde_f_k - b_f_k) + g)
-    r_k+1 = r_k + v_k * delta_t + 0.5 * delta_t^2 (C.T * a + g)
-
-    With Bias:
-    F = [
-        1, deta_t, 0.5 * delta_t^2 * C.T * tild_f_k, -0.5 * delta_t^2 * C.T * b_f_k;
-        0, 1, delta_t * C.T * tild_f_k, -delta_t * C.T * b_f_k;
-        0, 0, 1, 0;
-        0, 0, 0, 1;
-    ]
-
-    Without Bias:
-    F = [
-        1, deta_t, 0.5 * delta_t^2 * C.T * a;
-        0, 1, delta_t * C.T * a;
-        0, 0, 1;
-    ]
-
-    With Bias:
-    H = [
-        0, 0, 1, 1;
-    ]
-
-    Without Bias:
-    H = [
-        0, 0, 1;
-    ]
-
-*/
