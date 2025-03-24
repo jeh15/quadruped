@@ -12,6 +12,7 @@
 #include "absl/status/status.h"
 #include "absl/strings/string_view.h"
 #include "absl/log/absl_check.h"
+#include "absl/random/random.h"
 
 #include "Eigen/Dense"
 #include "mujoco/mujoco.h"
@@ -61,7 +62,7 @@ class MockUnitreeDriver {
 
             mj_forward(mj_model, mj_data);
             
-            // Accelerations are initially extremely unstable...
+            // Accelerations are initially extremely unstable... (probably due to contacts)
             const int initialization_steps = 1000;
             for(int i = 0; i < initialization_steps; i++) {
                 double kp = 60.0;
@@ -127,6 +128,7 @@ class MockUnitreeDriver {
         }
 
         unitree::containers::LowState get_low_state() {
+            std::lock_guard<std::mutex> lock(mutex);
             unitree::containers::LowState low_state;
             float distance_threshold = 1.0e-3;
             for(int i = 0; i < 4; i++) {
@@ -142,21 +144,34 @@ class MockUnitreeDriver {
         }
 
         unitree::containers::IMUState get_imu_state() {
+            std::lock_guard<std::mutex> lock(mutex);
             unitree::containers::IMUState imu_state;
             constexpr int quaternion_start = 3;
             constexpr int quaternion_size = 4;
             constexpr int gyroscope_start = 3;
             constexpr int vector3_size = 3;
             for(int i = 0; i < quaternion_size; i++) {
-                imu_state.quaternion[i] = static_cast<float>(mj_data->qpos[quaternion_start + i]);
+                imu_state.quaternion[i] = static_cast<float>(mj_data->qpos[quaternion_start + i]) 
+                    + absl::Uniform(absl::IntervalClosed, gen, -quaternion_noise, quaternion_noise);
             }
             for(int i = 0; i < vector3_size ; i++) {
-                imu_state.gyroscope[i] = static_cast<float>(mj_data->qvel[gyroscope_start + i]);
+                imu_state.gyroscope[i] = static_cast<float>(mj_data->qvel[gyroscope_start + i]) 
+                    + absl::Uniform(absl::IntervalClosed, gen, -gyroscope_noise, gyroscope_noise);
                 // Unused
                 imu_state.rpy[i] = 0.0f;
             }
-            interface::aliases::common::Vector3<double> acceleration_vector {mj_data->qacc[0], mj_data->qacc[1], mj_data->qacc[2]};
-            Eigen::Quaternion<double> quaternion = Eigen::Quaternion<double>(mj_data->qpos[3], mj_data->qpos[4], mj_data->qpos[5], mj_data->qpos[6]);
+            interface::aliases::common::Vector3<double> acceleration_vector {
+                mj_data->qacc[0] + absl::Uniform(absl::IntervalClosed, gen, -accelerometer_noise, accelerometer_noise),
+                mj_data->qacc[1] + absl::Uniform(absl::IntervalClosed, gen, -accelerometer_noise, accelerometer_noise),
+                mj_data->qacc[2] + absl::Uniform(absl::IntervalClosed, gen, -accelerometer_noise, accelerometer_noise)
+            };
+            Eigen::Quaternion<double> quaternion = Eigen::Quaternion<double>(
+                mj_data->qpos[3] + absl::Uniform(absl::IntervalClosed, gen, -quaternion_noise, quaternion_noise),
+                mj_data->qpos[4] + absl::Uniform(absl::IntervalClosed, gen, -quaternion_noise, quaternion_noise),
+                mj_data->qpos[5] + absl::Uniform(absl::IntervalClosed, gen, -quaternion_noise, quaternion_noise),
+                mj_data->qpos[6] + absl::Uniform(absl::IntervalClosed, gen, -quaternion_noise, quaternion_noise)
+            );
+            quaternion.normalize();
             Eigen::Matrix3d C = quaternion.toRotationMatrix();
             interface::aliases::common::Vector3<double> acceleration_body = C * acceleration_vector;
             Eigen::Map<interface::aliases::common::Vector3<float>>(imu_state.accelerometer.data()) = acceleration_body.cast<float>();
@@ -165,17 +180,30 @@ class MockUnitreeDriver {
         }
 
         unitree::containers::MotorState get_motor_state() {
+            std::lock_guard<std::mutex> lock(mutex);
             unitree::containers::MotorState motor_state;
             constexpr int position_offset = 7;
             constexpr int velocity_offset = 6;
             for(int i = 0; i < constants::model::nu_size; i++) {
-                motor_state.q[i] = static_cast<float>(mj_data->qpos[position_offset + i]);
-                motor_state.qd[i] = static_cast<float>(mj_data->qvel[velocity_offset + i]);
-                motor_state.qdd[i] = static_cast<float>(mj_data->qacc[velocity_offset + i]);
-                motor_state.torque_estimate[i] = mj_data->qfrc_actuator[velocity_offset + i];
+                motor_state.q[i] = static_cast<float>(mj_data->qpos[position_offset + i]) 
+                    + absl::Uniform(absl::IntervalClosed, gen, -joint_position_noise, joint_position_noise);
+                motor_state.qd[i] = static_cast<float>(mj_data->qvel[velocity_offset + i]) 
+                    + absl::Uniform(absl::IntervalClosed, gen, -joint_velocity_noise, joint_velocity_noise);
+                motor_state.qdd[i] = static_cast<float>(mj_data->qacc[velocity_offset + i]) 
+                    + absl::Uniform(absl::IntervalClosed, gen, -joint_acceleration_noise, joint_acceleration_noise);
+                motor_state.torque_estimate[i] = mj_data->qfrc_actuator[velocity_offset + i] 
+                    + absl::Uniform(absl::IntervalClosed, gen, -motor_torque_noise, motor_torque_noise);
             }
             return motor_state;
         }
+
+        mjData* get_mj_data() {
+            std::lock_guard<std::mutex> lock(mutex);
+            mjData* new_mj_data = mj_makeData(mj_model);
+            mj_copyData(new_mj_data, mj_model, mj_data);
+            return new_mj_data;
+        }
+
 
         int get_control_rate() {
             return control_rate_us;
@@ -238,6 +266,15 @@ class MockUnitreeDriver {
         std::thread thread;
         bool initialized = false;
         bool thread_initialized = false;
+        // Random Number Generator:
+        absl::BitGen gen;
+        float quaternion_noise = 0.01;
+        float accelerometer_noise = 0.01;
+        float gyroscope_noise = 0.01;
+        float joint_position_noise = 0.001;
+        float joint_velocity_noise = 0.001;
+        float joint_acceleration_noise = 0.01;
+        float motor_torque_noise = 0.01;
 
         void control_loop() {
             using Clock = std::chrono::steady_clock;

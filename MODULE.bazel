@@ -87,7 +87,7 @@ pip.parse(
     python_version = python_version,
     requirements_lock = "//:requirements_lock.txt",
 )
-use_repo(pip, "pypi")
+use_repo(pip, "pypi_unitree-interface")
 
 # Hedron's Compile Commands Extractor for Bazel
 # https://github.com/hedronvision/bazel-compile-commands-extractor

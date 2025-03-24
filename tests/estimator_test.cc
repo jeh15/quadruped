@@ -27,7 +27,7 @@ int main(int argc, char** argv) {
     );
 
     std::filesystem::path mock_model_path = 
-        runfiles->Rlocation("mujoco-models/models/unitree_go2/scene_estimation.xml");
+        runfiles->Rlocation("mujoco-models/models/unitree_go2/scene.xml");
 
     // Unitree Driver Args:
     MockUnitreeDriverArgs driver_args = {
@@ -47,20 +47,28 @@ int main(int argc, char** argv) {
 
     // Initialize Estimator:
     result.Update(estimator_interface.initialize());
+    result.Update(estimator_interface.initialize_thread());
 
     std::cout << "Estimator Initialized" << std::endl;
 
     // Print New State:
-    auto state = estimator_interface.get_state();
-    std::cout << "Estimator State: " << std::endl;
-    std::cout << "Body Position: " << state.body_position.transpose() << std::endl;
-    std::cout << "Body Rotation: " << state.body_rotation.w() << " " << state.body_rotation.vec().transpose() << std::endl;
-    std::cout << "Joint Position: " << state.joint_position.transpose() << std::endl;
-    std::cout << "Linear Body Velocity: " << state.linear_body_velocity.transpose() << std::endl;
-    std::cout << "Angular Body Velocity: " << state.angular_body_velocity.transpose() << std::endl;
-    std::cout << "Joint Velocity: " << state.joint_velocity.transpose() << std::endl;
-    std::cout << "Linear Body Acceleration: " << state.linear_body_acceleration.transpose() << std::endl;
-    std::cout << "Contact Mask: " << state.contact_mask.transpose() << std::endl;
+    while(true) {
+        auto state = estimator_interface.get_state();
+        std::cout << "Estimator State: " << std::endl;
+        std::cout << "Body Position: " << state.body_position.transpose() << std::endl;
+        std::cout << "Body Rotation: " << state.body_rotation.w() << " " << state.body_rotation.vec().transpose() << std::endl;
+        std::cout << "Joint Position: " << state.joint_position.transpose() << std::endl;
+        std::cout << "Linear Body Velocity: " << state.linear_body_velocity.transpose() << std::endl;
+        std::cout << "Angular Body Velocity: " << state.angular_body_velocity.transpose() << std::endl;
+        std::cout << "Joint Velocity: " << state.joint_velocity.transpose() << std::endl;
+        std::cout << "Linear Body Acceleration: " << state.linear_body_acceleration.transpose() << std::endl;
+        std::cout << "Contact Mask: " << state.contact_mask.transpose() << std::endl;
+    }
+
+    // Clean up:
+    result.Update(estimator_interface.stop_thread());
+    result.Update(unitree_driver->stop_thread());
+    result.Update(unitree_driver->clean_up());
 
     return 0;
 };

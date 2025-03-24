@@ -96,6 +96,7 @@ cc_library(
         "@osqp-cpp//:osqp++",
         "@abseil-cpp//absl/log:absl_check",
         "@abseil-cpp//absl/status:status",
+        "@abseil-cpp//absl/random:random",
     ],
     visibility = ["//visibility:public"],
 )

@@ -35,10 +35,10 @@ int main(int argc, char** argv) {
     );
 
     std::filesystem::path estimator_model_path = 
-        runfiles->Rlocation("mujoco-models/models/unitree_go2/scene_estimation_2.xml");
+        runfiles->Rlocation("mujoco-models/models/unitree_go2/go2.xml");
 
     std::filesystem::path mock_model_path = 
-        runfiles->Rlocation("mujoco-models/models/unitree_go2/scene_estimation.xml");
+        runfiles->Rlocation("mujoco-models/models/unitree_go2/scene.xml");
 
     // Estimator Args:
     interface::containers::estimator::EstimatorArgs estimator_args = {

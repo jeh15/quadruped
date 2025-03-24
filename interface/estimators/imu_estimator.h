@@ -7,6 +7,7 @@
 #include <atomic>
 #include <iostream>
 #include <chrono>
+#include <deque>
 
 #include "absl/status/status.h"
 #include "absl/log/absl_check.h"
@@ -31,6 +32,9 @@ class IMUEstimator {
             absl::Status result;
             if(!unitree_driver->is_initialized())
                 return absl::FailedPreconditionError("Unitree Driver not initialized");
+
+            // Initialize Queue:
+            result.Update(initialize_queue());
 
             // Calculate Bias and initial Quaternion:
             result.Update(initialize_estimator_variables());
@@ -93,9 +97,9 @@ class IMUEstimator {
             int control_rate_us;
             bool initialized = false;
             bool thread_initialized = false;
-            // Constants:
+            // IMU Estimation Constants:
             const float gyroscope_measurement_error = M_PI * (5.0f / 180.0f);
-            const float beta = std::sqrt(3.0f / 4.0f) * gyroscope_measurement_error;
+            const float measurement_beta = std::sqrt(3.0f / 4.0f) * gyroscope_measurement_error;
             // Unitree Measurements:
             common::MotorVector<float> q_estimate;
             common::MotorVector<float> qd_estimate;
@@ -122,17 +126,28 @@ class IMUEstimator {
             common::Vector3<float> position = common::Vector3<float>::Zero();
             // Filter Variables:
             const float cutoff_frequency = 10.0f;
-            const int lowpass_size = 10;
-            const int highpass_size = 10;
+            static constexpr size_t lowpass_size = 10;
+            static constexpr size_t highpass_size = 10;
             const float alpha = 0.9;
             const float time_constant = 1.0f / (2.0f * M_PI * cutoff_frequency);
             const float beta = time_constant / (time_constant + delta_t);
-            std::deque<common::Vector3<float>> acceleration_queue (highpass_size, common::Vector3<float>::Zero());
-            std::deque<common::Vector3<float>> velocity_queue (highpass_size, common::Vector3<float>::Zero());
-            std::deque<common::Vector3<float>> position_queue (highpass_size, common::Vector3<float>::Zero());
+            std::deque<common::Vector3<float>> acceleration_queue;
+            std::deque<common::Vector3<float>> velocity_queue;
+            std::deque<common::Vector3<float>> position_queue;
             /* Contact -- Need better estimation */
             interface::aliases::controller::ContactMask<float> contact_mask;
             const short contact_threshold = 5;
+
+            absl::Status initialize_queue() {
+                common::Vector3<float> zero_vector = common::Vector3<float>::Zero();
+                for(size_t i = 0; i < highpass_size; ++i) {
+                    acceleration_queue.push_back(zero_vector);
+                    velocity_queue.push_back(zero_vector);
+                    position_queue.push_back(zero_vector);
+                }
+
+                return absl::OkStatus();
+            }
 
             absl::Status initialize_estimator_variables() {
                 std::vector<common::Vector3<float>> gyroscope_vector;
@@ -300,10 +315,10 @@ class IMUEstimator {
                 SEqDot_omega_4 = halfSEq_1 * w_z + halfSEq_2 * w_y - halfSEq_3 * w_x;
             
                 // Compute then integrate the estimated quaternion derrivative
-                SEq_1 += (SEqDot_omega_1 - (beta * SEqHatDot_1)) * delta_t;
-                SEq_2 += (SEqDot_omega_2 - (beta * SEqHatDot_2)) * delta_t;
-                SEq_3 += (SEqDot_omega_3 - (beta * SEqHatDot_3)) * delta_t;
-                SEq_4 += (SEqDot_omega_4 - (beta * SEqHatDot_4)) * delta_t;
+                SEq_1 += (SEqDot_omega_1 - (measurement_beta * SEqHatDot_1)) * delta_t;
+                SEq_2 += (SEqDot_omega_2 - (measurement_beta * SEqHatDot_2)) * delta_t;
+                SEq_3 += (SEqDot_omega_3 - (measurement_beta * SEqHatDot_3)) * delta_t;
+                SEq_4 += (SEqDot_omega_4 - (measurement_beta * SEqHatDot_4)) * delta_t;
             
                 // Normalise quaternion
                 norm = std::sqrt(SEq_1 * SEq_1 + SEq_2 * SEq_2 + SEq_3 * SEq_3 + SEq_4 * SEq_4);
@@ -325,14 +340,14 @@ class IMUEstimator {
                 // Filter Value:
                 std::array<common::Vector3<float>, lowpass_size> filtered_values;
                 filtered_values[0] = alpha * queue.front();
-                for (int i = 1; i < lowpass_size; i++) {
+                for (size_t i = 1; i < lowpass_size; i++) {
                     filtered_values[i] = alpha * queue[i] + (1.0f - alpha) * filtered_values[i - 1];
                 }
 
                 // Remove oldest value:
                 queue.pop_front();
                  
-                return filtered_values[-1];
+                return filtered_values.back();
             }
 
             common::Vector3<float> highpass_filter(std::deque<common::Vector3<float>>& queue, const common::Vector3<float>& value) {
@@ -342,14 +357,14 @@ class IMUEstimator {
                 // Filter Value:
                 std::array<common::Vector3<float>, highpass_size> filtered_values;
                 filtered_values[0] = queue.front();
-                for (int i = 1; i < highpass_size; i++) {
+                for (size_t i = 1; i < highpass_size; i++) {
                     filtered_values[i] = beta * (filtered_values[i - 1] + queue[i] - queue[i - 1]);
                 }
 
                 // Remove oldest value:
                 queue.pop_front();
                  
-                return filtered_values[-1];
+                return filtered_values.back();
             }
 
             absl::Status motion_estimation_update() {
@@ -366,7 +381,7 @@ class IMUEstimator {
                 velocity_j = velocity_i;
                 velocity_k = velocity_j;
 
-                // Filter Estimation:
+                // Filter Estimation: Causing Instability... Probably just a poor implementation
                 common::Vector3<float> velocity = highpass_filter(velocity_queue, velocity_i);
 
                 // Update State:
