@@ -89,7 +89,7 @@ int main(int argc, char** argv) {
 
     // Expose mj_model and mj_data for visualization:
     auto mj_model = unitree_driver->mj_model;
-    auto mj_data = unitree_driver->get_mj_data();
+    auto mj_data = unitree_driver->mj_data;
 
     // Visualization:
     glfwInit();
@@ -122,6 +122,10 @@ int main(int argc, char** argv) {
     int estimator_control_rate = 1000;
     IMUEstimator<MockUnitreeDriver> estimator_interface(unitree_driver, estimator_control_rate);
     result.Update(estimator_interface.initialize());
+    common::Vector3<float> inital_position = common::Vector3<float>(
+        static_cast<float>(mj_data->qpos[0]), static_cast<float>(mj_data->qpos[1]), static_cast<float>(mj_data->qpos[2])
+    );
+    result.Update(estimator_interface.update_position_estimate(inital_position));
 
     std::cout << "Estimator Initialized" << std::endl;
 
@@ -139,13 +143,13 @@ int main(int argc, char** argv) {
 
     // Initialize Estimator Thread:
     result.Update(estimator_interface.initialize_thread());
-    double visualization_timer = unitree_driver->get_mj_data()->time;
+    double visualization_timer = unitree_driver->mj_data->time;
     double visualization_start_time = visualization_timer;
     double visualization_interval = 0.01;
     double simulation_time = 10.0;
-    auto current_time = unitree_driver->get_mj_data()->time;
+    auto current_time = unitree_driver->mj_data->time;
     while(current_time < simulation_time) {
-        mj_data = unitree_driver->get_mj_data();
+        mj_data = unitree_driver->mj_data;
         current_time = mj_data->time;
         visualization_timer = current_time - visualization_start_time;
 
@@ -213,8 +217,6 @@ int main(int argc, char** argv) {
             glfwPollEvents();
         }
     }
-
-    std::cout << "Cleaning up" << std::endl;
 
     // Clean up visualization:
     glfwTerminate();

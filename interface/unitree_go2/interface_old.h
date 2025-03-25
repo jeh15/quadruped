@@ -47,30 +47,29 @@ class UnitreeGo2Interface {
     public:
         UnitreeGo2Interface(
             std::shared_ptr<RobotDriver> unitree_driver,
-            std::shared_ptr<IMUEstimator<RobotDriver>> estimator,
-            std::shared_ptr<OperationalSpaceController> operational_space_controller,
+            EstimatorArgs estimator_args,
+            OperationalSpaceControllerArgs osc_args,
             SafetyControllerArgs safety_args,
             LoggerArgs log_args
         ) : 
             unitree_driver(unitree_driver),
-            estimator(estimator),
-            operational_space_controller(operational_space_controller),
+            estimator(unitree_driver, estimator_args.control_rate_us),
+            operational_space_controller(osc_args.control_rate_us, osc_args.osqp_settings),
             safety_controller(safety_args.stiffness, safety_args.damping),
             logger(log_args.filepath, log_args.log_rate_us),
-            enable_logging(log_args.enable_logging) {}
+            enable_logging(log_args.enable_logging),
+            xml_path(osc_args.xml_path) {}
         ~UnitreeGo2Interface() {}
 
         absl::Status initialize() {
             absl::Status result;
-            // Initialize Unitree Driver:
+            // Initialize Unitree Driver if not initialized:
             if(!unitree_driver->is_initialized())
                 result.Update(unitree_driver->initialize());
             // Initialize Estimator:
-            if(!estimator->is_initialized())
-                result.Update(estimator->initialize());
+            result.Update(estimator.initialize());
             // Initialize Operational Space Controller:
-            if(!operational_space_controller->is_initialized() || !operational_space_controller->is_optimization_initialized())
-                result.Update(initialize_operational_space_controller());
+            result.Update(initialize_operational_space_controller());
 
             // Initialize Logger:
             if(enable_logging)
@@ -82,24 +81,23 @@ class UnitreeGo2Interface {
         }
 
         absl::Status initialize_operational_space_controller() {
-            if(!estimator->is_initialized())
-                return absl::FailedPreconditionError("Interface: State Estimator not initialized. State Estimator needs to be initialized first to set the initial state of the Operational Space Controller.");
+            if(!estimator.is_initialized())
+                return absl::FailedPreconditionError("State Estimator not initialized. State Estimator needs to be initialized first to set the initial state of the Operational Space Controller.");
 
             absl::Status result;
             result.Update(update_state());
-            result.Update(operational_space_controller->initialize(state));
-            result.Update(operational_space_controller->initialize_optimization());
+            result.Update(operational_space_controller.initialize(xml_path, state));
+            result.Update(operational_space_controller.initialize_optimization());
             if (!result.ok())
                 return result;
 
+            operational_space_controller_initialized = true;
             return absl::OkStatus();
         }
 
         absl::Status initialize_thread() {
-            if(!operational_space_controller->is_initialized() || !operational_space_controller->is_optimization_initialized())
-                return absl::FailedPreconditionError("Interface: Operational Space Controller not initialized");
-            if(!estimator->is_initialized())
-                return absl::FailedPreconditionError("Interface: Estimator not initialized");
+            if(!operational_space_controller_initialized)
+                return absl::FailedPreconditionError("Operational Space Controller and/or Estimator not initialized");
             
             thread = std::thread(&UnitreeGo2Interface::control_loop, this);
             thread_initialized = true;
@@ -109,14 +107,10 @@ class UnitreeGo2Interface {
         absl::Status initialize_threads() {
             // Initialize all threads:
             absl::Status result;
-            if(!estimator->is_thread_initialized())
-                result.Update(estimator->initialize_thread());
-            if(!operational_space_controller->is_thread_initialized())
-                result.Update(operational_space_controller->initialize_thread());
-            if(!unitree_driver->is_thread_initialized())
-                result.Update(unitree_driver->initialize_thread());
-            if(!thread_initialized)
-                result.Update(initialize_thread());
+            result.Update(estimator.initialize_thread());
+            result.Update(operational_space_controller.initialize_thread());
+            result.Update(unitree_driver->initialize_thread());
+            result.Update(initialize_thread());
             if(enable_logging)
                 result.Update(logger.initialize_thread());
 
@@ -127,7 +121,7 @@ class UnitreeGo2Interface {
 
         absl::Status stop_thread() {
             if(!thread_initialized)
-                return absl::FailedPreconditionError("Interface: Control Thread not initialized");
+                return absl::FailedPreconditionError("Control Thread not initialized");
 
             running = false;
             thread.join();
@@ -137,8 +131,8 @@ class UnitreeGo2Interface {
         absl::Status stop_threads() {
             absl::Status result;
             result.Update(stop_thread());
-            result.Update(operational_space_controller->stop_thread());
-            result.Update(estimator->stop_thread());
+            result.Update(operational_space_controller.stop_thread());
+            result.Update(estimator.stop_thread());
             result.Update(unitree_driver->stop_thread());
             if(enable_logging)
                 result.Update(logger.stop_thread());
@@ -148,16 +142,25 @@ class UnitreeGo2Interface {
 
         absl::Status clean_up() {
             absl::Status result;
-            result.Update(operational_space_controller->clean_up());    
+            result.Update(operational_space_controller.clean_up());    
             if(!result.ok())
                 return result;
 
             return absl::OkStatus();
         }
 
+        absl::Status activate_operational_space_controller() {
+            if(!thread_initialized)
+                return absl::FailedPreconditionError("Control Thread not initialized. Initial Control Commands must come from Default Control.");
+            
+            LOG(INFO) << "Activating Operational Space Controller";
+            activate_control = true;
+            return absl::OkStatus();
+        }
+
         absl::Status update_taskspace_targets(const osc::aliases::TaskspaceTargets& new_taskspace_targets) {
-            if (!operational_space_controller->is_initialized() || !operational_space_controller->is_optimization_initialized())
-                return absl::FailedPreconditionError("Interface: Operational Space Controller not initialized");
+            if (!operational_space_controller_initialized)
+                return absl::FailedPreconditionError("Operational Space Controller not initialized");
             
             std::lock_guard<std::mutex> lock(mutex);
             taskspace_targets = new_taskspace_targets;
@@ -171,7 +174,7 @@ class UnitreeGo2Interface {
 
         MotorVector<double> get_torque_command() {
             std::lock_guard<std::mutex> lock(mutex);
-            return operational_space_controller->get_torque_command();
+            return operational_space_controller.get_torque_command();
         }
 
         ControlMode get_control_mode() {
@@ -185,21 +188,10 @@ class UnitreeGo2Interface {
             return absl::OkStatus();
         }
 
-        absl::Status default_controller_values(const float stiffness = 5.0, const float damping = 5.0) {
-            std::lock_guard<std::mutex> lock(mutex);
-            stiffness_value = stiffness;
-            damping_value = damping;
+        // Exposed just for IMU estimator... This should eventually be removed and the Estimator is a shared pointer...
+        absl::Status update_position_estimate(const common::Vector3<float>& position) {
+            estimator.update_position_estimate(position);
             return absl::OkStatus();
-        }
-
-        float get_stiffness_value() {
-            std::lock_guard<std::mutex> lock(mutex);
-            return stiffness_value;
-        }
-
-        float get_damping_value() {
-            std::lock_guard<std::mutex> lock(mutex);
-            return damping_value;
         }
 
         bool is_safety_stop() {
@@ -214,11 +206,13 @@ class UnitreeGo2Interface {
         ControlMode control_mode = ControlMode::Damping;
         /* Components */
         std::shared_ptr<RobotDriver> unitree_driver;
-        std::shared_ptr<IMUEstimator<RobotDriver>> estimator;
-        std::shared_ptr<OperationalSpaceController> operational_space_controller;
+        IMUEstimator<RobotDriver> estimator;
+        OperationalSpaceController operational_space_controller;
         SafetyController safety_controller;
         ControllerLogger logger;
         bool enable_logging;
+        const std::filesystem::path xml_path;
+        bool operational_space_controller_initialized = false;
         bool safety_stop = false;
         const int control_rate_us = unitree_driver->get_control_rate(); // This should match the control rate of the motor controller.
         /* Setpoint Integration */
@@ -238,7 +232,7 @@ class UnitreeGo2Interface {
         bool thread_initialized = false;
 
         absl::Status update_state() {
-            EstimatorState estimator_state = estimator->get_state();
+            EstimatorState estimator_state = estimator.get_state();
             // Convert Quaternion to Vector4
             Vector4<float> body_rotation {
                 estimator_state.body_rotation.w(), 
@@ -362,16 +356,16 @@ class UnitreeGo2Interface {
                     absl::Status result = update_state();
 
                     // Update Operational Space Controller mj_model with State: Shared Variable (state)
-                    operational_space_controller->update_state(state);
+                    operational_space_controller.update_state(state);
 
                     // Update Operational Space Controller with Taskspace Targets: Shared Variable (taskspace_targets)
-                    operational_space_controller->update_taskspace_targets(taskspace_targets);
+                    operational_space_controller.update_taskspace_targets(taskspace_targets);
 
                     if(enable_logging)
                         result.Update(logger.update_state(state));
 
                     // Get Solution to get Joint Accelerations and Torques:
-                    osc::aliases::OptimizationSolution solution = operational_space_controller->get_solution();
+                    osc::aliases::OptimizationSolution solution = operational_space_controller.get_solution();
                     MotorVector<double> joint_accelerations = Eigen::Map<MotorVector<double>>(
                         solution(Eigen::seqN(0, osc::constants::optimization::dv_size)).data()
                     );
@@ -383,9 +377,6 @@ class UnitreeGo2Interface {
                     MotorVector<double> velocity_desired = state.motor_velocity + joint_accelerations * timestep;
                     MotorVector<double> velocity_setpoint = alpha * velocity_desired + (1.0 - alpha) * previous_motor_velocity;
                     previous_motor_velocity = state.motor_velocity;
-
-                    // No Motor Velocity:
-                    // MotorVector<double> velocity_setpoint = MotorVector<double>::Zero();
 
                     // Create Motor Command:
                     unitree::containers::MotorCommand motor_command;

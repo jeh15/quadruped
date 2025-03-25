@@ -31,7 +31,7 @@ class IMUEstimator {
         absl::Status initialize() {
             absl::Status result;
             if(!unitree_driver->is_initialized())
-                return absl::FailedPreconditionError("Unitree Driver not initialized");
+                return absl::FailedPreconditionError("Estimator: Unitree Driver not initialized");
 
             // Initialize Queue:
             result.Update(initialize_queue());
@@ -54,7 +54,7 @@ class IMUEstimator {
 
         absl::Status initialize_thread() {
             if(!initialized)
-                return absl::FailedPreconditionError("Estimator not initialized");
+                return absl::FailedPreconditionError("Estimator: Estimator not initialized");
 
             thread = std::thread(&IMUEstimator::estimator_loop, this);
             thread_initialized = true;
@@ -64,7 +64,7 @@ class IMUEstimator {
 
         absl::Status stop_thread() {
             if(!thread_initialized)
-                return absl::FailedPreconditionError("Estimator thread not initialized");
+                return absl::FailedPreconditionError("Estimator: Estimator thread not initialized");
 
             running = false;
             thread.join();
@@ -78,6 +78,13 @@ class IMUEstimator {
 
         bool is_thread_initialized() {
             return thread_initialized;
+        }
+
+        absl::Status update_position_estimate(const common::Vector3<float>& position) {
+            std::lock_guard<std::mutex> lock(mutex);
+            position_estimate = position;
+
+            return absl::OkStatus();
         }
 
         EstimatorState get_state() {
@@ -381,12 +388,12 @@ class IMUEstimator {
                 velocity_j = velocity_i;
                 velocity_k = velocity_j;
 
-                // Filter Estimation: Causing Instability... Probably just a poor implementation
-                common::Vector3<float> velocity = highpass_filter(velocity_queue, velocity_i);
+                // Filter Estimation: Poor Estimation... Probably just a poor implementation
+                // common::Vector3<float> velocity = highpass_filter(velocity_queue, velocity_i);
 
                 // Update State:
                 position_estimate = position;
-                velocity_estimate = velocity;
+                velocity_estimate = velocity_i;
 
                 return absl::OkStatus();
             }

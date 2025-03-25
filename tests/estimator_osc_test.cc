@@ -79,7 +79,7 @@ int main(int argc, char** argv) {
     // Safety Controller Args:
     interface::containers::controller::SafetyControllerArgs safety_args = {
         .stiffness = 0.0,
-        .damping = 20.0,
+        .damping = 5.0,
     };
 
     // Logger Args:
@@ -157,6 +157,7 @@ int main(int argc, char** argv) {
     mjrRect viewport = {0, 0, 0, 0};
     glfwGetFramebufferSize(window, &viewport.width, &viewport.height);
 
+    cam.azimuth = 135.0;
     mjv_updateScene(mj_model, mj_data, &opt, &pert, &cam, mjCAT_ALL, &scn);
     mjr_render(viewport, &scn, &con);
 
@@ -190,50 +191,101 @@ int main(int argc, char** argv) {
 
     // Initialize Estimator Thread:
     result.Update(estimator->initialize_thread());
+    ABSL_CHECK(result.ok()) << result.message();
 
-    // Set OSC Control Mode:
+    // Initialize Interface:
+    result.Update(interface.initialize());
+    ABSL_CHECK(result.ok()) << result.message();
+
+    // Unitree Driver Initialization Check:
+    std::cout << "Unitree Driver Initialized: " << unitree_driver->is_initialized() << std::endl;
+    std::cout << "Unitree Driver Thread Initialized: " << unitree_driver->is_thread_initialized() << std::endl;
+    
+    // Estimator Initialization Check:
+    std::cout << "Estimator Initialized: " << estimator->is_initialized() << std::endl;
+    std::cout << "Estimator Thread Initialized: " << estimator->is_thread_initialized() << std::endl;
+
+    // OSC Initialization Check:
+    std::cout << "OSC Initialized: " << operational_space_controller->is_initialized() << std::endl;
+    std::cout << "OSC Optimization Initialized: " << operational_space_controller->is_optimization_initialized() << std::endl;
+
+    // Initialize in PD Control Mode:
+    // std::ignore = interface.default_controller_values(60.0, 5.0);
+    // interface::containers::controller::ControlMode mode = 
+    // interface::containers::controller::ControlMode::Default;
+    // std::ignore = interface.set_control_mode(mode);
+
+    // Initialize in OSC Control Mode:
     interface::containers::controller::ControlMode mode = 
-        interface::containers::controller::ControlMode::OperationalSpaceController;
+    interface::containers::controller::ControlMode::OperationalSpaceController;
     std::ignore = interface.set_control_mode(mode);
+
+    // Initialize Threads:
+    result.Update(interface.initialize_threads());
+    ABSL_CHECK(result.ok()) << result.message();
 
     double visualization_timer = mj_data->time;
     double visualization_start_time = visualization_timer;
     double visualization_interval = 0.01;
-    double simulation_time = 10.0;
+    double simulation_time = 20.0;
     auto current_time = mj_data->time;
     while(current_time < simulation_time) {
         mj_data = unitree_driver->mj_data;
         current_time = mj_data->time;
         visualization_timer = current_time - visualization_start_time;
 
+        // if(current_time > 7.0) {
+        //     // Set OSC Control Mode:
+        //     interface::containers::controller::ControlMode mode = 
+        //     interface::containers::controller::ControlMode::OperationalSpaceController;
+        //     std::ignore = interface.set_control_mode(mode);
+        // }
+
         // Update Taskspace Targets:
-        // osc::aliases::TaskspaceTargets taskspace_targets = osc::aliases::TaskspaceTargets::Zero();
-        // result.Update(interface.update_taskspace_targets(taskspace_targets));
+        osc::aliases::TaskspaceTargets taskspace_targets = osc::aliases::TaskspaceTargets::Zero();
+
+        auto interface_state = interface.get_state();
+        interface::aliases::common::Vector3<double> linear_control = 75.0 * (interface::aliases::common::Vector3<double>::Zero() - interface_state.linear_body_velocity);
+        interface::aliases::common::Vector3<double> angular_control = 25.0 * (interface::aliases::common::Vector3<double>::Zero() - interface_state.angular_body_velocity);
+        Eigen::Vector<double, 6> cmd {linear_control(0), linear_control(1), linear_control(2), angular_control(0), angular_control(1), angular_control(2)};
+        taskspace_targets.row(0) = cmd;
+
+        result.Update(interface.update_taskspace_targets(taskspace_targets));
 
         if(visualization_timer > visualization_interval) {
             // Print State:
-            // if(interface.is_safety_stop()){
-            //     return 0;
-            // }
-
-            // Print State:
-            auto state = estimator->get_state();
-            // Convert Quaternion to Vector4
+            auto estimator_state = estimator->get_state();
             interface::aliases::common::Vector4<float> body_rotation {
-                state.body_rotation.w(), 
-                state.body_rotation.x(), 
-                state.body_rotation.y(), 
-                state.body_rotation.z()
+                estimator_state.body_rotation.w(), 
+                estimator_state.body_rotation.x(), 
+                estimator_state.body_rotation.y(), 
+                estimator_state.body_rotation.z()
             };
-            std::cout << "Body Position: " << state.body_position.transpose() << std::endl;
+            std::cout << "Estimator State: " << std::endl;
+            std::cout << "Body Position: " << estimator_state.body_position.transpose() << std::endl;
             std::cout << "Body Rotation: " << body_rotation.transpose() << std::endl;
-            std::cout << "Linear Body Velocity: " << state.linear_body_velocity.transpose() << std::endl;
-            std::cout << "Angular Body Velocity: " << state.angular_body_velocity.transpose() << std::endl;
-            std::cout << "Motor Position: " << state.joint_position.transpose() << std::endl;
-            std::cout << "Motor Velocity: " << state.joint_velocity.transpose() << std::endl;
+            std::cout << "Linear Body Velocity: " << estimator_state.linear_body_velocity.transpose() << std::endl;
+            std::cout << "Angular Body Velocity: " << estimator_state.angular_body_velocity.transpose() << std::endl;
+            std::cout << "Motor Position: " << estimator_state.joint_position.transpose() << std::endl;
+            std::cout << "Motor Velocity: " << estimator_state.joint_velocity.transpose() << std::endl;
+            
+            std::cout << "Safety Stop: " << interface.is_safety_stop() << std::endl;
 
-            // auto ctrl = interface.get_torque_command();
-            // std::cout << "Control: " << ctrl.transpose() << std::endl;
+            auto ctrl = interface.get_torque_command();
+            std::cout << "Control: " << ctrl.transpose() << std::endl;
+
+            // Compare mj_data to estimator:
+            // std::cout << "estimator: " << estimator_state.linear_body_velocity.transpose() << std::endl;
+            // std::cout << "mj_data: " << mj_data->qvel[0] << " " << mj_data->qvel[1] << " " << mj_data->qvel[2] << std::endl;
+
+            // Compare Estimator State to Interface State:
+            // auto interface_state = interface.get_state();
+            // std::cout << "Interface State: " << std::endl;
+            // std::cout << "Body Rotation: " << interface_state.body_rotation.transpose() << std::endl;
+            // std::cout << "Linear Body Velocity: " << interface_state.linear_body_velocity.transpose() << std::endl;
+            // std::cout << "Angular Body Velocity: " << interface_state.angular_body_velocity.transpose() << std::endl;
+            // std::cout << "Motor Position: " << interface_state.motor_position.transpose() << std::endl;
+            // std::cout << "Motor Velocity: " << interface_state.motor_velocity.transpose() << std::endl;
 
             visualization_start_time = mj_data->time;
 
