@@ -92,6 +92,16 @@ class IMUEstimator {
             return estimator_state;
         }
 
+        common::Vector3<float> get_accelerometer_bias() {
+            std::lock_guard<std::mutex> lock(mutex);
+            return accelerometer_bias;
+        }
+
+        common::Vector3<float> get_gyroscope_bias() {
+            std::lock_guard<std::mutex> lock(mutex);
+            return gyroscope_bias;
+        }
+
         private:
             /* UnitreeDriver */
             std::shared_ptr<RobotDriver> unitree_driver;
@@ -132,12 +142,13 @@ class IMUEstimator {
             common::Vector3<float> velocity_k = common::Vector3<float>::Zero();
             common::Vector3<float> position = common::Vector3<float>::Zero();
             // Filter Variables:
-            const float cutoff_frequency = 10.0f;
             static constexpr size_t lowpass_size = 10;
             static constexpr size_t highpass_size = 10;
             const float alpha = 0.9;
+            const float cutoff_frequency = 0.01f;
             const float time_constant = 1.0f / (2.0f * M_PI * cutoff_frequency);
             const float beta = time_constant / (time_constant + delta_t);
+            // const float beta = 1.0f;
             std::deque<common::Vector3<float>> acceleration_queue;
             std::deque<common::Vector3<float>> velocity_queue;
             std::deque<common::Vector3<float>> position_queue;
@@ -216,6 +227,7 @@ class IMUEstimator {
                 Eigen::Quaternion<float> dq = quaternion_estimate * q.inverse();
                 dq.normalize();
                 if( dq.w() < 0.9 && dq.w() > -0.9) {
+                    std::cout << "Quaternion Estimate: "<< quaternion_estimate << std::endl;
                     return absl::InternalError("Quaternion Estimate is not Valid");
                 }
 
@@ -389,7 +401,7 @@ class IMUEstimator {
                 velocity_k = velocity_j;
 
                 // Filter Estimation: Poor Estimation... Probably just a poor implementation
-                // common::Vector3<float> velocity = highpass_filter(velocity_queue, velocity_i);
+                // common::Vector3<float> velocity = highpass_filter(velocity_queue, velocity);
 
                 // Update State:
                 position_estimate = position;

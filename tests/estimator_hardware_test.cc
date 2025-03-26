@@ -1,6 +1,9 @@
 #include <filesystem>
 #include <iostream>
 #include <string>
+#include <vector>
+#include <fstream>
+#include <chrono>
 
 #include "absl/status/status.h"
 #include "rules_cc/cc/runfiles/runfiles.h"
@@ -43,7 +46,7 @@ int main(int argc, char** argv) {
 
     std::cout << "Unitree Driver Initialized" << std::endl;
 
-    int estimator_control_rate = 1000;
+    int estimator_control_rate = 2000;
     IMUEstimator<UnitreeDriver> estimator_interface(unitree_driver, estimator_control_rate);
 
     // Initialize Estimator:
@@ -65,7 +68,7 @@ int main(int argc, char** argv) {
 
     // Visualize Estimation:
     std::filesystem::path model_path = 
-        runfiles->Rlocation("mujoco-models/models/unitree_go2/go2_estimation.xml");
+        runfiles->Rlocation("mujoco-models/models/unitree_go2/scene_go2.xml");
 
     mjModel* mj_model = mj_loadXML(model_path.c_str(), nullptr, nullptr, 1000);
     mjData* mj_data = mj_makeData(mj_model);
@@ -94,19 +97,21 @@ int main(int argc, char** argv) {
     mjv_makeScene(mj_model, &scn, 1000);
     mjr_makeContext(mj_model, &con, mjFONTSCALE_100);
 
-
     // get framebuffer viewport
     mjrRect viewport = {0, 0, 0, 0};
     glfwGetFramebufferSize(window, &viewport.width, &viewport.height);
 
     // Initialize Estimator Thread:
-    result.Update(estimator_interface.initialize_estimator_thread());
+    result.Update(estimator_interface.initialize_thread());
 
     std::cout << "Estimator Thread Initialized" << std::endl;
 
     int visualization_iter = 0;
-    while(true) {
-
+    auto start = std::chrono::high_resolution_clock::now();
+    auto runtime = 5.0;
+    std::vector<common::Vector3<float>> estimator_data;
+    std::vector<common::Vector3<float>> unitree_data;
+    while (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::high_resolution_clock::now() - start).count() < runtime) {
         if(visualization_iter > 100) {
             // Print New State:
             auto state = estimator_interface.get_state();
@@ -122,7 +127,12 @@ int main(int argc, char** argv) {
 
             unitree::containers::IMUState imu_state = unitree_driver->get_imu_state();
             common::Vector4<float> unitree_quaternion = Eigen::Map<common::Vector4<float>>(imu_state.quaternion.data());
+            common::Vector3<float> unitree_accelerometer = Eigen::Map<common::Vector3<float>>(imu_state.accelerometer.data());
             std::cout << "Unitree Quaternion: " << unitree_quaternion.transpose() << std::endl;
+
+            // Add Accelerometer Data:
+            estimator_data.push_back(state.linear_body_acceleration);
+            unitree_data.push_back(unitree_accelerometer);
             
             Eigen::Vector<double, 19> qpos;
             Eigen::Vector<double, 3> body_position = state.body_position.cast<double>();
@@ -147,9 +157,57 @@ int main(int argc, char** argv) {
         visualization_iter++;
     }
 
+    // Save Accelerometer Data:
+    {
+        std::ofstream file("estimator_data.csv");
+        if(file.is_open()) {
+            for(auto& vector : estimator_data) {
+                file << vector.transpose().format(Eigen::IOFormat(Eigen::FullPrecision, Eigen::DontAlignCols, ", ", "\n"));
+                file << "\n";
+            }
+            file.close();
+        }
+    }
+
+    {
+        std::ofstream file("unitree_data.csv");
+        if(file.is_open()) {
+            for(auto& vector : unitree_data) {
+                file << vector.transpose().format(Eigen::IOFormat(Eigen::FullPrecision, Eigen::DontAlignCols, ", ", "\n"));
+                file << "\n";
+            }
+            file.close();
+        }
+    }
+
+    {
+        std::ofstream file("accelerometer_bias.csv");
+        if(file.is_open()) {
+            file << estimator_interface.get_accelerometer_bias().transpose().format(Eigen::IOFormat(Eigen::FullPrecision, Eigen::DontAlignCols, ", ", "\n"));
+            file.close();
+        }
+    }
+
+    {
+        std::ofstream file("gyroscope_bias.csv");
+        if(file.is_open()) {
+            file << estimator_interface.get_gyroscope_bias().transpose().format(Eigen::IOFormat(Eigen::FullPrecision, Eigen::DontAlignCols, ", ", "\n"));
+            file.close();
+        }
+    }
+
+
+    // Clean up visualization:
+    glfwTerminate();
+    mjv_freeScene(&scn);
+    mjr_freeContext(&con);
+
     // Clean up:
     mj_deleteModel(mj_model);
     mj_deleteData(mj_data);
+
+    // Stop Threads:
+    result.Update(estimator_interface.stop_thread());
 
     return 0;
 };

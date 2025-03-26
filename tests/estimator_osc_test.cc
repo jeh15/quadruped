@@ -7,6 +7,7 @@
 
 #include "mujoco/mujoco.h"
 #include "Eigen/Dense"
+#include "Eigen/Geometry"
 #include "GLFW/glfw3.h"
 #include "osqp++.h"
 
@@ -244,9 +245,21 @@ int main(int argc, char** argv) {
         // Update Taskspace Targets:
         osc::aliases::TaskspaceTargets taskspace_targets = osc::aliases::TaskspaceTargets::Zero();
 
-        auto interface_state = interface.get_state();
-        interface::aliases::common::Vector3<double> linear_control = 75.0 * (interface::aliases::common::Vector3<double>::Zero() - interface_state.linear_body_velocity);
-        interface::aliases::common::Vector3<double> angular_control = 25.0 * (interface::aliases::common::Vector3<double>::Zero() - interface_state.angular_body_velocity);
+        // Velocity:
+        // auto interface_state = interface.get_state();
+        // interface::aliases::common::Vector3<double> linear_control = 75.0 * (interface::aliases::common::Vector3<double>::Zero() - interface_state.linear_body_velocity);
+        // interface::aliases::common::Vector3<double> angular_control = 25.0 * (interface::aliases::common::Vector3<double>::Zero() - interface_state.angular_body_velocity);
+        // Eigen::Vector<double, 6> cmd {linear_control(0), linear_control(1), linear_control(2), angular_control(0), angular_control(1), angular_control(2)};
+        // taskspace_targets.row(0) = cmd;
+
+        // Position and Velocity:
+        auto estimator_state = estimator->get_state();
+        interface::aliases::common::Vector3<double> position_error = inital_position.cast<double>() - estimator_state.body_position.cast<double>();
+        interface::aliases::common::Vector3<double> velocity_error = interface::aliases::common::Vector3<double>::Zero() - estimator_state.linear_body_velocity.cast<double>();
+        interface::aliases::common::Vector3<double> rotation_error = (Eigen::Quaternion<double>(1, 0, 0, 0) * estimator_state.body_rotation.conjugate().cast<double>()).vec();
+        interface::aliases::common::Vector3<double> angular_velocity_error = interface::aliases::common::Vector3<double>::Zero() - estimator_state.angular_body_velocity.cast<double>();
+        interface::aliases::common::Vector3<double> linear_control = 150.0 * (position_error) + 25.0 * (velocity_error);
+        interface::aliases::common::Vector3<double> angular_control = 50.0 * (rotation_error) + 10.0 * (angular_velocity_error);
         Eigen::Vector<double, 6> cmd {linear_control(0), linear_control(1), linear_control(2), angular_control(0), angular_control(1), angular_control(2)};
         taskspace_targets.row(0) = cmd;
 
@@ -255,28 +268,30 @@ int main(int argc, char** argv) {
         if(visualization_timer > visualization_interval) {
             // Print State:
             auto estimator_state = estimator->get_state();
-            interface::aliases::common::Vector4<float> body_rotation {
-                estimator_state.body_rotation.w(), 
-                estimator_state.body_rotation.x(), 
-                estimator_state.body_rotation.y(), 
-                estimator_state.body_rotation.z()
-            };
-            std::cout << "Estimator State: " << std::endl;
-            std::cout << "Body Position: " << estimator_state.body_position.transpose() << std::endl;
-            std::cout << "Body Rotation: " << body_rotation.transpose() << std::endl;
-            std::cout << "Linear Body Velocity: " << estimator_state.linear_body_velocity.transpose() << std::endl;
-            std::cout << "Angular Body Velocity: " << estimator_state.angular_body_velocity.transpose() << std::endl;
-            std::cout << "Motor Position: " << estimator_state.joint_position.transpose() << std::endl;
-            std::cout << "Motor Velocity: " << estimator_state.joint_velocity.transpose() << std::endl;
+            // interface::aliases::common::Vector4<float> body_rotation {
+            //     estimator_state.body_rotation.w(), 
+            //     estimator_state.body_rotation.x(), 
+            //     estimator_state.body_rotation.y(), 
+            //     estimator_state.body_rotation.z()
+            // };
+            // std::cout << "Estimator State: " << std::endl;
+            // std::cout << "Body Position: " << estimator_state.body_position.transpose() << std::endl;
+            // std::cout << "Body Rotation: " << body_rotation.transpose() << std::endl;
+            // std::cout << "Linear Body Velocity: " << estimator_state.linear_body_velocity.transpose() << std::endl;
+            // std::cout << "Angular Body Velocity: " << estimator_state.angular_body_velocity.transpose() << std::endl;
+            // std::cout << "Motor Position: " << estimator_state.joint_position.transpose() << std::endl;
+            // std::cout << "Motor Velocity: " << estimator_state.joint_velocity.transpose() << std::endl;
             
-            std::cout << "Safety Stop: " << interface.is_safety_stop() << std::endl;
+            // std::cout << "Safety Stop: " << interface.is_safety_stop() << std::endl;
 
-            auto ctrl = interface.get_torque_command();
-            std::cout << "Control: " << ctrl.transpose() << std::endl;
+            // auto ctrl = interface.get_torque_command();
+            // std::cout << "Control: " << ctrl.transpose() << std::endl;
 
             // Compare mj_data to estimator:
-            // std::cout << "estimator: " << estimator_state.linear_body_velocity.transpose() << std::endl;
-            // std::cout << "mj_data: " << mj_data->qvel[0] << " " << mj_data->qvel[1] << " " << mj_data->qvel[2] << std::endl;
+            std::cout << "Position Estimate: " << estimator_state.body_position.transpose() << std::endl;
+            std::cout << "Position mj_data: " << mj_data->qpos[0] << " " << mj_data->qpos[1] << " " << mj_data->qpos[2] << std::endl;
+            std::cout << "Velocity Estimate: " << estimator_state.linear_body_velocity.transpose() << std::endl;
+            std::cout << "Velocity mj_data: " << mj_data->qvel[0] << " " << mj_data->qvel[1] << " " << mj_data->qvel[2] << std::endl;
 
             // Compare Estimator State to Interface State:
             // auto interface_state = interface.get_state();
