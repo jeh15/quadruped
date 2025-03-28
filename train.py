@@ -58,7 +58,7 @@ def main(argv=None):
         linear_z_velocity=-2.0,
         angular_xy_velocity=-0.05,
         torque=-2e-4,
-        action_rate=-0.05,
+        action_rate=-0.1,
         stand_still=-0.5,
         termination=-1.0,
         foot_slip=-0.1,
@@ -89,7 +89,7 @@ def main(argv=None):
         normalize_advantages=True,
     )
     training_metadata = checkpoint_utilities.training_metadata(
-        num_epochs=100,
+        num_epochs=40,
         num_training_steps=20,
         episode_length=1000,
         num_policy_steps=25,
@@ -142,9 +142,9 @@ def main(argv=None):
         gae_lambda=loss_metadata.gae_lambda,
         normalize_advantages=loss_metadata.normalize_advantages,
     )
-    env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_barkour_hfield_mjx.xml', config=reward_config)
-    eval_env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_barkour_hfield_mjx.xml', config=reward_config)
-    render_env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_barkour_hfield_mjx.xml', config=reward_config)
+    env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx.xml', config=reward_config)
+    eval_env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx.xml', config=reward_config)
+    # render_env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx.xml', config=reward_config)
 
     restored_checkpoint = None
     if FLAGS.checkpoint_name is not None:
@@ -261,7 +261,7 @@ def main(argv=None):
         randomization_fn=randomization_fn,
         checkpoint_fn=checkpoint_fn,
         wandb_run=run,
-        render_environment=render_env,
+        render_environment=None,
         render_interval=5,
     )
 
