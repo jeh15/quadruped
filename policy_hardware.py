@@ -209,8 +209,10 @@ def main(argv=None):
             previous_ctrl = ctrl
 
             # To Control the Robot:
-            # motor_commands.q_setpoint = ctrl.tolist()
-            # unitree_driver.update_command(motor_commands)
+            motor_commands.q_setpoint = ctrl.tolist()
+            motor_commands.stiffness = [35.0, 35.0, 35.0] * 4
+            motor_commands.damping = [5.0, 5.0, 5.0] * 4
+            unitree_driver.update_command(motor_commands)
 
             # To Control Simulation:
             data.ctrl = ctrl
