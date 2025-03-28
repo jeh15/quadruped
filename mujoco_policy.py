@@ -51,7 +51,7 @@ def quat_inv(q: np.ndarray) -> np.ndarray:
 
 def main(argv=None):
     # Load from Env:
-    env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_barkour_hfield_mjx.xml')
+    env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx.xml')
     model = env.sys.mj_model
 
     data = mujoco.MjData(model)  # type: ignore
@@ -71,14 +71,14 @@ def main(argv=None):
     controller_fn = functools.partial(
         controller,
         default_control=env.default_ctrl,
-        action_scale=env._action_scale,
         ctrl_lb=env.ctrl_lb,
         ctrl_ub=env.ctrl_ub,
+        action_scale=env._action_scale,
     )
 
     # Test:
     data.qpos = model.key_qpos.flatten()
-    command = np.array([1.0, 0.0, 0.0])
+    command = np.array([0.0, 0.0, 0.0])
     action = model.key_ctrl.flatten()
     observation = np.zeros(env.history_length * env.num_observations)
 
