@@ -48,33 +48,94 @@ class RewardConfig:
 def domain_randomize(sys: System, rng: PRNGKey) -> tuple[System, System]:
     @jax.vmap
     def randomize_parameters(rng):
-        key, subkey = jax.random.split(rng)
-        # friction
-        friction = jax.random.uniform(subkey, (1,), minval=0.6, maxval=1.4)
+        # Floor Friction:
+        rng, key = jax.random.split(rng)
+        friction = jax.random.uniform(key, (1,), minval=0.6, maxval=1.4)
         friction = sys.geom_friction.at[:, 0].set(friction)
 
-        # actuator
-        key, subkey = jax.random.split(subkey)
+        # Joint Friction:
+        rng, key = jax.random.split(rng)
+        frictionloss = sys.dof_frictionloss[6:] * jax.random.uniform(
+            key, shape=(12,), minval=0.9, maxval=1.1,
+        )
+        dof_frictionloss = sys.dof_frictionloss.at[6:].set(frictionloss)
+
+        # Armature:
+        rng, key = jax.random.split(rng)
+        armature = sys.dof_armature[6:] * jax.random.uniform(
+            key, shape=(12,), minval=1.0, maxval=1.05,
+        )
+        dof_armature = sys.dof_armature.at[6:].set(armature)
+
+        # Center of Mass offset:
+        rng, key = jax.random.split(rng)
+        inertia_offset = jax.random.uniform(
+            key, (3,), minval=-0.05, maxval=0.05,
+        )
+        body_ipos = sys.body_ipos.at[1].set(
+            sys.body_ipos[1] + inertia_offset,
+        )
+
+        # Link mass randomization:
+        rng, key = jax.random.split(rng)
+        delta = jax.random.uniform(
+            key, (sys.nbody,), minval=0.9, maxval=1.1,
+        )
+        body_mass = sys.body_mass.at[:].set(sys.body_mass * delta)
+
+        # Torso mass randomization:
+        rng, key = jax.random.split(rng)
+        delta = jax.random.uniform(
+            key, minval=-1.0, maxval=1.0,
+        )
+        body_mass = sys.body_mass.at[1].set(sys.body_mass[1] + delta)
+
+        # Actuator Gain and Bias:
+        rng, key = jax.random.split(key)
         gain_range = (-5, 5)
         param = jax.random.uniform(
-            subkey, (1,), minval=gain_range[0], maxval=gain_range[1]
+            key, (1,), minval=gain_range[0], maxval=gain_range[1]
         ) + sys.actuator_gainprm[:, 0]
         gain = sys.actuator_gainprm.at[:, 0].set(param)
         bias = sys.actuator_biasprm.at[:, 1].set(-param)
 
-        return friction, gain, bias
+        return (
+            friction,
+            dof_frictionloss,
+            dof_armature,
+            body_ipos,
+            body_mass,
+            gain,
+            bias,
+        )
 
-    friction, gain, bias = randomize_parameters(rng)
+    (
+        friction,
+        dof_frictionloss,
+        dof_armature,
+        body_ipos,
+        body_mass,
+        gain,
+        bias,
+    ) = randomize_parameters(rng)
 
     in_axes = jax.tree.map(lambda x: None, sys)
     in_axes = in_axes.tree_replace({
         'geom_friction': 0,
+        'dof_frictionloss': 0,
+        'dof_armature': 0,
+        'body_ipos': 0,
+        'body_mass': 0,
         'actuator_gainprm': 0,
         'actuator_biasprm': 0,
     })
 
     sys = sys.tree_replace({
         'geom_friction': friction,
+        'dof_frictionloss': dof_frictionloss,
+        'dof_armature': dof_armature,
+        'body_ipos': body_ipos,
+        'body_mass': body_mass,
         'actuator_gainprm': gain,
         'actuator_biasprm': bias,
     })  # type: ignore
