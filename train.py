@@ -89,7 +89,7 @@ def main(argv=None):
         normalize_advantages=True,
     )
     training_metadata = checkpoint_utilities.training_metadata(
-        num_epochs=30,
+        num_epochs=60,
         num_training_steps=20,
         episode_length=1000,
         num_policy_steps=25,
@@ -99,12 +99,12 @@ def main(argv=None):
         num_evaluations=1,
         deterministic_evaluation=True,
         reset_per_epoch=False,
-        seed=0,
+        seed=42,
         batch_size=256,
         num_minibatches=32,
         num_ppo_iterations=4,
         normalize_observations=True,
-        optimizer='optax.adam(3e-4)',
+        optimizer='optax.chain(optax.clip_by_global_norm(1.0), optax.adam(3e-4),)',
     )
 
     # Start Wandb and save metadata:
@@ -237,6 +237,11 @@ def main(argv=None):
         training_metadata=training_metadata,
     )
 
+    optimizer = optax.chain(
+        optax.clip_by_global_norm(1.0),
+        optax.adam(learning_rate=3e-4),
+    )
+
     train_fn = functools.partial(
         train,
         num_epochs=training_metadata.num_epochs,
@@ -255,7 +260,7 @@ def main(argv=None):
         num_ppo_iterations=training_metadata.num_ppo_iterations,
         normalize_observations=training_metadata.normalize_observations,
         network_factory=make_networks_factory,
-        optimizer=optax.adam(3e-4),
+        optimizer=optimizer ,
         loss_function=loss_fn,
         progress_fn=progress_fn,
         randomization_fn=randomization_fn,
