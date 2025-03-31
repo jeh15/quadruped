@@ -13,8 +13,8 @@ import mujoco.viewer
 
 import matplotlib.pyplot as plt
 
-from src.envs import unitree_go2
-from src.load_utilities import load_policy
+from src.envs import unitree_go2_mujoco_playground as unitree_go2
+from src.algorithms.ppo.load_utilities import load_policy
 
 jax.config.update("jax_enable_x64", True)
 pygame.init()
@@ -90,6 +90,7 @@ def main(argv=None):
     command_history = []
 
     global_steps = 0
+    previous_ctrl = action
     with mujoco.viewer.launch_passive(model, data) as viewer:
         viewer.cam.trackbodyid = 1
         viewer.cam.distance = 5
@@ -97,6 +98,39 @@ def main(argv=None):
         while viewer.is_running() and not termination_flag:
             if global_steps >= 1000:
                 termination_flag = True
+
+            for event in pygame.event.get():
+                if event.type == pygame.JOYDEVICEADDED:
+                    joy = pygame.joystick.Joystick(event.device_index)
+                    joysticks[joy.get_instance_id()] = joy
+                    print(f"Joystick {joy.get_instance_id()} connencted")
+
+                if event.type == pygame.JOYDEVICEREMOVED:
+                    del joysticks[event.instance_id]
+                    print(f"Joystick {event.instance_id} disconnected")
+
+            for joystick in joysticks.values():
+                # If Switch Controller:
+                # if joystick.get_button(11) == 1:
+                #     termination_flag = True
+                # In Logitech Controller:
+                if joystick.get_button(7) == 1:
+                    termination_flag = True
+
+                forward_command = -1 * joystick.get_axis(1)
+                lateral_command = -1 * joystick.get_axis(0)
+                # If Switch Controller:
+                # rotation_command = -1 * joystick.get_axis(2)
+                # If Logitech Controller:
+                rotation_command = -1 * joystick.get_axis(3)
+
+
+            # Filter and Clip Command:
+            command = np.array([
+                forward_command, lateral_command, rotation_command,
+            ])
+            command = np.where(np.abs(command) < 0.1, 0.0, command)
+            command = np.clip(command, -0.75, 0.75)
 
             step_time = time.time()
             action_rng, key = jax.random.split(key)
@@ -108,6 +142,14 @@ def main(argv=None):
             )
             action, _ = inference_fn(observation, action_rng)
             ctrl = controller_fn(action)
+
+            print(f'qvel: {data.qvel[6:]}')
+
+            # Smooth Control:
+            alpha = 1.0
+            ctrl = alpha * ctrl + (1 - alpha) * previous_ctrl
+            previous_ctrl = ctrl
+
             data.ctrl = ctrl
 
             for _ in range(num_steps):

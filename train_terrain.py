@@ -58,8 +58,8 @@ def main(argv=None):
         linear_z_velocity=-2.0,
         angular_xy_velocity=-0.05,
         torque=-2e-4,
-        action_rate=-0.02,
-        stand_still=-1.0,
+        action_rate=-0.01,
+        stand_still=-0.5,
         termination=-1.0,
         foot_slip=-0.1,
         # Gait Terms:
@@ -72,10 +72,10 @@ def main(argv=None):
 
     # Metadata:
     network_metadata = checkpoint_utilities.network_metadata(
-        policy_layer_size=[512, 256, 128,],
-        value_layer_size=[512, 256, 256, 128,],
-        policy_depth=3,
-        value_depth=4,
+        policy_layer_size=128,
+        value_layer_size=256,
+        policy_depth=4,
+        value_depth=5,
         activation='nn.swish',
         kernel_init='jax.nn.initializers.lecun_uniform()',
         action_distribution='ParametricDistribution(distribution=distrax.Normal, bijector=distrax.Tanh())',
@@ -89,12 +89,12 @@ def main(argv=None):
         normalize_advantages=True,
     )
     training_metadata = checkpoint_utilities.training_metadata(
-        num_epochs=30,
+        num_epochs=20,
         num_training_steps=20,
         episode_length=1000,
         num_policy_steps=25,
         action_repeat=1,
-        num_envs=8192,
+        num_envs=4096,
         num_evaluation_envs=128,
         num_evaluations=1,
         deterministic_evaluation=True,
@@ -111,7 +111,7 @@ def main(argv=None):
     run = wandb.init(
         project='unitree_go2',
         group='ppo',
-        tags=[FLAGS.tag],
+        tags=['test'],
         config={
             'reward_config': reward_config,
             'network_metadata': network_metadata,
@@ -142,9 +142,9 @@ def main(argv=None):
         gae_lambda=loss_metadata.gae_lambda,
         normalize_advantages=loss_metadata.normalize_advantages,
     )
-    env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx.xml', config=reward_config)
-    eval_env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx.xml', config=reward_config)
-    render_env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx.xml', config=reward_config)
+    env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_barkour_hfield_mjx.xml', config=reward_config)
+    eval_env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_barkour_hfield_mjx.xml', config=reward_config)
+    render_env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_barkour_hfield_mjx.xml', config=reward_config)
 
     restored_checkpoint = None
     if FLAGS.checkpoint_name is not None:
@@ -153,49 +153,6 @@ def main(argv=None):
             environment=env,
             restore_iteration=FLAGS.checkpoint_iteration,
         )
-
-        if FLAGS.reinitialize_policy_std:
-            # Reset Policy std params to enable exploration:
-            key = jax.random.PRNGKey(42)
-            key, bias_key, kernel_key = jax.random.split(key, num=3)
-            policy_params = restored_checkpoint.train_state.params.policy_params
-            output_params = policy_params['params'][f'dense_{metadata.network_metadata.policy_depth}']
-            params = jax.tree.map(lambda x: jnp.split(x, 2, axis=-1), output_params)
-            bias_shape = jnp.expand_dims(params['bias'][-1], axis=0).shape
-            kernel_shape = params['kernel'][-1].shape
-            bias = jnp.concatenate(
-                [
-                    params['bias'][0],
-                    jax.nn.initializers.lecun_uniform()(
-                        key=bias_key, shape=bias_shape,
-                    ).flatten(),
-                ],
-                axis=-1,
-                dtype=jnp.float32,
-            )
-            kernel = jnp.concatenate(
-                [
-                    params['kernel'][0],
-                    jax.nn.initializers.lecun_uniform()(
-                        key=kernel_key, shape=kernel_shape,
-                    ),
-                ],
-                axis=-1,
-                dtype=jnp.float32,
-            )
-            output_layer = {
-                'bias': bias,
-                'kernel': kernel,
-            }
-            policy_params['params'].update({f'dense_{metadata.network_metadata.policy_depth}': output_layer})
-            restored_checkpoint.train_state.params.replace(policy_params=policy_params)
-
-        if FLAGS.overwrite_metadata:
-            run.config.update({
-                'network_metadata': metadata.network_metadata,
-                'loss_metadata': metadata.loss_metadata,
-                'training_metadata': metadata.training_metadata,
-            })
 
     def progress_fn(iteration, num_steps, metrics):
         print(

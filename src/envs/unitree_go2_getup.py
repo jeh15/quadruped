@@ -1,3 +1,22 @@
+# Copyright 2025 DeepMind Technologies Limited
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ==============================================================================
+# NOTE: This has been adapted from the mujoco_playground repository (https://github.com/google-deepmind/mujoco_playground/blob/main/mujoco_playground/_src/locomotion/go1/getup.py)
+# Original license has been included above.
+
+"""Fall recovery task for the Go2."""
+
 from typing import Any
 from absl import app
 import os
@@ -43,6 +62,14 @@ class RewardConfig:
     # Hyperparameter for exponential kernel:
     kernel_sigma: float = 0.25
     kernel_alpha: float = 1.0
+
+
+@flax.struct.dataclass
+class NoiseConfig:
+    joint_position: float = 0.03
+    joint_velocity: float = 1.5
+    gyroscope: float = 0.2
+    gravity_vector: float = 0.05
 
 
 def domain_randomize(sys: System, rng: PRNGKey) -> tuple[System, System]:
@@ -124,6 +151,8 @@ class UnitreeGo2Env(PipelineEnv):
         del config_dict['kernel_alpha']
         del config_dict['target_air_time']
         self.reward_config = config_dict
+
+        self.noise_config = NoiseConfig()
 
         self.base_idx = mujoco.mj_name2id(
             sys.mj_model, mujoco.mjtObj.mjOBJ_BODY.value, 'base_link'
@@ -374,42 +403,72 @@ class UnitreeGo2Env(PipelineEnv):
     ) -> jax.Array:
         """
             Observation: [
-                yaw_rate,
-                projected_gravity,
-                command,
-                relative_motor_positions,
+                gyroscope,
+                gravity_vector,
+                motor_positions,
+                motor_velocities,
                 previous_action,
             ]
         """
         inverse_trunk_rotation = math.quat_inv(pipeline_state.x.rot[0])
-        body_frame_yaw_rate = math.rotate(
+        body_frame_angular_rate = math.rotate(
             pipeline_state.xd.ang[0], inverse_trunk_rotation,
-        )[2]
+        )
         projected_gravity = math.rotate(
             jnp.array([0, 0, -1]), inverse_trunk_rotation,
         )
 
         q = pipeline_state.q[7:]
+        qd = pipeline_state.qd[6:]
+
+        # Gyroscope Noise:
+        state_info['rng'], noise_key = jax.random.split(state_info['rng'])
+        gyroscope_noise = jax.random.uniform(
+            noise_key,
+            shape=body_frame_angular_rate.shape,
+            minval=-self.noise_config.gyroscope, 
+            maxval=self.noise_config.gyroscope,
+        )
+        noisy_angular_rate = body_frame_angular_rate + gyroscope_noise
+
+        # Gravity noise:
+        state_info['rng'], noise_key = jax.random.split(state_info['rng'])
+        gravity_noise = jax.random.uniform(
+            noise_key,
+            shape=projected_gravity.shape,
+            minval=-self.noise_config.gravity_vector,
+            maxval=self.noise_config.gravity_vector,
+        )
+        noisy_projected_gravity = projected_gravity + gravity_noise
+
+        # Joint position noise:
+        state_info['rng'], noise_key = jax.random.split(state_info['rng'])
+        joint_position_noise = jax.random.uniform(
+            noise_key,
+            shape=q.shape,
+            minval=-self.noise_config.joint_position,
+            maxval=self.noise_config.joint_position,
+        )
+        noisy_joint_positions = q + joint_position_noise
+
+        # Joint velocity noise:
+        state_info['rng'], noise_key = jax.random.split(state_info['rng'])
+        joint_velocity_noise = jax.random.uniform(
+            noise_key,
+            shape=qd.shape,
+            minval=-self.noise_config.joint_velocity,
+            maxval=self.noise_config.joint_velocity,
+        )
+        noisy_joint_velocities = qd + joint_velocity_noise
 
         observation = jnp.concatenate([
-            jnp.array([body_frame_yaw_rate]),
-            projected_gravity,
-            state_info['command'],
-            q - self.default_pose,
+            noisy_angular_rate,
+            noisy_projected_gravity,
+            noisy_joint_positions - self.default_pose,
+            noisy_joint_velocities,
             state_info['previous_action'],
         ])
 
-        # clip, noise
-        observation = (
-            jnp.clip(observation, -100.0, 100.0)
-            + self._obs_noise
-            * jax.random.uniform(
-                state_info['rng'],
-                observation.shape,
-                minval=-1,
-                maxval=1,
-            )
-        )
         # stack observations through time
         observation = jnp.roll(
             observation_history, observation.size

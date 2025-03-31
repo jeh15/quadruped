@@ -54,6 +54,27 @@ def load_policy(checkpoint_name: str, environment: Env, restore_iteration: Optio
         loss_metadata=checkpoint_utilities.empty_loss_metadata(),
         training_metadata=checkpoint_utilities.empty_training_metadata(),
     )
+
+    network_metadata = metadata.network_metadata
+    network_metadata = checkpoint_utilities.network_metadata(
+        policy_layer_size=[0,] * network_metadata.policy_depth,
+        value_layer_size=[0,] * network_metadata.value_depth,
+        policy_depth=network_metadata.policy_depth,
+        value_depth=network_metadata.value_depth,
+        activation=network_metadata.activation,
+        kernel_init=network_metadata.kernel_init,
+        action_distribution=network_metadata.action_distribution,
+    )
+
+    # Load correct Network Metadata:
+    metadata = checkpoint_utilities.load_checkpoint(
+        manager=manager,
+        restore_iteration=restore_iteration,
+        network_metadata=network_metadata,
+        loss_metadata=checkpoint_utilities.empty_loss_metadata(),
+        training_metadata=checkpoint_utilities.empty_training_metadata(),
+    )
+
     network_metadata = metadata.network_metadata
     loss_metadata = metadata.loss_metadata
     training_metadata = metadata.training_metadata
@@ -61,8 +82,6 @@ def load_policy(checkpoint_name: str, environment: Env, restore_iteration: Optio
     env = environment
 
     # Restore Networks:
-    policy_layer_sizes = (network_metadata.policy_layer_size,) * network_metadata.policy_depth
-    value_layer_sizes = (network_metadata.value_layer_size,) * network_metadata.value_depth
     if training_metadata.normalize_observations:
         normalization_fn = running_statistics.normalize
     else:
@@ -72,8 +91,8 @@ def load_policy(checkpoint_name: str, environment: Env, restore_iteration: Optio
         observation_size=env.observation_size,
         action_size=env.action_size,
         input_normalization_fn=normalization_fn,
-        policy_layer_sizes=policy_layer_sizes,
-        value_layer_sizes=value_layer_sizes,
+        policy_layer_sizes=network_metadata.policy_layer_size,
+        value_layer_sizes=network_metadata.value_layer_size,
         activation=eval(network_metadata.activation),
         kernel_init=eval(network_metadata.kernel_init),
     )
@@ -152,6 +171,27 @@ def load_checkpoint(
         loss_metadata=checkpoint_utilities.empty_loss_metadata(),
         training_metadata=checkpoint_utilities.empty_training_metadata(),
     )
+    
+    network_metadata = metadata.network_metadata
+    network_metadata = checkpoint_utilities.network_metadata(
+        policy_layer_size=[0,] * network_metadata.policy_depth,
+        value_layer_size=[0,] * network_metadata.value_depth,
+        policy_depth=network_metadata.policy_depth,
+        value_depth=network_metadata.value_depth,
+        activation=network_metadata.activation,
+        kernel_init=network_metadata.kernel_init,
+        action_distribution=network_metadata.action_distribution,
+    )
+
+    # Load correct Network Metadata:
+    metadata = checkpoint_utilities.load_checkpoint(
+        manager=manager,
+        restore_iteration=restore_iteration,
+        network_metadata=network_metadata,
+        loss_metadata=checkpoint_utilities.empty_loss_metadata(),
+        training_metadata=checkpoint_utilities.empty_training_metadata(),
+    )
+
     network_metadata = metadata.network_metadata
     loss_metadata = metadata.loss_metadata
     training_metadata = metadata.training_metadata
@@ -159,8 +199,6 @@ def load_checkpoint(
     env = environment
 
     # Restore Networks:
-    policy_layer_sizes = (network_metadata.policy_layer_size,) * network_metadata.policy_depth
-    value_layer_sizes = (network_metadata.value_layer_size,) * network_metadata.value_depth
     if training_metadata.normalize_observations:
         normalization_fn = running_statistics.normalize
     else:
@@ -170,8 +208,8 @@ def load_checkpoint(
         observation_size=env.observation_size,
         action_size=env.action_size,
         input_normalization_fn=normalization_fn,
-        policy_layer_sizes=policy_layer_sizes,
-        value_layer_sizes=value_layer_sizes,
+        policy_layer_sizes=network_metadata.policy_layer_size,
+        value_layer_sizes=network_metadata.value_layer_size,
         activation=eval(network_metadata.activation),
         kernel_init=eval(network_metadata.kernel_init),
     )

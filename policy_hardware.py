@@ -17,7 +17,7 @@ import mujoco.viewer
 import matplotlib.pyplot as plt
 
 from src.envs import unitree_go2
-from src.load_utilities import load_policy
+from src.algorithms.ppo.load_utilities import load_policy
 
 jax.config.update("jax_enable_x64", True)
 pygame.init()
@@ -114,7 +114,7 @@ def main(argv=None):
         default_control=env.default_ctrl,
         ctrl_lb=env.ctrl_lb,
         ctrl_ub=env.ctrl_ub,
-        action_scale=0.1,
+        action_scale=env._action_scale,
     )
 
     # Initialize Unitree-Api:
@@ -211,7 +211,7 @@ def main(argv=None):
             # To Control the Robot:
             motor_commands.q_setpoint = ctrl.tolist()
             motor_commands.stiffness = [35.0, 35.0, 35.0] * 4
-            motor_commands.damping = [5.0, 5.0, 5.0] * 4
+            motor_commands.damping = [0.5, 0.5, 0.5] * 4
             unitree_driver.update_command(motor_commands)
 
             # To Control Simulation:

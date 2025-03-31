@@ -18,6 +18,7 @@ from brax.envs.base import PipelineEnv, State
 from brax.io import mjcf, html
 
 import mujoco
+from mujoco.mjx._src import math as mjx_math
 
 # Types:
 PRNGKey = jax.Array
@@ -33,8 +34,8 @@ class RewardConfig:
     linear_z_velocity: float = -2.0
     angular_xy_velocity: float = -0.05
     torque: float = -2e-4
-    action_rate: float = -0.01
-    stand_still: float = -0.5
+    action_rate: float = -0.02
+    stand_still: float = -1.0
     termination: float = -1.0
     foot_slip: float = -0.1
     # Gait Terms:
@@ -45,38 +46,90 @@ class RewardConfig:
     kernel_alpha: float = 1.0
 
 
+@flax.struct.dataclass
+class NoiseConfig:
+    joint_position: float = 0.03
+    joint_velocity: float = 1.5
+    gyroscope: float = 0.2
+    gravity_vector: float = 0.05
+
+
 def domain_randomize(sys: System, rng: PRNGKey) -> tuple[System, System]:
     @jax.vmap
     def randomize_parameters(rng):
-        key, subkey = jax.random.split(rng)
-        # friction
-        friction = jax.random.uniform(subkey, (1,), minval=0.6, maxval=1.4)
+        # Floor Friction:
+        rng, key = jax.random.split(rng)
+        friction = jax.random.uniform(key, (1,), minval=0.6, maxval=1.4)
         friction = sys.geom_friction.at[:, 0].set(friction)
 
-        # actuator
-        key, subkey = jax.random.split(subkey)
-        gain_range = (-5, 5)
-        param = jax.random.uniform(
-            subkey, (1,), minval=gain_range[0], maxval=gain_range[1]
-        ) + sys.actuator_gainprm[:, 0]
-        gain = sys.actuator_gainprm.at[:, 0].set(param)
-        bias = sys.actuator_biasprm.at[:, 1].set(-param)
+        # Joint Friction:
+        rng, key = jax.random.split(rng)
+        frictionloss = sys.dof_frictionloss[6:] * jax.random.uniform(
+            key, shape=(12,), minval=0.9, maxval=1.1,
+        )
+        dof_frictionloss = sys.dof_frictionloss.at[6:].set(frictionloss)
 
-        return friction, gain, bias
+        # Armature:
+        rng, key = jax.random.split(rng)
+        armature = sys.dof_armature[6:] * jax.random.uniform(
+            key, shape=(12,), minval=1.0, maxval=1.05,
+        )
+        dof_armature = sys.dof_armature.at[6:].set(armature)
 
-    friction, gain, bias = randomize_parameters(rng)
+        # Center of Mass offset:
+        rng, key = jax.random.split(rng)
+        inertia_offset = jax.random.uniform(
+            key, (3,), minval=-0.05, maxval=0.05,
+        )
+        body_ipos = sys.body_ipos.at[1].set(
+            sys.body_ipos[1] + inertia_offset,
+        )
+
+        # Link mass randomization:
+        rng, key = jax.random.split(rng)
+        delta = jax.random.uniform(
+            key, (sys.nbody,), minval=0.9, maxval=1.1,
+        )
+        body_mass = sys.body_mass.at[:].set(sys.body_mass * delta)
+
+        # Torso mass randomization:
+        rng, key = jax.random.split(rng)
+        delta = jax.random.uniform(
+            key, minval=-1.0, maxval=1.0,
+        )
+        body_mass = sys.body_mass.at[1].set(sys.body_mass[1] + delta)
+
+        return (
+            friction,
+            dof_frictionloss,
+            dof_armature,
+            body_ipos,
+            body_mass,
+        )
+
+    (
+        friction,
+        dof_frictionloss,
+        dof_armature,
+        body_ipos,
+        body_mass,
+    ) = randomize_parameters(rng)
 
     in_axes = jax.tree.map(lambda x: None, sys)
     in_axes = in_axes.tree_replace({
         'geom_friction': 0,
-        'actuator_gainprm': 0,
-        'actuator_biasprm': 0,
+        'dof_frictionloss': 0,
+        'dof_armature': 0,
+        'body_ipos': 0,
+        'body_mass': 0,
     })
 
     sys = sys.tree_replace({
         'geom_friction': friction,
-        'actuator_gainprm': gain,
-        'actuator_biasprm': bias,
+        'dof_frictionloss': dof_frictionloss,
+        'dof_armature': dof_armature,
+        'body_ipos': body_ipos,
+        'body_mass': body_mass,
     })  # type: ignore
 
     return sys, in_axes
@@ -107,8 +160,9 @@ class UnitreeGo2Env(PipelineEnv):
         self.step_dt = 0.02
         sys = sys.tree_replace({'opt.timestep': 0.004})
 
+        # kp = 35.0 kd = 0.5:
         sys = sys.replace(
-            dof_damping=sys.dof_damping.at[6:].set(0.5239),
+            dof_damping=sys.dof_damping.at[6:].set(0.5),
             actuator_gainprm=sys.actuator_gainprm.at[:, 0].set(35.0),
             actuator_biasprm=sys.actuator_biasprm.at[:, 1].set(-35.0),
         )
@@ -124,6 +178,8 @@ class UnitreeGo2Env(PipelineEnv):
         del config_dict['kernel_alpha']
         del config_dict['target_air_time']
         self.reward_config = config_dict
+
+        self.noise_config = NoiseConfig()
 
         self.base_idx = mujoco.mj_name2id(
             sys.mj_model, mujoco.mjtObj.mjOBJ_BODY.value, 'base_link'
@@ -208,9 +264,26 @@ class UnitreeGo2Env(PipelineEnv):
         return new_cmd
 
     def reset(self, rng: PRNGKey) -> State:  # pytype: disable=signature-mismatch
+        # Initial Position:
         rng, key = jax.random.split(rng)
+        delta = jax.random.uniform(
+            key, shape=(2,), minval=-0.5, maxval=0.5,
+        )
+        qpos = self.init_q.at[0:2].set(self.init_q[0:2] + delta)
 
-        pipeline_state = self.pipeline_init(self.init_q, self.init_qd)
+        rng, key = jax.random.split(rng)
+        yaw = jax.random.uniform(key, (1,), minval=-jnp.pi, maxval=jnp.pi)
+        rotation = mjx_math.axis_angle_to_quat(jnp.array([0, 0, 1]), yaw)
+        quaternion = mjx_math.quat_mul(self.init_q[3:7], rotation)
+        qpos = qpos.at[3:7].set(quaternion)
+
+        # Initial Velocity:
+        rng, key = jax.random.split(rng)
+        qvel = self.init_qd.at[0:6].set(
+            jax.random.uniform(key, (6,), minval=-0.5, maxval=0.5)
+        )
+
+        pipeline_state = self.pipeline_init(qpos, qvel)
 
         state_info = {
             'rng': rng,
@@ -390,26 +463,56 @@ class UnitreeGo2Env(PipelineEnv):
         )
 
         q = pipeline_state.q[7:]
+        # qd = pipeline_state.qd[6:]
+
+        # Gyroscope Noise:
+        state_info['rng'], noise_key = jax.random.split(state_info['rng'])
+        gyroscope_noise = jax.random.uniform(
+            noise_key,
+            shape=body_frame_yaw_rate.shape,
+            minval=-self.noise_config.gyroscope, 
+            maxval=self.noise_config.gyroscope,
+        )
+        noisy_angular_rate = body_frame_yaw_rate + gyroscope_noise
+
+        # Gravity noise:
+        state_info['rng'], noise_key = jax.random.split(state_info['rng'])
+        gravity_noise = jax.random.uniform(
+            noise_key,
+            shape=projected_gravity.shape,
+            minval=-self.noise_config.gravity_vector,
+            maxval=self.noise_config.gravity_vector,
+        )
+        noisy_projected_gravity = projected_gravity + gravity_noise
+
+        # Joint position noise:
+        state_info['rng'], noise_key = jax.random.split(state_info['rng'])
+        joint_position_noise = jax.random.uniform(
+            noise_key,
+            shape=q.shape,
+            minval=-self.noise_config.joint_position,
+            maxval=self.noise_config.joint_position,
+        )
+        noisy_joint_positions = q + joint_position_noise
+
+        # Joint velocity noise:
+        # state_info['rng'], noise_key = jax.random.split(state_info['rng'])
+        # joint_velocity_noise = jax.random.uniform(
+        #     noise_key,
+        #     shape=qd.shape,
+        #     minval=-self.noise_config.joint_velocity,
+        #     maxval=self.noise_config.joint_velocity,
+        # )
+        # noisy_joint_velocities = qd + joint_velocity_noise
 
         observation = jnp.concatenate([
-            jnp.array([body_frame_yaw_rate]),
-            projected_gravity,
-            state_info['command'],
-            q - self.default_pose,
+            jnp.array([noisy_angular_rate]),
+            noisy_projected_gravity,
+            noisy_joint_positions - self.default_pose,
             state_info['previous_action'],
+            state_info['command'],
         ])
 
-        # clip, noise
-        observation = (
-            jnp.clip(observation, -100.0, 100.0)
-            + self._obs_noise
-            * jax.random.uniform(
-                state_info['rng'],
-                observation.shape,
-                minval=-1,
-                maxval=1,
-            )
-        )
         # stack observations through time
         observation = jnp.roll(
             observation_history, observation.size

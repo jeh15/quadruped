@@ -28,8 +28,8 @@ class RestoredCheckpoint:
 
 @flax.struct.dataclass
 class network_metadata:
-    policy_layer_size: int
-    value_layer_size: int
+    policy_layer_size: list[int]
+    value_layer_size: list[int]
     policy_depth: int
     value_depth: int
     activation: Union[types.ActivationFn, str]
@@ -69,8 +69,8 @@ class training_metadata:
 
 def empty_network_metadata() -> network_metadata:
     return network_metadata(
-        policy_layer_size=0,
-        value_layer_size=0,
+        policy_layer_size=[],
+        value_layer_size=[],
         policy_depth=0,
         value_depth=0,
         activation='',
