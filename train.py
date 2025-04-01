@@ -28,7 +28,6 @@ os.environ['XLA_FLAGS'] = (
 )
 
 jax.config.update("jax_enable_x64", True)
-wandb.require('core')
 
 FLAGS = flags.FLAGS
 flags.DEFINE_string(
@@ -51,14 +50,15 @@ flags.DEFINE_bool(
 def main(argv=None):
     # Config:
     reward_config = unitree_go2.RewardConfig(
-        tracking_linear_velocity=1.5,
-        tracking_angular_velocity=0.8,
+        tracking_linear_velocity=1.0,
+        tracking_angular_velocity=0.5,
         # Regularization Terms:
         orientation_regularization=-5.0,
-        linear_z_velocity=-2.0,
+        linear_z_velocity=-0.5,
         angular_xy_velocity=-0.05,
         torque=-2e-4,
-        action_rate=-0.02,
+        action_rate=-0.01,
+        mechanical_power=-1e-3,
         stand_still=-1.0,
         termination=-1.0,
         foot_slip=-0.1,
@@ -124,8 +124,8 @@ def main(argv=None):
     randomization_fn = unitree_go2.domain_randomize
     make_networks_factory = functools.partial(
         ppo_networks.make_ppo_networks,
-        policy_layer_sizes=[512, 256, 128,],
-        value_layer_sizes=[512, 256, 256, 128,],
+        policy_layer_sizes=network_metadata.policy_layer_size,
+        value_layer_sizes=network_metadata.value_layer_size,
         activation=nn.swish,
         kernel_init=jax.nn.initializers.lecun_uniform(),
         action_distribution=ParametricDistribution(
@@ -260,7 +260,7 @@ def main(argv=None):
         num_ppo_iterations=training_metadata.num_ppo_iterations,
         normalize_observations=training_metadata.normalize_observations,
         network_factory=make_networks_factory,
-        optimizer=optimizer ,
+        optimizer=optimizer,
         loss_function=loss_fn,
         progress_fn=progress_fn,
         randomization_fn=randomization_fn,

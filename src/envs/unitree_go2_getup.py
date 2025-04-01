@@ -116,9 +116,8 @@ class UnitreeGo2Env(PipelineEnv):
         self,
         filename: str = 'unitree_go2/scene_mjx.xml',
         config: RewardConfig = RewardConfig(),
-        obs_noise: float = 0.05,
+        random_position_prob: float = 0.5,
         action_scale: float = 0.3,
-        kick_vel: float = 0.05,
         **kwargs,
     ):
         filename = f'models/{filename}'
@@ -135,7 +134,7 @@ class UnitreeGo2Env(PipelineEnv):
         sys = sys.tree_replace({'opt.timestep': 0.004})
 
         sys = sys.replace(
-            dof_damping=sys.dof_damping.at[6:].set(0.5239),
+            dof_damping=sys.dof_damping.at[6:].set(0.5),
             actuator_gainprm=sys.actuator_gainprm.at[:, 0].set(35.0),
             actuator_biasprm=sys.actuator_biasprm.at[:, 1].set(-35.0),
         )
@@ -157,9 +156,8 @@ class UnitreeGo2Env(PipelineEnv):
         self.base_idx = mujoco.mj_name2id(
             sys.mj_model, mujoco.mjtObj.mjOBJ_BODY.value, 'base_link'
         )
+        self.random_position_prob = random_position_prob
         self._action_scale = action_scale
-        self._obs_noise = obs_noise
-        self._kick_vel = kick_vel
         self.init_q = jnp.array(sys.mj_model.keyframe('home').qpos)
         self.init_qd = jnp.zeros(sys.nv)
         self.default_pose = jnp.array(sys.mj_model.keyframe('home').qpos[7:])
@@ -201,55 +199,65 @@ class UnitreeGo2Env(PipelineEnv):
             for c in calf_body
         ]
         assert not any(id_ == -1 for id_ in calf_body_idx), 'Body not found.'
+        imu_site_idx = mujoco.mj_name2id(sys.mj_model, mujoco.mjtObj.mjOBJ_SITE.value, 'imu')
+        assert not any(id_ == -1 for id_ in imu_site_idx), 'IMU site not found.'
         self.calf_body_idx = np.array(calf_body_idx)
         self.foot_radius = 0.022
         self.history_length = 15
         self.num_observations = 31
+        self.energy_budget = 1000.0
 
+    def get_random_position(self, rng: PRNGKey) -> jax.Array:
+        rng, rotation_key, translation_key = jax.random.split(rng, 3)
 
-    def sample_command(self, rng: jax.Array) -> jax.Array:
-        forward_velocity_range = [-0.6, 1.5]
-        lateral_velocity_range = [-0.8, 0.8]
-        yaw_rate_range = [-0.7, 0.7]
+        qpos = jnp.zeros(self.sys.nq)
 
-        _, forward_velocity_key, lateral_velocity_key, yaw_rate_key = jax.random.split(rng, 4)
-        forward_velocity = jax.random.uniform(
-            forward_velocity_key,
-            (1,),
-            minval=forward_velocity_range[0],
-            maxval=forward_velocity_range[1],
+        # Random Body Position and Orientation:
+        height = 0.5
+        qpos = qpos.at[2].set(height)
+        rotation = jax.random.normal(
+            rotation_key, shape=(4,),
         )
-        lateral_velocity = jax.random.uniform(
-            lateral_velocity_key,
-            (1,),
-            minval=lateral_velocity_range[0],
-            maxval=lateral_velocity_range[1],
-        )
-        yaw_rate = jax.random.uniform(
-            yaw_rate_key,
-            (1,),
-            minval=yaw_rate_range[0],
-            maxval=yaw_rate_range[1],
-        )
-        new_cmd = jnp.array([
-            forward_velocity[0], lateral_velocity[0], yaw_rate[0],
-        ])
-        return new_cmd
+        rotation /= jnp.linalg.norm(rotation) + 1e-6
+        qpos = qpos.at[3:7].set(rotation)
 
-    def reset(self, rng: PRNGKey) -> State:  # pytype: disable=signature-mismatch
+        # Random Joint Angles:
+        joint_angles = jax.random.uniform(
+            translation_key,
+            shape=(12,),
+            minval=self.joint_lb,
+            maxval=self.joint_ub,
+        )
+        qpos = qpos.at[7:].set(joint_angles)
+
+        return qpos
+
+    def reset(self, rng: PRNGKey) -> State:
+        rng, sample_key, position_key = jax.random.split(rng, 3)
+
+        # Random position:
+        qpos = jnp.where(
+            jax.random.bernoulli(sample_key, self.random_position_prob),
+            self.get_random_position(position_key),
+            self.init_q,
+        )
+
+        # Random velocity:
         rng, key = jax.random.split(rng)
+        qvel = jnp.zeros(self.sys.nv)
+        random_body_velocity = jax.random.uniform(
+            key, shape=(6,), minval=-0.5, maxval=0.5,
+        )
+        qvel = qvel.at[:6].set(random_body_velocity)
 
-        pipeline_state = self.pipeline_init(self.init_q, self.init_qd)
+        pipeline_state = self.pipeline_init(q=qpos, qd=qvel, act=qpos[7:])
 
         state_info = {
             'rng': rng,
             'previous_action': jnp.zeros(12),
             'previous_velocity': jnp.zeros(12),
-            'command': self.sample_command(key),
             'previous_contact': jnp.zeros(4, dtype=bool),
-            'feet_air_time': jnp.zeros(4),
             'rewards': {k: 0.0 for k in self.reward_config.keys()},
-            'kick': jnp.array([0.0, 0.0]),
             'step': 0,
         }
 
@@ -280,18 +288,9 @@ class UnitreeGo2Env(PipelineEnv):
 
     def step(self, state: State, action: jax.Array) -> State:  # pytype: disable=signature-mismatch
         rng, cmd_rng, kick_noise_key = jax.random.split(state.info['rng'], 3)
-
-        # Distrubance:
-        push_interval = 10
-        kick_theta = jax.random.uniform(kick_noise_key, maxval=2 * jnp.pi)
-        kick = jnp.array([jnp.cos(kick_theta), jnp.sin(kick_theta)])
-        kick *= jnp.mod(state.info['step'], push_interval) == 0
-        qvel = state.pipeline_state.qvel  # pytype: disable=attribute-error
-        qvel = qvel.at[:2].set(kick * self._kick_vel + qvel[:2])
-        state = state.tree_replace({'pipeline_state.qvel': qvel})
-
         # Physics step:
-        motor_targets = self.default_ctrl + action * self._action_scale
+        # motor_targets = self.default_ctrl + action * self._action_scale
+        motor_targets = state.pipeline_state.q[7:] + action * self._action_scale
         motor_targets = jnp.clip(motor_targets, self.ctrl_lb, self.ctrl_ub)
         pipeline_state = self.pipeline_step(
             state.pipeline_state, motor_targets,
@@ -306,31 +305,20 @@ class UnitreeGo2Env(PipelineEnv):
         )
         joint_angles = pipeline_state.q[7:]
         joint_velocities = pipeline_state.qd[6:]
+        joint_torques = pipeline_state.actuator_force
 
-        # foot contact data based on z-position
-        # pytype: disable=attribute-error
-        foot_pos = pipeline_state.site_xpos[self.feet_site_idx]
-        foot_contact_z = foot_pos[:, 2] - self.foot_radius
-        contact = foot_contact_z < 1e-3  # a mm or less off the floor
-        contact_filt_mm = contact | state.info['previous_contact']
-        contact_filt_cm = (foot_contact_z < 3e-2) | state.info['previous_contact']
-        first_contact = (state.info['feet_air_time'] > 0) * contact_filt_mm
-        state.info['feet_air_time'] += self.dt
+        # Done if robot exceeds energy budget
+        energy = jnp.sum(
+            jnp.abs(pipeline_state.actuator_force) * joint_velocities
+        )
+        done = energy > self.energy_budget
 
-        # done if joint limits are reached or robot is falling
-        up = jnp.array([0.0, 0.0, 1.0])
-        done = jnp.dot(math.rotate(up, x.rot[self.base_idx - 1]), up) < 0
-        done |= jnp.any(joint_angles < self.joint_lb)
-        done |= jnp.any(joint_angles > self.joint_ub)
-        done |= pipeline_state.x.pos[self.base_idx - 1, 2] < 0.15
+        # Rewards:
+        body_height = pipeline_state.site_xpos[self.imu_site_idx][2]
 
-        # reward
         rewards = {
-            'tracking_linear_velocity': (
-                self._reward_tracking_velocity(state.info['command'], x, xd)
-            ),
-            'tracking_angular_velocity': (
-                self._reward_tracking_yaw_rate(state.info['command'], x, xd)
+            'orientation': (
+                self._reward_orientation()
             ),
             'linear_z_velocity': self._reward_vertical_velocity(xd),
             'angular_xy_velocity': self._reward_angular_velocity(xd),
@@ -360,25 +348,11 @@ class UnitreeGo2Env(PipelineEnv):
         reward = jnp.clip(sum(rewards.values()) * self.dt, 0.0, 10000.0)
 
         # state management
-        state.info['kick'] = kick
         state.info['previous_action'] = action
         state.info['previous_velocity'] = joint_velocities
-        state.info['feet_air_time'] *= ~contact_filt_mm
-        state.info['previous_contact'] = contact
         state.info['rewards'] = rewards
         state.info['step'] += 1
         state.info['rng'] = rng
-
-        # sample new command if more than 500 timesteps achieved
-        state.info['command'] = jnp.where(
-            state.info['step'] > 500,
-            self.sample_command(cmd_rng),
-            state.info['command'],
-        )
-        # reset the step counter when done
-        state.info['step'] = jnp.where(
-            done | (state.info['step'] > 500), 0, state.info['step']
-        )
 
         # Proxy Metrics:
         state.metrics['total_distance'] = math.normalize(

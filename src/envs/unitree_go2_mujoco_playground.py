@@ -27,14 +27,15 @@ PRNGKey = jax.Array
 @flax.struct.dataclass
 class RewardConfig:
     # Rewards:
-    tracking_linear_velocity: float = 1.5
-    tracking_angular_velocity: float = 0.8
+    tracking_linear_velocity: float = 1.0
+    tracking_angular_velocity: float = 0.5
     # Penalties / Regularization Terms:
     orientation_regularization: float = -5.0
-    linear_z_velocity: float = -2.0
+    linear_z_velocity: float = -0.5
     angular_xy_velocity: float = -0.05
     torque: float = -2e-4
-    action_rate: float = -0.02
+    action_rate: float = -0.01
+    mechanical_power: float = -1e-3
     stand_still: float = -1.0
     termination: float = -1.0
     foot_slip: float = -0.1
@@ -49,7 +50,6 @@ class RewardConfig:
 @flax.struct.dataclass
 class NoiseConfig:
     joint_position: float = 0.03
-    joint_velocity: float = 1.5
     gyroscope: float = 0.2
     gravity_vector: float = 0.05
 
@@ -142,7 +142,6 @@ class UnitreeGo2Env(PipelineEnv):
         self,
         filename: str = 'unitree_go2/scene_mjx.xml',
         config: RewardConfig = RewardConfig(),
-        obs_noise: float = 0.05,
         action_scale: float = 0.3,
         kick_vel: float = 0.05,
         **kwargs,
@@ -185,7 +184,6 @@ class UnitreeGo2Env(PipelineEnv):
             sys.mj_model, mujoco.mjtObj.mjOBJ_BODY.value, 'base_link'
         )
         self._action_scale = action_scale
-        self._obs_noise = obs_noise
         self._kick_vel = kick_vel
         self.init_q = jnp.array(sys.mj_model.keyframe('home').qpos)
         self.init_qd = jnp.zeros(sys.nv)
@@ -231,8 +229,7 @@ class UnitreeGo2Env(PipelineEnv):
         self.calf_body_idx = np.array(calf_body_idx)
         self.foot_radius = 0.022
         self.history_length = 15
-        self.num_observations = 31
-
+        self.num_observations = 43
 
     def sample_command(self, rng: jax.Array) -> jax.Array:
         forward_velocity_range = [-0.6, 1.5]
@@ -379,8 +376,11 @@ class UnitreeGo2Env(PipelineEnv):
             'linear_z_velocity': self._reward_vertical_velocity(xd),
             'angular_xy_velocity': self._reward_angular_velocity(xd),
             'orientation_regularization': self._reward_orientation_regularization(x),
-            'torque': self._reward_torques(pipeline_state.qfrc_actuator[6:]),
+            'torque': self._reward_torques(pipeline_state.actuator_force),
             'action_rate': self._reward_action_rate(action, state.info['previous_action']),
+            'mechanical_power': self._reward_mechanical_power(
+                joint_velocities, pipeline_state.actuator_force,
+            ),
             'stand_still': self._reward_stand_still(
                 state.info['command'], joint_angles,
             ),
@@ -449,9 +449,9 @@ class UnitreeGo2Env(PipelineEnv):
             Observation: [
                 yaw_rate,
                 projected_gravity,
-                command,
                 relative_motor_positions,
                 previous_action,
+                command,
             ]
         """
         inverse_trunk_rotation = math.quat_inv(pipeline_state.x.rot[0])
@@ -463,14 +463,13 @@ class UnitreeGo2Env(PipelineEnv):
         )
 
         q = pipeline_state.q[7:]
-        # qd = pipeline_state.qd[6:]
 
         # Gyroscope Noise:
         state_info['rng'], noise_key = jax.random.split(state_info['rng'])
         gyroscope_noise = jax.random.uniform(
             noise_key,
             shape=body_frame_yaw_rate.shape,
-            minval=-self.noise_config.gyroscope, 
+            minval=-self.noise_config.gyroscope,
             maxval=self.noise_config.gyroscope,
         )
         noisy_angular_rate = body_frame_yaw_rate + gyroscope_noise
@@ -494,16 +493,6 @@ class UnitreeGo2Env(PipelineEnv):
             maxval=self.noise_config.joint_position,
         )
         noisy_joint_positions = q + joint_position_noise
-
-        # Joint velocity noise:
-        # state_info['rng'], noise_key = jax.random.split(state_info['rng'])
-        # joint_velocity_noise = jax.random.uniform(
-        #     noise_key,
-        #     shape=qd.shape,
-        #     minval=-self.noise_config.joint_velocity,
-        #     maxval=self.noise_config.joint_velocity,
-        # )
-        # noisy_joint_velocities = qd + joint_velocity_noise
 
         observation = jnp.concatenate([
             jnp.array([noisy_angular_rate]),
@@ -543,6 +532,13 @@ class UnitreeGo2Env(PipelineEnv):
     ) -> jax.Array:
         # Penalize changes in actions
         return jnp.sum(jnp.square(action - previous_action))
+
+    def _reward_mechanical_power(
+        self, qd: jax.Array, torques: jax.Array
+    ) -> jax.Array:
+        # Penalize mechanical power
+        # return torques @ qd
+        return jnp.sum(jnp.abs(torques) * jnp.abs(qd))
 
     def _reward_tracking_velocity(
         self, commands: jax.Array, x: Transform, xd: Motion
