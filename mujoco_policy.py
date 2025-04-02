@@ -68,7 +68,7 @@ def main(argv=None):
         environment=env,
         restore_iteration=FLAGS.checkpoint_iteration,
     )
-    inference_function = make_policy(params)
+    inference_function = make_policy(params, deterministic=True)
     inference_fn = jax.jit(inference_function)
 
     # Controller:

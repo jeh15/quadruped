@@ -53,7 +53,7 @@ def main(argv=None):
         linear_z_velocity=-2.0,
         angular_xy_velocity=-0.05,
         torque=-2e-4,
-        action_rate=-0.1,
+        action_rate=-0.01,
         mechanical_power=0.0,
         stand_still=-1.0,
         termination=-1.0,
@@ -76,7 +76,7 @@ def main(argv=None):
         value_depth=len(value_layer_size),
         activation='nn.swish',
         policy_kernel_init='jax.nn.initializers.lecun_uniform()',
-        value_kernel_init='jax.nn.initializers.lecun_uniform()',
+        value_kernel_init='jax.nn.initializers.variance_scaling(scale=0.01, mode="fan_in", distribution="uniform")',
         action_distribution='ParametricDistribution(distribution=distrax.Normal, bijector=distrax.Tanh())',
     )
     loss_metadata = checkpoint_utilities.loss_metadata(
@@ -103,7 +103,7 @@ def main(argv=None):
         num_minibatches=32,
         num_ppo_iterations=4,
         normalize_observations=True,
-        optimizer='optax.chain(optax.adam(3e-4),)',
+        optimizer='optax.chain(optax.clip_by_global_norm(1.0), optax.adam(3e-4),)',
     )
 
     # Start Wandb and save metadata:
@@ -127,7 +127,7 @@ def main(argv=None):
         value_layer_sizes=network_metadata.value_layer_size,
         activation=nn.swish,
         policy_kernel_init=jax.nn.initializers.lecun_uniform(),
-        value_kernel_init=jax.nn.initializers.lecun_uniform(),
+        value_kernel_init=jax.nn.initializers.variance_scaling(scale=0.01, mode="fan_in", distribution="uniform"),
         action_distribution=ParametricDistribution(
             distribution=distrax.Normal,
             bijector=distrax.Tanh(),
@@ -195,6 +195,7 @@ def main(argv=None):
     )
 
     optimizer = optax.chain(
+        optax.clip_by_global_norm(1.0),
         optax.adam(learning_rate=3e-4),
     )
 

@@ -100,7 +100,7 @@ def main(argv=None):
         checkpoint_name=FLAGS.checkpoint_name,
         environment=env,
     )
-    inference_function = make_policy(params)
+    inference_function = make_policy(params, deterministic=True)
     inference_fn = jax.jit(inference_function)
 
     # Controller:
@@ -204,11 +204,6 @@ def main(argv=None):
             action = jax.device_put(action, jax.devices('cpu')[0])
             action = np.asarray(action)
             ctrl = controller_fn(action)
-
-            # Smooth Control:
-            # alpha = 0.9
-            # ctrl = alpha * ctrl + (1 - alpha) * previous_ctrl
-            # previous_ctrl = ctrl
 
             # To Control the Robot:
             motor_commands.q_setpoint = ctrl.tolist()
