@@ -166,11 +166,14 @@ class UnitreeGo2Env(PipelineEnv):
         self.step_dt = 0.02
         sys = sys.tree_replace({'opt.timestep': 0.004})
 
-        # kp = 35.0 kd = 0.5:
+        # kp = 35.0 kd = 0.5: Common in the literature
+        # kp = 20.0 kd = 0.5: Official Go2 Params
+        kp = 20.0
+        kd = 0.5
         sys = sys.replace(
-            dof_damping=sys.dof_damping.at[6:].set(0.5),
-            actuator_gainprm=sys.actuator_gainprm.at[:, 0].set(35.0),
-            actuator_biasprm=sys.actuator_biasprm.at[:, 1].set(-35.0),
+            dof_damping=sys.dof_damping.at[6:].set(kd),
+            actuator_gainprm=sys.actuator_gainprm.at[:, 0].set(kp),
+            actuator_biasprm=sys.actuator_biasprm.at[:, 1].set(-kp),
         )
 
         n_frames = kwargs.pop('n_frames', int(self.step_dt / sys.opt.timestep))
