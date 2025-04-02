@@ -33,7 +33,8 @@ class network_metadata:
     policy_depth: int
     value_depth: int
     activation: Union[types.ActivationFn, str]
-    kernel_init: Union[types.Initializer, str]
+    policy_kernel_init: Union[types.Initializer, str]
+    value_kernel_init: Union[types.Initializer, str]
     action_distribution: Union[distribution.ParametricDistribution, str]
 
 
@@ -74,7 +75,8 @@ def empty_network_metadata() -> network_metadata:
         policy_depth=0,
         value_depth=0,
         activation='',
-        kernel_init='',
+        policy_kernel_init='',
+        value_kernel_init='',
         action_distribution='',
     )
 

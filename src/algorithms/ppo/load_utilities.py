@@ -62,7 +62,8 @@ def load_policy(checkpoint_name: str, environment: Env, restore_iteration: Optio
         policy_depth=network_metadata.policy_depth,
         value_depth=network_metadata.value_depth,
         activation=network_metadata.activation,
-        kernel_init=network_metadata.kernel_init,
+        policy_kernel_init=network_metadata.policy_kernel_init,
+        value_kernel_init=network_metadata.value_kernel_init,
         action_distribution=network_metadata.action_distribution,
     )
 
@@ -94,7 +95,8 @@ def load_policy(checkpoint_name: str, environment: Env, restore_iteration: Optio
         policy_layer_sizes=network_metadata.policy_layer_size,
         value_layer_sizes=network_metadata.value_layer_size,
         activation=eval(network_metadata.activation),
-        kernel_init=eval(network_metadata.kernel_init),
+        policy_kernel_init=eval(network_metadata.policy_kernel_init),
+        value_kernel_init=eval(network_metadata.value_kernel_init)
     )
     optimizer = eval(training_metadata.optimizer)
 

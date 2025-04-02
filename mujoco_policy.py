@@ -23,6 +23,9 @@ FLAGS = flags.FLAGS
 flags.DEFINE_string(
     'checkpoint_name', None, 'Desired checkpoint folder name to load.', short_name='c',
 )
+flags.DEFINE_integer(
+    'checkpoint_iteration', None, 'Desired checkpoint iteration.', short_name='i',
+)
 
 def controller(
     action: npt.ArrayLike,
@@ -63,6 +66,7 @@ def main(argv=None):
     make_policy, params = load_policy(
         checkpoint_name=FLAGS.checkpoint_name,
         environment=env,
+        restore_iteration=FLAGS.checkpoint_iteration,
     )
     inference_function = make_policy(params)
     inference_fn = jax.jit(inference_function)
@@ -143,12 +147,21 @@ def main(argv=None):
             action, _ = inference_fn(observation, action_rng)
             ctrl = controller_fn(action)
 
-            print(f'qvel: {data.qvel[6:]}')
+            # Compare gyro and original way:
+            gyro = env.get_gyro(data)
+            base_w = data.qpos[3:7]
+            base_dw = data.qvel[3:6]
+            inverse_trunk_rotation = quat_inv(base_w)
+            body_frame_angular_vel = rotate(
+                base_dw, inverse_trunk_rotation,
+            )
+            print(f"Gyro: {gyro}")
+            print(f"Body Frame Angular Vel: {body_frame_angular_vel}")
 
             # Smooth Control:
-            alpha = 1.0
-            ctrl = alpha * ctrl + (1 - alpha) * previous_ctrl
-            previous_ctrl = ctrl
+            # alpha = 1.0
+            # ctrl = alpha * ctrl + (1 - alpha) * previous_ctrl
+            # previous_ctrl = ctrl
 
             data.ctrl = ctrl
 

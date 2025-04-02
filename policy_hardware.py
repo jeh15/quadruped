@@ -16,7 +16,7 @@ import mujoco.viewer
 
 import matplotlib.pyplot as plt
 
-from src.envs import unitree_go2
+from src.envs import unitree_go2_mujoco_playground as unitree_go2
 from src.algorithms.ppo.load_utilities import load_policy
 
 jax.config.update("jax_enable_x64", True)
@@ -66,21 +66,17 @@ def get_observation(
 
     # Calculate Body frame Yaw Rate and Projected Gravity:
     inverse_base_rotation = quat_inv(base_rotation)
-    yaw_rate = rotate(
-        base_angular_velocity,
-        inverse_base_rotation,
-    )[2]
     projected_gravity = rotate(
         np.array([0.0, 0.0, -1.0]),
         inverse_base_rotation,
     )
 
     new_observation = np.concatenate([
-        np.asarray([yaw_rate]),
+        base_angular_velocity,
         projected_gravity,
-        command,
         joint_positions - default_position,
         previous_action,
+        command,
     ])
 
     # Stack Observation:
@@ -88,7 +84,6 @@ def get_observation(
     observation[:new_observation.size] = new_observation
 
     return observation
-
 
 
 def main(argv=None):
@@ -149,6 +144,16 @@ def main(argv=None):
         unitree_driver.update_command(motor_commands)
         time.sleep(ramp_time / num_steps)
 
+    # Show State:
+    imu_state = unitree_driver.get_imu_state()
+    motor_state = unitree_driver.get_motor_state()
+    base_rotation = np.asarray(imu_state.quaternion)
+    print(f"Base Rotation: {base_rotation}")
+
+    # Wait for Keyboard Input:
+    print('Press any key to start the simulation...')
+    input()
+
     # Initialize Observation History:
     observation = np.zeros(env.history_length * env.num_observations)
     action = np.asarray(env.default_ctrl)
@@ -183,9 +188,6 @@ def main(argv=None):
         viewer.cam.distance = 5
 
         while viewer.is_running() and not termination_flag:
-            if global_steps >= 1000:
-                termination_flag = True
-
             step_time = time.time()
             action_rng, key = jax.random.split(key)
             imu_state = unitree_driver.get_imu_state()
@@ -204,9 +206,9 @@ def main(argv=None):
             ctrl = controller_fn(action)
 
             # Smooth Control:
-            alpha = 0.9
-            ctrl = alpha * ctrl + (1 - alpha) * previous_ctrl
-            previous_ctrl = ctrl
+            # alpha = 0.9
+            # ctrl = alpha * ctrl + (1 - alpha) * previous_ctrl
+            # previous_ctrl = ctrl
 
             # To Control the Robot:
             motor_commands.q_setpoint = ctrl.tolist()

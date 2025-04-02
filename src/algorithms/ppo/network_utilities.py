@@ -66,7 +66,8 @@ def make_ppo_networks(
     policy_layer_sizes: Sequence[int] = (256, 256),
     value_layer_sizes: Sequence[int] = (256, 256),
     activation: networks.ActivationFn = nn.swish,
-    kernel_init: types.Initializer = jax.nn.initializers.lecun_uniform(),
+    policy_kernel_init: types.Initializer = jax.nn.initializers.lecun_uniform(),
+    value_kernel_init: types.Initializer = jax.nn.initializers.lecun_uniform(),
     action_distribution: distribution_utilities.ParametricDistribution = distribution_utilities
     .ParametricDistribution(distribution=distrax.Normal, bijector=distrax.Tanh())
 ) -> PPONetworks:
@@ -77,7 +78,7 @@ def make_ppo_networks(
         input_normalization_fn=input_normalization_fn,
         layer_sizes=policy_layer_sizes,
         activation=activation,
-        kernel_init=kernel_init,
+        kernel_init=policy_kernel_init,
     )
 
     value_network = networks.make_value_network(
@@ -85,7 +86,7 @@ def make_ppo_networks(
         input_normalization_fn=input_normalization_fn,
         layer_sizes=value_layer_sizes,
         activation=activation,
-        kernel_init=kernel_init,
+        kernel_init=value_kernel_init,
     )
 
     return PPONetworks(

@@ -55,11 +55,12 @@ def main(argv=None):
         tracking_angular_velocity=0.8,
         # Regularization Terms:
         orientation_regularization=-5.0,
-        linear_z_velocity=-2.0,
+        linear_z_velocity=-0.5,
         angular_xy_velocity=-0.05,
-        torque=-2e-4,
-        action_rate=-0.01,
-        stand_still=-0.5,
+        torque=-4e-4,
+        action_rate=-0.05,
+        mechanical_power=-1e-3,
+        stand_still=-2.0,
         termination=-1.0,
         foot_slip=-0.1,
         # Gait Terms:
@@ -90,29 +91,29 @@ def main(argv=None):
         normalize_advantages=True,
     )
     training_metadata = checkpoint_utilities.training_metadata(
-        num_epochs=20,
+        num_epochs=30,
         num_training_steps=20,
         episode_length=1000,
         num_policy_steps=25,
         action_repeat=1,
-        num_envs=4096,
+        num_envs=8192,
         num_evaluation_envs=128,
         num_evaluations=1,
         deterministic_evaluation=True,
         reset_per_epoch=False,
-        seed=0,
+        seed=42,
         batch_size=256,
         num_minibatches=32,
         num_ppo_iterations=4,
         normalize_observations=True,
-        optimizer='optax.adam(3e-4)',
+        optimizer='optax.chain(optax.clip_by_global_norm(1.0), optax.adam(3e-4),)',
     )
 
     # Start Wandb and save metadata:
     run = wandb.init(
         project='unitree_go2',
         group='ppo',
-        tags=['test'],
+        tags=[FLAGS.tag],
         config={
             'reward_config': reward_config,
             'network_metadata': network_metadata,
@@ -144,9 +145,9 @@ def main(argv=None):
         gae_lambda=loss_metadata.gae_lambda,
         normalize_advantages=loss_metadata.normalize_advantages,
     )
-    env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_barkour_hfield_mjx.xml', config=reward_config)
-    eval_env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_barkour_hfield_mjx.xml', config=reward_config)
-    render_env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_barkour_hfield_mjx.xml', config=reward_config)
+    env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx.xml', config=reward_config, kick_vel=0.01)
+    eval_env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx.xml', config=reward_config, kick_vel=0.0)
+    render_env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx.xml', config=reward_config, kick_vel=0.0)
 
     restored_checkpoint = None
     if FLAGS.checkpoint_name is not None:
@@ -196,6 +197,11 @@ def main(argv=None):
         training_metadata=training_metadata,
     )
 
+    optimizer = optax.chain(
+        optax.clip_by_global_norm(1.0),
+        optax.adam(learning_rate=3e-4),
+    )
+
     train_fn = functools.partial(
         train,
         num_epochs=training_metadata.num_epochs,
@@ -214,7 +220,7 @@ def main(argv=None):
         num_ppo_iterations=training_metadata.num_ppo_iterations,
         normalize_observations=training_metadata.normalize_observations,
         network_factory=make_networks_factory,
-        optimizer=optax.adam(3e-4),
+        optimizer=optimizer ,
         loss_function=loss_fn,
         progress_fn=progress_fn,
         randomization_fn=randomization_fn,

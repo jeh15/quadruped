@@ -1,4 +1,4 @@
-from absl import app, flags
+from absl import app, flags, logging
 import os
 import functools
 
@@ -29,6 +29,8 @@ os.environ['XLA_FLAGS'] = (
 
 jax.config.update("jax_enable_x64", True)
 
+logging.set_verbosity(logging.ERROR)
+
 FLAGS = flags.FLAGS
 flags.DEFINE_string(
     'checkpoint_name', None, 'Desired checkpoint folder name to load.', short_name='c',
@@ -50,11 +52,11 @@ flags.DEFINE_bool(
 def main(argv=None):
     # Config:
     reward_config = unitree_go2.RewardConfig(
-        tracking_linear_velocity=1.0,
-        tracking_angular_velocity=0.5,
+        tracking_linear_velocity=1.5,
+        tracking_angular_velocity=0.8,
         # Regularization Terms:
         orientation_regularization=-5.0,
-        linear_z_velocity=-0.5,
+        linear_z_velocity=-2.0,
         angular_xy_velocity=-0.05,
         torque=-2e-4,
         action_rate=-0.01,
@@ -71,13 +73,16 @@ def main(argv=None):
     )
 
     # Metadata:
+    policy_layer_size = [512, 256, 256, 128,]
+    value_layer_size = [512, 256, 256, 256, 128,]
     network_metadata = checkpoint_utilities.network_metadata(
-        policy_layer_size=[512, 256, 128,],
-        value_layer_size=[512, 256, 256, 128,],
-        policy_depth=3,
-        value_depth=4,
+        policy_layer_size=policy_layer_size,
+        value_layer_size=value_layer_size,
+        policy_depth=len(policy_layer_size),
+        value_depth=len(value_layer_size),
         activation='nn.swish',
-        kernel_init='jax.nn.initializers.lecun_uniform()',
+        policy_kernel_init='jax.nn.initializers.lecun_uniform()',
+        value_kernel_init='jax.nn.initializers.lecun_uniform()',
         action_distribution='ParametricDistribution(distribution=distrax.Normal, bijector=distrax.Tanh())',
     )
     loss_metadata = checkpoint_utilities.loss_metadata(
@@ -92,7 +97,7 @@ def main(argv=None):
         num_epochs=60,
         num_training_steps=20,
         episode_length=1000,
-        num_policy_steps=25,
+        num_policy_steps=40,
         action_repeat=1,
         num_envs=8192,
         num_evaluation_envs=128,
@@ -127,7 +132,8 @@ def main(argv=None):
         policy_layer_sizes=network_metadata.policy_layer_size,
         value_layer_sizes=network_metadata.value_layer_size,
         activation=nn.swish,
-        kernel_init=jax.nn.initializers.lecun_uniform(),
+        policy_kernel_init=jax.nn.initializers.lecun_uniform(),
+        value_kernel_init=jax.nn.initializers.lecun_uniform(),
         action_distribution=ParametricDistribution(
             distribution=distrax.Normal,
             bijector=distrax.Tanh(),
