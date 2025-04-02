@@ -38,14 +38,8 @@ flags.DEFINE_string(
 flags.DEFINE_integer(
     'checkpoint_iteration', None, 'Desired checkpoint iteration.', short_name='i',
 )
-flags.DEFINE_bool(
-    'overwrite_metadata', False, 'Overwrite metadata from restored checkpoint.', short_name='o',
-)
 flags.DEFINE_string(
     'tag', '', 'Tag for wandb run.', short_name='t',
-)
-flags.DEFINE_bool(
-    'reinitialize_policy_std', False, 'Reinitialize Policy Output Layer parameters that correlate to Action STD.', short_name='r',
 )
 
 
@@ -59,8 +53,8 @@ def main(argv=None):
         linear_z_velocity=-2.0,
         angular_xy_velocity=-0.05,
         torque=-2e-4,
-        action_rate=-0.01,
-        mechanical_power=-1e-3,
+        action_rate=-0.1,
+        mechanical_power=0.0,
         stand_still=-1.0,
         termination=-1.0,
         foot_slip=-0.1,
@@ -89,7 +83,7 @@ def main(argv=None):
         clip_coef=0.3,
         value_coef=0.5,
         entropy_coef=0.01,
-        gamma=0.97,
+        gamma=0.99,
         gae_lambda=0.95,
         normalize_advantages=True,
     )
@@ -109,7 +103,7 @@ def main(argv=None):
         num_minibatches=32,
         num_ppo_iterations=4,
         normalize_observations=True,
-        optimizer='optax.chain(optax.clip_by_global_norm(1.0), optax.adam(3e-4),)',
+        optimizer='optax.chain(optax.adam(3e-4),)',
     )
 
     # Start Wandb and save metadata:
@@ -160,49 +154,6 @@ def main(argv=None):
             restore_iteration=FLAGS.checkpoint_iteration,
         )
 
-        if FLAGS.reinitialize_policy_std:
-            # Reset Policy std params to enable exploration:
-            key = jax.random.PRNGKey(42)
-            key, bias_key, kernel_key = jax.random.split(key, num=3)
-            policy_params = restored_checkpoint.train_state.params.policy_params
-            output_params = policy_params['params'][f'dense_{metadata.network_metadata.policy_depth}']
-            params = jax.tree.map(lambda x: jnp.split(x, 2, axis=-1), output_params)
-            bias_shape = jnp.expand_dims(params['bias'][-1], axis=0).shape
-            kernel_shape = params['kernel'][-1].shape
-            bias = jnp.concatenate(
-                [
-                    params['bias'][0],
-                    jax.nn.initializers.lecun_uniform()(
-                        key=bias_key, shape=bias_shape,
-                    ).flatten(),
-                ],
-                axis=-1,
-                dtype=jnp.float32,
-            )
-            kernel = jnp.concatenate(
-                [
-                    params['kernel'][0],
-                    jax.nn.initializers.lecun_uniform()(
-                        key=kernel_key, shape=kernel_shape,
-                    ),
-                ],
-                axis=-1,
-                dtype=jnp.float32,
-            )
-            output_layer = {
-                'bias': bias,
-                'kernel': kernel,
-            }
-            policy_params['params'].update({f'dense_{metadata.network_metadata.policy_depth}': output_layer})
-            restored_checkpoint.train_state.params.replace(policy_params=policy_params)
-
-        if FLAGS.overwrite_metadata:
-            run.config.update({
-                'network_metadata': metadata.network_metadata,
-                'loss_metadata': metadata.loss_metadata,
-                'training_metadata': metadata.training_metadata,
-            })
-
     def progress_fn(iteration, num_steps, metrics):
         print(
             f'Iteration: {iteration} \t'
@@ -244,7 +195,6 @@ def main(argv=None):
     )
 
     optimizer = optax.chain(
-        optax.clip_by_global_norm(1.0),
         optax.adam(learning_rate=3e-4),
     )
 

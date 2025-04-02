@@ -168,7 +168,7 @@ class UnitreeGo2Env(PipelineEnv):
 
         # kp = 35.0 kd = 0.5: Common in the literature
         # kp = 20.0 kd = 0.5: Official Go2 Params
-        kp = 20.0
+        kp = 35.0
         kd = 0.5
         sys = sys.replace(
             dof_damping=sys.dof_damping.at[6:].set(kd),
@@ -595,7 +595,6 @@ class UnitreeGo2Env(PipelineEnv):
         self, qd: jax.Array, torques: jax.Array
     ) -> jax.Array:
         # Penalize mechanical power
-        # return torques @ qd
         return jnp.sum(jnp.abs(torques) * jnp.abs(qd))
 
     def _reward_tracking_velocity(
@@ -617,9 +616,10 @@ class UnitreeGo2Env(PipelineEnv):
         self, air_time: jax.Array, first_contact: jax.Array, commands: jax.Array
     ) -> jax.Array:
         # Flight Phase Reward:
+        command_norm = jnp.linalg.norm(commands)
         reward_air_time = jnp.sum((air_time - self.target_air_time) * first_contact)
         reward_air_time *= (
-            math.normalize(commands[:2])[1] > 0.05
+            command_norm > 0.05
         )  # no reward for zero command
         return reward_air_time
 
@@ -629,9 +629,8 @@ class UnitreeGo2Env(PipelineEnv):
         joint_angles: jax.Array,
     ) -> jax.Array:
         # Penalize motion at zero commands
-        return jnp.sum(jnp.abs(joint_angles - self.default_pose)) * (
-            math.normalize(commands[:2])[1] < 0.1
-        )
+        command_norm = jnp.linalg.norm(commands)
+        return jnp.sum(jnp.abs(joint_angles - self.default_pose)) * (command_norm < 0.08)
 
     def _reward_foot_slip(
         self, pipeline_state: base.State, contact_filter: jax.Array

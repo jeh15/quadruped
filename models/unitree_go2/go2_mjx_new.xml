@@ -9,8 +9,8 @@
     <default class="go2">
       <geom friction="0.6" contype="0" conaffinity="0" type="mesh"/>
       <joint axis="0 1 0" damping="0.5" armature="0.005"/>
-      <!-- <general forcerange="-23.7 23.7" biastype="affine" gainprm="35 0 0" biasprm="0 -35 -0.5"/> -->
-      <general forcerange="-23.7 23.7" biastype="affine" gainprm="20 0 0" biasprm="0 -20 -0.5"/>
+      <general forcerange="-23.7 23.7" biastype="affine" gainprm="35 0 0" biasprm="0 -35 -0.5"/>
+      <!-- <general forcerange="-23.7 23.7" biastype="affine" gainprm="20 0 0" biasprm="0 -20 -0.5"/> -->
       <default class="go2/abduction">
         <joint axis="1 0 0" range="-1.0472 1.0472" frictionloss="0.3"/>
         <general ctrlrange="-0.9472 0.9472"/>
