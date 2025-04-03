@@ -11,8 +11,6 @@ import numpy.typing as npt
 import mujoco
 import mujoco.viewer
 
-import matplotlib.pyplot as plt
-
 from src.envs import unitree_go2_mujoco_playground as unitree_go2
 from src.algorithms.ppo.load_utilities import load_policy
 
@@ -146,17 +144,6 @@ def main(argv=None):
             )
             action, _ = inference_fn(observation, action_rng)
             ctrl = controller_fn(action)
-
-            # Compare gyro and original way:
-            gyro = env.get_gyro(data)
-            base_w = data.qpos[3:7]
-            base_dw = data.qvel[3:6]
-            inverse_trunk_rotation = quat_inv(base_w)
-            body_frame_angular_vel = rotate(
-                base_dw, inverse_trunk_rotation,
-            )
-            print(f"Gyro: {gyro}")
-            print(f"Body Frame Angular Vel: {body_frame_angular_vel}")
 
             # Smooth Control:
             # alpha = 1.0

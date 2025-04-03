@@ -127,46 +127,82 @@ def default_checkpoint_metadata() -> dict:
 
 
 def save_checkpoint(
+    checkpoint_direrctory: str,
+    manager_options: CheckpointManagerOptions,
+    registry: ocp.handlers.CheckpointHandlerRegistry,
     iteration: int,
-    manager: CheckpointManager,
     train_state: TrainState,
     **metadata: Union[dict[str, Any], flax.struct.PyTreeNode],
 ) -> None:
-    # Save Checkpoint:
-    args = {
-        'train_state': ocp.args.PyTreeSave(train_state),  # type: ignore
-    }
-    metadata = {
-        key: ocp.args.PyTreeSave(value) for key, value in metadata.items()  # type: ignore
-    }
-    args.update(metadata)  # type: ignore
-    manager.save(
-        iteration,
-        args=ocp.args.Composite(
-            **args,
-        ),
-    )
+    with ocp.CheckpointManager(
+        directory=checkpoint_direrctory,
+        options=manager_options,
+        handler_registry=registry,
+    ) as manager:
+        # Save Checkpoint:
+        args = {
+            'train_state': ocp.args.PyTreeSave(train_state),  # type: ignore
+        }
+        metadata = {
+            key: ocp.args.PyTreeSave(value) for key, value in metadata.items()  # type: ignore
+        }
+        args.update(metadata)  # type: ignore
+        manager.save(
+            iteration,
+            args=ocp.args.Composite(
+                **args,
+            ),
+        )
 
 
-def load_checkpoint(
-    manager: CheckpointManager,
+def load_train_state(
+    directory: str,
+    options: CheckpointManagerOptions,
+    registry: ocp.handlers.CheckpointHandlerRegistry,
     restore_iteration: Optional[int] = None,
     **data: Union[dict[str, Any], flax.struct.PyTreeNode],
 ) -> Any:
-    # Create abstract states:
-    args = {
-        key: ocp.args.PyTreeRestore(value) for key, value in data.items()
-    }
+    with ocp.CheckpointManager(
+        directory=directory,
+        options=options,
+        handler_registry=registry,
+    ) as manager:
+        # Create abstract states:
+        args = {
+            key: ocp.args.PyTreeRestore(value) for key, value in data.items()
+        }
 
-    # Load Checkpoint:
-    if restore_iteration is None:
-        restore_iteration = manager.latest_step()
+        # Load Checkpoint:
+        if restore_iteration is None:
+            restore_iteration = manager.latest_step()
 
-    restored = manager.restore(
-        restore_iteration,
-        args=ocp.args.Composite(
-            **args,
-        ),
-    )
+        restored = manager.restore(
+            restore_iteration,
+            args=ocp.args.Composite(
+                **args,
+            ),
+        )
+
+    return restored
+
+
+def load_checkpoint(
+    directory: str,
+    options: CheckpointManagerOptions,
+    registry: ocp.handlers.CheckpointHandlerRegistry,
+    restore_iteration: Optional[int] = None,
+) -> Any:
+    with ocp.CheckpointManager(
+        directory=directory,
+        options=options,
+        handler_registry=registry,
+    ) as manager:
+        # Load Checkpoint:
+        if restore_iteration is None:
+            restore_iteration = manager.latest_step()
+
+        restored = manager.restore(
+            restore_iteration,
+        )
 
     return restored

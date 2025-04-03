@@ -14,8 +14,6 @@ from unitree_api_bindings import unitree_api
 import mujoco
 import mujoco.viewer
 
-import matplotlib.pyplot as plt
-
 from src.envs import unitree_go2_mujoco_playground as unitree_go2
 from src.algorithms.ppo.load_utilities import load_policy
 

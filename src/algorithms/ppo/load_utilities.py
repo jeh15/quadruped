@@ -37,45 +37,21 @@ def load_policy(checkpoint_name: str, environment: Env, restore_iteration: Optio
         ),
         f"checkpoints/{checkpoint_name}",
     )
-    manager = ocp.CheckpointManager(
+    manager_options = checkpoint_utilities.default_checkpoint_options()
+
+    registry = ocp.handlers.DefaultCheckpointHandlerRegistry()
+    registry.add('train_state', ocp.args.PyTreeRestore, ocp.handlers.PyTreeCheckpointHandler)
+    registry.add('network_metadata', ocp.args.PyTreeRestore, ocp.handlers.PyTreeCheckpointHandler)
+    registry.add('loss_metadata', ocp.args.PyTreeRestore, ocp.handlers.PyTreeCheckpointHandler)
+    registry.add('training_metadata', ocp.args.PyTreeRestore, ocp.handlers.PyTreeCheckpointHandler)
+
+    metadata = checkpoint_utilities.load_checkpoint(
         directory=checkpoint_direrctory,
-        options=checkpoint_utilities.default_checkpoint_options(),
-        item_names=(
-            'network_metadata',
-            'loss_metadata',
-            'training_metadata',
-        ),
-    )
-
-    metadata = checkpoint_utilities.load_checkpoint(
-        manager=manager,
+        options=manager_options,
+        registry=registry,
         restore_iteration=restore_iteration,
-        network_metadata=checkpoint_utilities.empty_network_metadata(),
-        loss_metadata=checkpoint_utilities.empty_loss_metadata(),
-        training_metadata=checkpoint_utilities.empty_training_metadata(),
     )
-
-    network_metadata = metadata.network_metadata
-    network_metadata = checkpoint_utilities.network_metadata(
-        policy_layer_size=[0,] * network_metadata.policy_depth,
-        value_layer_size=[0,] * network_metadata.value_depth,
-        policy_depth=network_metadata.policy_depth,
-        value_depth=network_metadata.value_depth,
-        activation=network_metadata.activation,
-        policy_kernel_init=network_metadata.policy_kernel_init,
-        value_kernel_init=network_metadata.value_kernel_init,
-        action_distribution=network_metadata.action_distribution,
-    )
-
-    # Load correct Network Metadata:
-    metadata = checkpoint_utilities.load_checkpoint(
-        manager=manager,
-        restore_iteration=restore_iteration,
-        network_metadata=network_metadata,
-        loss_metadata=checkpoint_utilities.empty_loss_metadata(),
-        training_metadata=checkpoint_utilities.empty_training_metadata(),
-    )
-
+    
     network_metadata = metadata.network_metadata
     loss_metadata = metadata.loss_metadata
     training_metadata = metadata.training_metadata
@@ -83,7 +59,7 @@ def load_policy(checkpoint_name: str, environment: Env, restore_iteration: Optio
     env = environment
 
     # Restore Networks:
-    if training_metadata.normalize_observations:
+    if training_metadata['normalize_observations']:
         normalization_fn = running_statistics.normalize
     else:
         normalization_fn = lambda x, y: x
@@ -92,21 +68,20 @@ def load_policy(checkpoint_name: str, environment: Env, restore_iteration: Optio
         observation_size=env.observation_size,
         action_size=env.action_size,
         input_normalization_fn=normalization_fn,
-        policy_layer_sizes=network_metadata.policy_layer_size,
-        value_layer_sizes=network_metadata.value_layer_size,
-        activation=eval(network_metadata.activation),
-        policy_kernel_init=eval(network_metadata.policy_kernel_init),
-        value_kernel_init=eval(network_metadata.value_kernel_init)
+        policy_layer_sizes=network_metadata['policy_layer_size'],
+        value_layer_sizes=network_metadata['value_layer_size'],
+        activation=eval(network_metadata['activation']),
+        policy_kernel_init=eval(network_metadata['policy_kernel_init']),
+        value_kernel_init=eval(network_metadata['value_kernel_init']),
     )
-    optimizer = eval(training_metadata.optimizer)
+    optimizer = eval(training_metadata['optimizer'])
 
     # Create Keys and Structures:
-    key = jax.random.key(training_metadata.seed)
+    key = jax.random.key(training_metadata['seed'])
     init_params = PPONetworkParams(
         policy_params=network.policy_network.init(key),
         value_params=network.value_network.init(key),
     )
-
     train_state = TrainState(
         opt_state=optimizer.init(init_params),
         params=init_params,
@@ -117,15 +92,10 @@ def load_policy(checkpoint_name: str, environment: Env, restore_iteration: Optio
     )
 
     # Restore Train State:
-    manager = ocp.CheckpointManager(
+    restored_train_state = checkpoint_utilities.load_train_state(
         directory=checkpoint_direrctory,
-        options=checkpoint_utilities.default_checkpoint_options(),
-        item_names=(
-            'train_state',
-        ),
-    )
-    restored_train_state = checkpoint_utilities.load_checkpoint(
-        manager=manager,
+        options=manager_options,
+        registry=registry,
         restore_iteration=restore_iteration,
         train_state=train_state,
     )
@@ -156,44 +126,22 @@ def load_checkpoint(
         ),
         f"checkpoints/{checkpoint_name}",
     )
-    manager = ocp.CheckpointManager(
-        directory=checkpoint_direrctory,
-        options=checkpoint_utilities.default_checkpoint_options(),
-        item_names=(
-            'network_metadata',
-            'loss_metadata',
-            'training_metadata',
-        ),
-    )
+
+    manager_options = checkpoint_utilities.default_checkpoint_options()
+
+    registry = ocp.handlers.DefaultCheckpointHandlerRegistry()
+    registry.add('train_state', ocp.args.PyTreeRestore, ocp.handlers.PyTreeCheckpointHandler)
+    registry.add('network_metadata', ocp.args.PyTreeRestore, ocp.handlers.PyTreeCheckpointHandler)
+    registry.add('loss_metadata', ocp.args.PyTreeRestore, ocp.handlers.PyTreeCheckpointHandler)
+    registry.add('training_metadata', ocp.args.PyTreeRestore, ocp.handlers.PyTreeCheckpointHandler)
 
     metadata = checkpoint_utilities.load_checkpoint(
-        manager=manager,
+        directory=checkpoint_direrctory,
+        options=manager_options,
+        registry=registry,
         restore_iteration=restore_iteration,
-        network_metadata=checkpoint_utilities.empty_network_metadata(),
-        loss_metadata=checkpoint_utilities.empty_loss_metadata(),
-        training_metadata=checkpoint_utilities.empty_training_metadata(),
     )
     
-    network_metadata = metadata.network_metadata
-    network_metadata = checkpoint_utilities.network_metadata(
-        policy_layer_size=[0,] * network_metadata.policy_depth,
-        value_layer_size=[0,] * network_metadata.value_depth,
-        policy_depth=network_metadata.policy_depth,
-        value_depth=network_metadata.value_depth,
-        activation=network_metadata.activation,
-        kernel_init=network_metadata.kernel_init,
-        action_distribution=network_metadata.action_distribution,
-    )
-
-    # Load correct Network Metadata:
-    metadata = checkpoint_utilities.load_checkpoint(
-        manager=manager,
-        restore_iteration=restore_iteration,
-        network_metadata=network_metadata,
-        loss_metadata=checkpoint_utilities.empty_loss_metadata(),
-        training_metadata=checkpoint_utilities.empty_training_metadata(),
-    )
-
     network_metadata = metadata.network_metadata
     loss_metadata = metadata.loss_metadata
     training_metadata = metadata.training_metadata
@@ -201,7 +149,7 @@ def load_checkpoint(
     env = environment
 
     # Restore Networks:
-    if training_metadata.normalize_observations:
+    if training_metadata['normalize_observations']:
         normalization_fn = running_statistics.normalize
     else:
         normalization_fn = lambda x, y: x
@@ -210,20 +158,20 @@ def load_checkpoint(
         observation_size=env.observation_size,
         action_size=env.action_size,
         input_normalization_fn=normalization_fn,
-        policy_layer_sizes=network_metadata.policy_layer_size,
-        value_layer_sizes=network_metadata.value_layer_size,
-        activation=eval(network_metadata.activation),
-        kernel_init=eval(network_metadata.kernel_init),
+        policy_layer_sizes=network_metadata['policy_layer_size'],
+        value_layer_sizes=network_metadata['value_layer_size'],
+        activation=eval(network_metadata['activation']),
+        policy_kernel_init=eval(network_metadata['policy_kernel_init']),
+        value_kernel_init=eval(network_metadata['value_kernel_init']),
     )
-    optimizer = eval(training_metadata.optimizer)
+    optimizer = eval(training_metadata['optimizer'])
 
     # Create Keys and Structures:
-    key = jax.random.key(training_metadata.seed)
+    key = jax.random.key(training_metadata['seed'])
     init_params = PPONetworkParams(
         policy_params=network.policy_network.init(key),
         value_params=network.value_network.init(key),
     )
-
     train_state = TrainState(
         opt_state=optimizer.init(init_params),
         params=init_params,
@@ -234,15 +182,11 @@ def load_checkpoint(
     )
 
     # Restore Train State:
-    manager = ocp.CheckpointManager(
+    restored_train_state = checkpoint_utilities.load_train_state(
         directory=checkpoint_direrctory,
-        options=checkpoint_utilities.default_checkpoint_options(),
-        item_names=(
-            'train_state',
-        ),
-    )
-    restored_train_state = checkpoint_utilities.load_checkpoint(
-        manager=manager,
+        options=manager_options,
+        registry=registry,
+        restore_iteration=restore_iteration,
         train_state=train_state,
     )
     train_state = restored_train_state.train_state

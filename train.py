@@ -103,7 +103,7 @@ def main(argv=None):
         num_minibatches=32,
         num_ppo_iterations=4,
         normalize_observations=True,
-        optimizer='optax.chain(optax.clip_by_global_norm(1.0), optax.adam(3e-4),)',
+        optimizer='optax.chain(optax.adaptive_grad_clip(clipping=0.01), optax.adam(3e-4),)',
     )
 
     # Start Wandb and save metadata:
@@ -146,14 +146,6 @@ def main(argv=None):
     eval_env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx.xml', config=reward_config)
     render_env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx.xml', config=reward_config)
 
-    restored_checkpoint = None
-    if FLAGS.checkpoint_name is not None:
-        restored_checkpoint, metadata = load_checkpoint(
-            checkpoint_name=FLAGS.checkpoint_name,
-            environment=env,
-            restore_iteration=FLAGS.checkpoint_iteration,
-        )
-
     def progress_fn(iteration, num_steps, metrics):
         print(
             f'Iteration: {iteration} \t'
@@ -176,26 +168,37 @@ def main(argv=None):
         os.path.dirname(__file__),
         f"checkpoints/{run.name}",
     )
-    manager = ocp.CheckpointManager(
-        directory=checkpoint_direrctory,
-        options=manager_options,
-        item_names=(
-            'train_state',
-            'network_metadata',
-            'loss_metadata',
-            'training_metadata',
-        ),
-    )
+    registry = ocp.handlers.DefaultCheckpointHandlerRegistry()
+    registry.add('train_state', ocp.args.PyTreeSave, ocp.handlers.PyTreeCheckpointHandler)
+    registry.add('network_metadata', ocp.args.PyTreeSave, ocp.handlers.PyTreeCheckpointHandler)
+    registry.add('loss_metadata', ocp.args.PyTreeSave, ocp.handlers.PyTreeCheckpointHandler)
+    registry.add('training_metadata', ocp.args.PyTreeSave, ocp.handlers.PyTreeCheckpointHandler)
+
+    registry.add('train_state', ocp.args.PyTreeRestore, ocp.handlers.PyTreeCheckpointHandler)
+    registry.add('network_metadata', ocp.args.PyTreeRestore, ocp.handlers.PyTreeCheckpointHandler)
+    registry.add('loss_metadata', ocp.args.PyTreeRestore, ocp.handlers.PyTreeCheckpointHandler)
+    registry.add('training_metadata', ocp.args.PyTreeRestore, ocp.handlers.PyTreeCheckpointHandler)
+
+    restored_checkpoint = None
+    if FLAGS.checkpoint_name is not None:
+        restored_checkpoint, metadata = load_checkpoint(
+            checkpoint_name=FLAGS.checkpoint_name,
+            environment=env,
+            restore_iteration=FLAGS.checkpoint_iteration,
+        )
+
     checkpoint_fn = functools.partial(
         checkpoint_utilities.save_checkpoint,
-        manager=manager,
+        checkpoint_direrctory=checkpoint_direrctory,
+        manager_options=manager_options,
+        registry=registry,
         network_metadata=network_metadata,
         loss_metadata=loss_metadata,
         training_metadata=training_metadata,
     )
 
     optimizer = optax.chain(
-        optax.clip_by_global_norm(1.0),
+        optax.adaptive_grad_clip(clipping=0.01),
         optax.adam(learning_rate=3e-4),
     )
 
