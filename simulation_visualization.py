@@ -1,5 +1,4 @@
-from absl import app, flags, logging
-import os
+from absl import app, flags
 import functools
 import time
 
@@ -86,15 +85,6 @@ def get_observation(
 
 
 def main(argv=None):
-    # Set up Logger:
-    logging.use_absl_handler()
-    log_directory = os.path.join(
-        os.path.dirname(__file__),
-        'logs',
-    )
-    logging.get_absl_handler().use_absl_log_file(program_name='policy_test', log_dir=log_directory) 
-    logging.set_verbosity(logging.INFO)
-
     # Load from Env:
     env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx.xml')
     model = env.sys.mj_model
@@ -130,6 +120,8 @@ def main(argv=None):
     unitree_driver.initialize()
 
     # Default Control:
+    q_setpoint = np.asarray([0.0, 0.9, -1.8] * 4)
+    qd_setpoint = np.asarray([0.0, 0.0, 0.0] * 4)
     motor_commands = unitree_api.MotorCommand()
     motor_commands.q_setpoint = [0.0, 0.9, -1.8] * 4
     motor_commands.qd_setpoint = [0.0, 0.0, 0.0] * 4
@@ -165,6 +157,7 @@ def main(argv=None):
     # Initialize Observation History:
     observation = np.zeros(env.history_length * env.num_observations)
     action = np.asarray(env.default_ctrl)
+    mj_action = np.asarray(env.default_ctrl)
     default_position = np.asarray(env.default_ctrl)
     command = np.array([0.0, 0.0, 0.0])
     observation_fn = functools.partial(
@@ -173,6 +166,7 @@ def main(argv=None):
     )
     for i in range(env.history_length):
         step_time = time.time()
+
         imu_state = unitree_driver.get_imu_state()
         motor_state = unitree_driver.get_motor_state()
         observation = observation_fn(
@@ -182,104 +176,95 @@ def main(argv=None):
             command=command,
             previous_action=action,
         )
+
         sleep_time = control_rate - (time.time() - step_time)
         if sleep_time > 0:
             time.sleep(sleep_time)
         else:
             print('Warning: Control rate exceeded.')
 
-    print(f'Observation History Completed...')
+
+    mj_obs = np.zeros(env.history_length * env.num_observations)
 
     # Update Data:
     data.qpos = model.key_qpos.flatten()
     mujoco.mj_forward(model, data) 
 
     key = jax.random.key(0)
+    termination_flag = False
 
-    # Setup Joystick:
-    joysticks = {}
-    policy_control_mode = False
-    damping_control_mode = False
-    is_running = True
-    while is_running:
-        for event in pygame.event.get():
-            if event.type == pygame.JOYDEVICEADDED:
-                joy = pygame.joystick.Joystick(event.device_index)
-                joysticks[joy.get_instance_id()] = joy
-                print(f"Joystick {joy.get_instance_id()} connencted")
+    global_steps = 0
+    with mujoco.viewer.launch_passive(model, data) as viewer:
+        viewer.cam.trackbodyid = 1
+        viewer.cam.distance = 5
 
-            if event.type == pygame.JOYDEVICEREMOVED:
-                del joysticks[event.instance_id]
-                print(f"Joystick {event.instance_id} disconnected")
+        while viewer.is_running() and not termination_flag:
+            step_time = time.time()
+            action_rng, key = jax.random.split(key)
+            # Robot:
+            imu_state = unitree_driver.get_imu_state()
+            motor_state = unitree_driver.get_motor_state()
+            observation = observation_fn(
+                observation=observation,
+                imu_state=imu_state,
+                motor_state=motor_state,
+                command=command,
+                previous_action=action,
+            )
+            action, _ = inference_fn(observation, action_rng)
+            action.block_until_ready()
+            action = jax.device_put(action, jax.devices('cpu')[0])
+            action = np.asarray(action)
 
-        for joystick in joysticks.values():
-            if joystick.get_button(0) == 1:
-                string = 'Switching to Policy Control Mode...'
-                logging.info(string)
-                print(string)
-                policy_control_mode = True
+            # Simulation:
+            mj_obs = env.np_observation(
+                mj_data=data,
+                command=command,
+                previous_action=mj_action,
+                observation_history=mj_obs,
+            )
+            mj_action, _ = inference_fn(mj_obs, action_rng)
+            mj_action.block_until_ready()
+            mj_action = jax.device_put(mj_action, jax.devices('cpu')[0])
+            mj_action = np.asarray(mj_action)
 
-            if joystick.get_button(7) == 1:
-                string = 'Switching to Damping Control Mode...'
-                logging.info(string)
-                print(string)
-                damping_control_mode = True
-                policy_control_mode = False
+            # Control:
+            hardware_ctrl = controller_fn(action)
+            mj_ctrl = controller_fn(mj_action)
+            print(f'Hardware Policy: {hardware_ctrl}')
+            print(f'Mujoco Policy: {mj_ctrl}')
 
-            if joystick.get_button(6) == 1:
-                string = 'Terminating...'
-                logging.info(string)
-                print(string)
-                is_running = False
-                damping_control_mode = True
-                policy_control_mode = False
+            # Compare Gravity Calculation:
+            orientation = imu_state.quaternion
+            inverse_base_rotation = quat_inv(orientation)
+            projected_gravity = rotate(
+                np.array([0.0, 0.0, -1.0]),
+                inverse_base_rotation,
+            )
+            print(f'Robot Projected Gravity: {projected_gravity}')
+            mj_gravity = np.reshape(data.site_xmat[env.imu_site_idx], (3, 3)).T @ np.array([0, 0, -1])
+            print(f'Mujoco Projected Gravity: {mj_gravity}')
 
-            forward_command = -1 * joystick.get_axis(1)
-            lateral_command = -1 * joystick.get_axis(0)
-            rotation_command = -1 * joystick.get_axis(3)
+            # Compare Gyroscope Calculation:
+            print(f'Hardware Gyroscope: {imu_state.gyroscope}')
+            print(f'Mujoco Gyroscope: {env.get_gyro(data)}')
 
-        step_time = time.time()
-        action_rng, key = jax.random.split(key)
-        imu_state = unitree_driver.get_imu_state()
-        motor_state = unitree_driver.get_motor_state()
-        observation = observation_fn(
-            observation=observation,
-            imu_state=imu_state,
-            motor_state=motor_state,
-            command=command,
-            previous_action=action,
-        )
-        action, _ = inference_fn(observation, action_rng)
-        action.block_until_ready()
-        action = jax.device_put(action, jax.devices('cpu')[0])
-        action = np.asarray(action)
-        ctrl = controller_fn(action)
+            # To Control Simulation:
+            data.ctrl = default_position
 
-        motor_state_str = f'Motor States: {motor_state.q}'
-        ctrl_str = f'Policy: {ctrl}'
-        logging.info(motor_state_str)
-        logging.info(ctrl_str)
+            for _ in range(num_physics_steps):
+                mujoco.mj_step(model, data)  # type: ignore
 
-        # To Control the Robot:
-        if policy_control_mode:
-            motor_commands.q_setpoint = ctrl.tolist()
-            motor_commands.stiffness = [35.0, 35.0, 35.0] * 4
-            motor_commands.damping = [0.5, 0.5, 0.5] * 4
-            unitree_driver.update_command(motor_commands)
+            viewer.sync()
 
-        if damping_control_mode:
-            motor_commands.q_setpoint = ctrl.tolist()
-            motor_commands.stiffness = [0.0, 0.0, 0.0] * 4
-            motor_commands.damping = [5.0, 5.0, 5.0] * 4
-            unitree_driver.update_command(motor_commands)
+            sleep_time = control_rate - (time.time() - step_time)
+            if sleep_time > 0:
+                time.sleep(sleep_time)
+            else:
+                print('Warning: Control rate exceeded.')
+            
+            global_steps += 1
 
-        sleep_time = control_rate - (time.time() - step_time)
-        if sleep_time > 0:
-            time.sleep(sleep_time)
-        else:
-            print('Warning: Control rate exceeded.')
-
-    
     # Stop Thread:
     unitree_driver.stop_thread()
 

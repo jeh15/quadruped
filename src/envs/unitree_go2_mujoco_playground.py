@@ -143,7 +143,7 @@ def domain_randomize(sys: System, rng: PRNGKey) -> tuple[System, System]:
 
 
 class UnitreeGo2Env(PipelineEnv):
-    """Environment for training the Unitree Go1 quadruped joystick policy in MJX."""
+    """Environment for training the Unitree Go2 quadruped joystick policy in MJX."""
 
     def __init__(
         self,

@@ -526,12 +526,20 @@ class UnitreeGo2Env(PipelineEnv):
             jnp.array([0, 0, -1]), inverse_trunk_rotation,
         )
 
+        # new_observation = np.concatenate([
+        #     np.array([body_frame_yaw_rate]),
+        #     projected_gravity,
+        #     command,
+        #     q - self.default_ctrl,
+        #     previous_action,
+        # ])
+
         new_observation = np.concatenate([
             np.array([body_frame_yaw_rate]),
             projected_gravity,
-            command,
             q - self.default_ctrl,
             previous_action,
+            command,
         ])
 
         # clip, noise
