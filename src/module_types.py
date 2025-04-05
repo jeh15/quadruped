@@ -1,4 +1,4 @@
-from typing import Any, Callable, Sequence, Tuple, NamedTuple, Protocol, Mapping, TypeVar
+from typing import Any, Callable, Tuple, NamedTuple, Protocol, Mapping, TypeVar, Union
 
 import jax.numpy as jnp
 from brax import envs
@@ -11,7 +11,8 @@ PolicyParams = Tuple[NomralizationParams, Params]
 ActivationFn = Callable[[jnp.ndarray], jnp.ndarray]
 Initializer = Callable[..., Any]
 
-Observation = jnp.ndarray
+Observation = Union[jnp.ndarray, Mapping[str, jnp.ndarray]]
+ObservationSize = Union[int, Mapping[str, Union[Tuple[int, ...], int]]]
 Action = jnp.ndarray
 PolicyData = Mapping[str, Any]
 Metrics = Mapping[str, Any]

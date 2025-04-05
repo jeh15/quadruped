@@ -18,6 +18,14 @@ class FeedForwardNetwork:
     apply: Callable[..., Any]
 
 
+# Helper function for observation keys:
+def _get_observation_size(
+    observation_size: types.ObservationSize, observation_key: str
+) -> int:
+    observation_size = observation_size[observation_key] if isinstance(observation_size, Mapping) else observation_size
+    return jax.tree_util.tree_flatten(observation_size)[0][-1]
+
+
 class MLP(nn.Module):
     layer_sizes: Sequence[int]
     activation: ActivationFn = nn.tanh
@@ -52,6 +60,7 @@ def make_policy_network(
     kernel_init: Initializer = jax.nn.initializers.lecun_uniform(),
     bias: bool = True,
     layer_normalization: bool = False,
+    observation_key: str = "state",
 ) -> FeedForwardNetwork:
     """Intializes a policy network."""
     policy_network = MLP(
@@ -64,9 +73,13 @@ def make_policy_network(
 
     def apply(normalization_params, policy_params, x):
         x = input_normalization_fn(x, normalization_params)
+        x = x if isinstance(x, jnp.ndarray) else x[observation_key]
         return policy_network.apply(policy_params, x)
 
-    dummy_input = jnp.zeros((1, input_size))
+    observation_size = _get_observation_size(
+        input_size, observation_key
+    )
+    dummy_input = jnp.zeros((1, observation_size))
     return FeedForwardNetwork(
         init=lambda key: policy_network.init(key, dummy_input), apply=apply,
     )
@@ -81,6 +94,7 @@ def make_value_network(
     kernel_init: Initializer = jax.nn.initializers.lecun_uniform(),
     bias: bool = True,
     layer_normalization: bool = False,
+    observation_key: str = "state",
 ) -> FeedForwardNetwork:
     """Intializes a value network."""
     value_network = MLP(
@@ -93,9 +107,13 @@ def make_value_network(
 
     def apply(normalization_params, value_params, x):
         x = input_normalization_fn(x, normalization_params)
+        x = x if isinstance(x, jnp.ndarray) else x[observation_key]
         return jnp.squeeze(value_network.apply(value_params, x), axis=-1)
 
-    dummy_input = jnp.zeros((1, input_size))
+    observation_size = _get_observation_size(
+        input_size, observation_key
+    )
+    dummy_input = jnp.zeros((1, observation_size))
     return FeedForwardNetwork(
         init=lambda key: value_network.init(key, dummy_input), apply=apply,
     )

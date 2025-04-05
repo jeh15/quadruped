@@ -212,7 +212,6 @@ def train(
         unused_t,
     ) -> Tuple[Tuple[TrainState, envs.State, types.PRNGKey], types.Metrics]:
         train_state, state, key = carry
-        # Changed key order: (Does this matter?)
         next_key, sgd_key, policy_step_key = jax.random.split(key, 3)
 
         policy_fn = make_policy((
