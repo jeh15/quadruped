@@ -18,7 +18,7 @@ import flax.serialization
 from brax import base
 from brax import envs
 from brax import math
-from brax.base import Motion, Transform, System
+from brax.base import System
 from brax.envs.base import PipelineEnv, State
 from brax.io import mjcf, html
 
@@ -29,8 +29,6 @@ from src.envs.utilities import collisions
 
 # Types:
 PRNGKey = jax.Array
-
-# Flake8: noqa: E501
 
 @flax.struct.dataclass
 class RewardConfig:
