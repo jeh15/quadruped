@@ -1,6 +1,6 @@
 import dataclasses
 
-from typing import Any, Callable, Sequence
+from typing import Any, Callable, Sequence, Mapping
 
 import jax
 import jax.numpy as jnp
@@ -51,7 +51,7 @@ class MLP(nn.Module):
 
 
 def make_policy_network(
-    input_size: int,
+    input_size: types.ObservationSize,
     output_size: int,
     input_normalization_fn: types.InputNormalizationFn = types
     .identity_normalization_fn,
@@ -86,7 +86,7 @@ def make_policy_network(
 
 
 def make_value_network(
-    input_size: int,
+    input_size: types.ObservationSize,
     input_normalization_fn: types.InputNormalizationFn = types
     .identity_normalization_fn,
     layer_sizes: Sequence[int] = (256, 256),

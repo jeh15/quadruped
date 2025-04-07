@@ -15,7 +15,7 @@ from unitree_api_bindings import unitree_api
 import mujoco
 import mujoco.viewer
 
-from src.envs import unitree_go2_mujoco_playground as unitree_go2
+from src.envs import unitree_go2_v7 as unitree_go2
 from src.algorithms.ppo.load_utilities import load_policy
 
 jax.config.update("jax_enable_x64", True)
@@ -163,20 +163,15 @@ def main(argv=None):
     input()
 
     # Initialize Observation History:
-    observation = np.zeros(env.history_length * env.num_observations)
+    observation = np.zeros(env.num_observations)
     action = np.asarray(env.default_ctrl)
-    default_position = np.asarray(env.default_ctrl)
     command = np.array([0.0, 0.0, 0.0])
-    observation_fn = functools.partial(
-        get_observation,
-        default_position=default_position,
-    )
-    for i in range(env.history_length):
+    history_length = 10
+    for i in range(history_length):
         step_time = time.time()
         imu_state = unitree_driver.get_imu_state()
         motor_state = unitree_driver.get_motor_state()
-        observation = observation_fn(
-            observation=observation,
+        observation = env.hardware_observation(
             imu_state=imu_state,
             motor_state=motor_state,
             command=command,
@@ -242,8 +237,7 @@ def main(argv=None):
         action_rng, key = jax.random.split(key)
         imu_state = unitree_driver.get_imu_state()
         motor_state = unitree_driver.get_motor_state()
-        observation = observation_fn(
-            observation=observation,
+        observation = env.hardware_observation(
             imu_state=imu_state,
             motor_state=motor_state,
             command=command,
@@ -255,10 +249,10 @@ def main(argv=None):
         action = np.asarray(action)
         ctrl = controller_fn(action)
 
-        motor_state_str = f'Motor States: {motor_state.q}'
-        ctrl_str = f'Policy: {ctrl}'
-        logging.info(motor_state_str)
-        logging.info(ctrl_str)
+        # motor_state_str = f'Motor States: {motor_state.q}'
+        # ctrl_str = f'Policy: {ctrl}'
+        # logging.info(motor_state_str)
+        # logging.info(ctrl_str)
 
         # To Control the Robot:
         if policy_control_mode:

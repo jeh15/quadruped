@@ -29,8 +29,6 @@ os.environ['XLA_FLAGS'] = (
 
 jax.config.update("jax_enable_x64", True)
 
-jax.config.update('jax_disable_jit', True)
-
 logging.set_verbosity(logging.ERROR)
 
 FLAGS = flags.FLAGS
@@ -79,18 +77,20 @@ def main(argv=None):
         activation='nn.swish',
         policy_kernel_init='jax.nn.initializers.lecun_uniform()',
         value_kernel_init='jax.nn.initializers.variance_scaling(scale=0.01, mode="fan_in", distribution="uniform")',
+        policy_observation_key='state',
+        value_observation_key='priviledged_state',
         action_distribution='ParametricDistribution(distribution=distrax.Normal, bijector=distrax.Tanh())',
     )
     loss_metadata = checkpoint_utilities.loss_metadata(
         clip_coef=0.3,
-        value_coef=0.5,
+        value_coef=0.25,
         entropy_coef=0.01,
         gamma=0.99,
         gae_lambda=0.95,
         normalize_advantages=True,
     )
     training_metadata = checkpoint_utilities.training_metadata(
-        num_epochs=60,
+        num_epochs=32,
         num_training_steps=20,
         episode_length=1000,
         num_policy_steps=40,
@@ -130,6 +130,8 @@ def main(argv=None):
         activation=nn.swish,
         policy_kernel_init=jax.nn.initializers.lecun_uniform(),
         value_kernel_init=jax.nn.initializers.variance_scaling(scale=0.01, mode="fan_in", distribution="uniform"),
+        policy_observation_key='state',
+        value_observation_key='priviledged_state',
         action_distribution=ParametricDistribution(
             distribution=distrax.Normal,
             bijector=distrax.Tanh(),

@@ -35,6 +35,8 @@ class network_metadata:
     activation: Union[types.ActivationFn, str]
     policy_kernel_init: Union[types.Initializer, str]
     value_kernel_init: Union[types.Initializer, str]
+    policy_observation_key: str
+    value_observation_key: str
     action_distribution: Union[distribution.ParametricDistribution, str]
 
 
@@ -77,6 +79,8 @@ def empty_network_metadata() -> network_metadata:
         activation='',
         policy_kernel_init='',
         value_kernel_init='',
+        policy_observation_key='',
+        value_observation_key='',
         action_distribution='',
     )
 

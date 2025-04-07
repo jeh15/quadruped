@@ -11,7 +11,7 @@ import numpy.typing as npt
 import mujoco
 import mujoco.viewer
 
-from src.envs import unitree_go2_mujoco_playground as unitree_go2
+from src.envs import unitree_go2_v7 as unitree_go2
 from src.algorithms.ppo.load_utilities import load_policy
 
 jax.config.update("jax_enable_x64", True)
@@ -82,7 +82,7 @@ def main(argv=None):
     data.qpos = model.key_qpos.flatten()
     command = np.array([0.0, 0.0, 0.0])
     action = model.key_ctrl.flatten()
-    observation = np.zeros(env.history_length * env.num_observations)
+    observation = np.zeros(env.num_observations)
 
     # Setup Joystick:
     joysticks = {}
@@ -140,7 +140,6 @@ def main(argv=None):
                 mj_data=data,
                 command=command,
                 previous_action=action,
-                observation_history=observation,
             )
             action, _ = inference_fn(observation, action_rng)
             ctrl = controller_fn(action)

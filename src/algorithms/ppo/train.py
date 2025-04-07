@@ -137,9 +137,10 @@ def train(
 
     # Initialize Network:
     # functools.partial network_factory to capture parameters:
+    observation_shape = jax.tree_util.tree_map(lambda x: x.shape[2:], env_state.obs)
     if restored_checkpoint is None:
         network = network_factory(
-            observation_size=env_state.obs.shape[-1],
+            observation_size=observation_shape,
             action_size=env.action_size,
             input_normalization_fn=normalization_fn,
         )
@@ -318,11 +319,14 @@ def train(
             value_params=network.value_network.init(value_key),
         )
         # Can't pass optimizer function to device_put_replicated:
+        observation_shape = jax.tree_util.tree_map(
+            lambda x: specs.Array(x.shape[-1:], jnp.dtype('float32')), env_state.obs
+        )
         train_state = TrainState(
             opt_state=optimizer.init(init_params),
             params=init_params,
             normalization_params=running_statistics.init_state(
-                specs.Array(env_state.obs.shape[-1:], jnp.dtype('float32'))
+                observation_shape
             ),
             env_steps=0,
         )

@@ -424,7 +424,7 @@ class UnitreeGo2Env(PipelineEnv):
 
         # Foot contact data based on z-position:
         contact = jnp.array([
-            collisions.geoms_colliding(pipeline_state, geom_id, self.floor_geom_id)
+            collisions.geoms_colliding(pipeline_state, geom_id, self.floor_geom_idx)
             for geom_id in self.feet_geom_idx
         ])
         contact_filt = contact | state.info['previous_contact']
@@ -862,7 +862,57 @@ class UnitreeGo2Env(PipelineEnv):
             command,
         ])
 
-        return observation
+        return {
+            'state': observation,
+            'priviledged_state': np.zeros((self.num_privileged_observations,)),
+        }
+    
+    def hardware_observation(
+        self,
+        imu_state: Any,
+        motor_state: Any,
+        command: np.ndarray,
+        previous_action: np.ndarray,
+    ) -> np.ndarray:
+        # Numpy implementation of the observation function:
+        def rotate(vec: np.ndarray, quat: np.ndarray) -> np.ndarray:
+            if len(vec.shape) != 1:
+                raise ValueError('vec must have no batch dimensions.')
+            s, u = quat[0], quat[1:]
+            r = 2 * (np.dot(u, vec) * u) + (s * s - np.dot(u, u)) * vec
+            r = r + 2 * s * np.cross(u, vec)
+            return r
+
+        def quat_inv(q: np.ndarray) -> np.ndarray:
+            return q * np.array([1, -1, -1, -1])
+
+        base_rotation = np.asarray(imu_state.quaternion)
+        accelerometer = np.asarray(imu_state.accelerometer)
+        gyroscope = np.asarray(imu_state.gyroscope)
+        joint_positions = np.asarray(motor_state.q)
+        joint_velocities = np.asarray(motor_state.qd)
+
+        # Calculate Body frame Yaw Rate and Projected Gravity:
+        inverse_base_rotation = quat_inv(base_rotation)
+        projected_gravity = rotate(
+            np.array([0.0, 0.0, -1.0]),
+            inverse_base_rotation,
+        )
+
+        observation = np.concatenate([
+            accelerometer,
+            gyroscope,
+            projected_gravity,
+            joint_positions - self.default_ctrl,
+            joint_velocities,
+            previous_action,
+            command,
+        ])
+
+        return {
+            'state': observation,
+            'priviledged_state': np.zeros((self.num_privileged_observations,)),
+        }
 
 
 envs.register_environment('unitree_go2', UnitreeGo2Env)

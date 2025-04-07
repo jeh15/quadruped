@@ -59,7 +59,7 @@ def make_inference_fn(ppo_networks: PPONetworks):
 
 
 def make_ppo_networks(
-    observation_size: int,
+    observation_size: types.ObservationSize,
     action_size: int,
     input_normalization_fn: types.InputNormalizationFn = types
     .identity_normalization_fn,
