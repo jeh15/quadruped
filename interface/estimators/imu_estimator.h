@@ -124,6 +124,7 @@ class IMUEstimator {
             // Estimation Variables:
             int start_up_time = 5;
             common::Vector3<float> gyroscope_bias = common::Vector3<float>::Zero();
+            common::Vector3<float> accelerometer_mean = common::Vector3<float>::Zero();
             common::Vector3<float> accelerometer_bias = common::Vector3<float>::Zero();
             common::Vector3<float> g = common::Vector3<float>(0.0f, 0.0f, 9.81f);
             common::Vector3<float> gyroscope_estimate = common::Vector3<float>::Zero();
@@ -201,10 +202,10 @@ class IMUEstimator {
                 }
                 
                 for(auto& vector : accelerometer_vector) {
-                    accelerometer_bias += vector;
+                    accelerometer_mean += vector;
                 }
                 if(!accelerometer_vector.empty()) {
-                    accelerometer_bias /= static_cast<float>(accelerometer_vector.size());
+                    accelerometer_mean /= static_cast<float>(accelerometer_vector.size());
                 }
                 else {
                     return absl::InternalError("Accelerometer Vector is Empty");
@@ -230,6 +231,12 @@ class IMUEstimator {
                     std::cout << "Quaternion Estimate: "<< quaternion_estimate << std::endl;
                     return absl::InternalError("Quaternion Estimate is not Valid");
                 }
+                
+                // Calculate Bias:
+                Eigen::Matrix3<float> C = quaternion_estimate.toRotationMatrix();
+                common::Vector3<float> acceleration_world_frame = C * accelerometer_mean;
+                accelerometer_bias = g - acceleration_world_frame;
+                
 
                 std::cout << "Gyroscope and Accelerometer Initialization Complete" << std::endl;
                 std::cout << "Gyroscope Bias: " << gyroscope_bias.transpose() << std::endl;
@@ -260,8 +267,10 @@ class IMUEstimator {
                 torque_estimate = Eigen::Map<common::MotorVector<float>>(motor_state.torque_estimate.data());
                 
                 // Correct Gyroscope and Accelerometer for Bias:
+                Eigen::Matrix3<float> C = quaternion_estimate.toRotationMatrix();
+                common::Vector3<float> bias = C.transpose() * accelerometer_bias;
                 gyroscope_estimate = gyroscope_measurement - gyroscope_bias;
-                accelerometer_estimate = accelerometer_measurement - accelerometer_bias;
+                accelerometer_estimate = accelerometer_measurement - bias;
 
                 return absl::OkStatus();
             }
@@ -391,7 +400,7 @@ class IMUEstimator {
                 Eigen::Matrix3<float> C = quaternion_estimate.toRotationMatrix();
 
                 // Simpson's Rule:
-                acceleration_i = C.transpose() * accelerometer_estimate;
+                acceleration_i = C * accelerometer_estimate;
                 velocity_i = velocity_estimate + h * (acceleration_k + 4.0f * acceleration_j + acceleration_i);
                 acceleration_j = acceleration_i;
                 acceleration_k = acceleration_j;

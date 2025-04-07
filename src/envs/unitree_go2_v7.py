@@ -58,7 +58,7 @@ class NoiseConfig:
     joint_position: float = 0.03
     joint_velocity: float = 1.5
     gyroscope: float = 0.2
-    gravity_vector: float = 0.2
+    gravity_vector: float = 0.05
     accelerometer: float = 0.5
 
 
@@ -504,7 +504,7 @@ class UnitreeGo2Env(PipelineEnv):
 
         # Proxy Metrics:
         state.metrics['total_distance'] = math.normalize(
-            x.pos[self.base_idx - 1])[1]
+            pipeline_state.x.pos[self.base_idx - 1])[1]
         state.metrics.update(state.info['rewards'])
 
         done = jnp.float64(done) if jax.config.x64_enabled else jnp.float32(done)
@@ -605,6 +605,7 @@ class UnitreeGo2Env(PipelineEnv):
         actuator_force = pipeline_state.actuator_force
         feet_velocity = self.get_feet_velocity(pipeline_state).ravel()
 
+
         priviledged_observation = jnp.concatenate([
             observation,                                                                                # 48
             accelerometer,                                                                              # 3
@@ -619,7 +620,9 @@ class UnitreeGo2Env(PipelineEnv):
             feet_velocity,                                                                              # 12
             state_info['feet_air_time'],                                                                # 4
             pipeline_state.xfrc_applied[self.base_idx, :3],                                             # 3
-            state_info['steps_since_last_disturbance'] >= state_info['steps_until_next_disturbance'],   # 1
+            jnp.asarray([
+                state_info['steps_since_last_disturbance'] >= state_info['steps_until_next_disturbance']
+            ]),                                                                                         # 1
         ])
         # Size: 123
 

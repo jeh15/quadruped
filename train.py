@@ -11,7 +11,7 @@ import optax
 import wandb
 import orbax.checkpoint as ocp
 
-from src.envs import unitree_go2_mujoco_playground as unitree_go2
+from src.envs import unitree_go2_v7 as unitree_go2
 from src.algorithms.ppo import network_utilities as ppo_networks
 from src.algorithms.ppo.loss_utilities import loss_function
 from src.distribution_utilities import ParametricDistribution
@@ -28,6 +28,8 @@ os.environ['XLA_FLAGS'] = (
 )
 
 jax.config.update("jax_enable_x64", True)
+
+jax.config.update('jax_disable_jit', True)
 
 logging.set_verbosity(logging.ERROR)
 
@@ -67,8 +69,8 @@ def main(argv=None):
     )
 
     # Metadata:
-    policy_layer_size = [512, 256, 256, 128,]
-    value_layer_size = [512, 256, 256, 256, 128,]
+    policy_layer_size = [512, 256, 128,]
+    value_layer_size = [512, 256, 128,]
     network_metadata = checkpoint_utilities.network_metadata(
         policy_layer_size=policy_layer_size,
         value_layer_size=value_layer_size,

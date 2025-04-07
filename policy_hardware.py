@@ -202,6 +202,7 @@ def main(argv=None):
     damping_control_mode = False
     is_running = True
     while is_running:
+        step_time = time.time()
         for event in pygame.event.get():
             if event.type == pygame.JOYDEVICEADDED:
                 joy = pygame.joystick.Joystick(event.device_index)
@@ -238,7 +239,6 @@ def main(argv=None):
             lateral_command = -1 * joystick.get_axis(0)
             rotation_command = -1 * joystick.get_axis(3)
 
-        step_time = time.time()
         action_rng, key = jax.random.split(key)
         imu_state = unitree_driver.get_imu_state()
         motor_state = unitree_driver.get_motor_state()

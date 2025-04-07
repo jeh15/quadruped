@@ -1,29 +1,18 @@
-from absl import app, flags
-import functools
+from absl import app
 import time
 
-import pygame
 
 import jax
-import jax.numpy as jnp
 import numpy as np
+from scipy.spatial.transform import Rotation as R
 import numpy.typing as npt
 
 from unitree_api_bindings import unitree_api
 
-import mujoco
-import mujoco.viewer
-
-from src.envs import unitree_go2_mujoco_playground as unitree_go2
-from src.algorithms.ppo.load_utilities import load_policy
+import matplotlib.pyplot as plt
 
 jax.config.update("jax_enable_x64", True)
-pygame.init()
 
-FLAGS = flags.FLAGS
-flags.DEFINE_string(
-    'checkpoint_name', None, 'Desired checkpoint folder name to load.', short_name='c',
-)
 
 def controller(
     action: npt.ArrayLike,
@@ -85,22 +74,7 @@ def get_observation(
 
 
 def main(argv=None):
-    # Load from Env:
-    env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx.xml')
-    model = env.sys.mj_model
-
-    data = mujoco.MjData(model)
     control_rate = 0.02
-    num_physics_steps = int(control_rate / model.opt.timestep)
-
-    # Controller:
-    controller_fn = functools.partial(
-        controller,
-        default_control=env.default_ctrl,
-        ctrl_lb=env.ctrl_lb,
-        ctrl_ub=env.ctrl_ub,
-        action_scale=env._action_scale,
-    )
 
     # Initialize Unitree-Api:
     network_name = "eno2"
@@ -111,71 +85,107 @@ def main(argv=None):
     )
     unitree_driver.initialize()
 
+    # Sleep for 2 seconds:
+    time.sleep(2.0)
+
     # Show State:
     imu_state = unitree_driver.get_imu_state()
     motor_state = unitree_driver.get_motor_state()
     base_rotation = np.asarray(imu_state.quaternion)
     print(f"Base Rotation: {base_rotation}")
 
-    # Update Data:
-    data.qpos = model.key_qpos.flatten()
-    mujoco.mj_forward(model, data) 
+    acceleration_data = []
+    angular_velocity_data = []
+    orientation_data = []
+    joint_velocity_data = []
 
-    key = jax.random.key(0)
-    termination_flag = False
+    start_time = time.time()
+    while (time.time() - start_time) < 10.0:
+        step_time = time.time()
+        imu_state = unitree_driver.get_imu_state()
+        motor_state = unitree_driver.get_motor_state()
+        
+        # Update Data:
+        acceleration_data.append(np.asarray(imu_state.accelerometer))
+        angular_velocity_data.append(np.asarray(imu_state.gyroscope))
+        orientation_data.append(np.asarray(imu_state.quaternion))
+        joint_velocity_data.append(np.asarray(motor_state.qd))
+        
 
-    global_steps = 0
-    with mujoco.viewer.launch_passive(model, data) as viewer:
-        viewer.cam.trackbodyid = 1
-        viewer.cam.distance = 5
+        sleep_time = control_rate - (time.time() - step_time)
+        if sleep_time > 0:
+            time.sleep(sleep_time)
+        else:
+            print('Warning: Control rate exceeded.')
 
-        while viewer.is_running() and not termination_flag:
-            step_time = time.time()
-            action_rng, key = jax.random.split(key)
-            imu_state = unitree_driver.get_imu_state()
-            motor_state = unitree_driver.get_motor_state()
-            
-            # Update Data:
-            orientation = np.asarray(imu_state.quaternion)
-            base_angular_velocity = np.asarray(imu_state.gyroscope)
-            joint_position = np.asarray(motor_state.q)
-            joint_velocity = np.asarray(motor_state.qd)
 
-            data.qpos = np.array([
-                0.0, 0.0, 0.35,
-                *orientation,
-                *joint_position,
-            ])
-            data.qvel = np.array([
-                0.0, 0.0, 0.0,
-                *base_angular_velocity,
-                *joint_velocity,
-            ])
+    # Elapsed Time:
+    elapsed_time = time.time() - start_time
+    print(f'Elapsed Time: {elapsed_time:.2f} seconds')
 
-            print(f'Right Leg Joint Position: {joint_position[0:3]}')
+    # Convert Data to Numpy Arrays:
+    acceleration_data = np.array(acceleration_data)
+    angular_velocity_data = np.array(angular_velocity_data)
+    orientation_data = np.array(orientation_data)
+    joint_velocity_data = np.array(joint_velocity_data)
 
-            mujoco.mj_forward(model, data)
+    # Calculate Mean and Standard Deviation:
+    acceleration_mean = np.mean(acceleration_data, axis=0)
+    angular_velocity_mean = np.mean(angular_velocity_data, axis=0)
+    orientation_mean = np.mean(orientation_data, axis=0)
+    joint_velocity_mean = np.mean(joint_velocity_data, axis=0)
 
-            # Compare Gravity Calculation:
-            inverse_base_rotation = quat_inv(orientation)
-            projected_gravity = rotate(
-                np.array([0.0, 0.0, -1.0]),
-                inverse_base_rotation,
-            )
-            # print(f'Projected Gravity: {projected_gravity}')
+    acceleration_std = np.std(acceleration_data, axis=0)
+    angular_velocity_std = np.std(angular_velocity_data, axis=0)
+    orientation_std = np.std(orientation_data, axis=0)
+    joint_velocity_std = np.std(joint_velocity_data, axis=0)
 
-            for _ in range(num_physics_steps):
-                mujoco.mj_step(model, data)  # type: ignore
+    # Rotate Acceleration to World Frame to calculate Bias:
+    r = R.from_quat(orientation_mean)
+    acceleration_world = r.as_matrix() @ acceleration_mean
+    bias = np.array([0.0, 0.0, -9.81]) - acceleration_world
 
-            viewer.sync()
+    # Plot Data:
+    fig, axs = plt.subplots(4, 1, figsize=(10, 10))
+    axs[0].plot(acceleration_data)
+    for i in range(acceleration_data.shape[1]):
+        axs[0].fill_between(
+            np.arange(acceleration_data.shape[0]),
+            acceleration_data[:, i] - acceleration_std[i],
+            acceleration_data[:, i] + acceleration_std[i],
+            alpha=0.2,
+        )
 
-            sleep_time = control_rate - (time.time() - step_time)
-            if sleep_time > 0:
-                time.sleep(sleep_time)
-            else:
-                print('Warning: Control rate exceeded.')
-            
-            global_steps += 1
+    axs[0].set_title('Accelerometer Data')
+    axs[1].plot(angular_velocity_data)
+    for i in range(angular_velocity_data.shape[1]):
+        axs[1].fill_between(
+            np.arange(angular_velocity_data.shape[0]),
+            angular_velocity_data[:, i] - angular_velocity_std[i],
+            angular_velocity_data[:, i] + angular_velocity_std[i],
+            alpha=0.2,
+        )
+    axs[1].set_title('Gyroscope Data')
+    axs[2].plot(orientation_data)
+    for i in range(orientation_data.shape[1]):
+        axs[2].fill_between(
+            np.arange(orientation_data.shape[0]),
+            orientation_data[:, i] - orientation_std[i],
+            orientation_data[:, i] + orientation_std[i],
+            alpha=0.2,
+        )
+    axs[2].set_title('Orientation Data')
+    axs[3].plot(joint_velocity_data)
+    for i in range(joint_velocity_data.shape[1]):
+        axs[3].fill_between(
+            np.arange(joint_velocity_data.shape[0]),
+            joint_velocity_data[:, i] - joint_velocity_std[i],
+            joint_velocity_data[:, i] + joint_velocity_std[i],
+            alpha=0.2,
+        )
+    axs[3].set_title('Joint Velocity Data')
+    plt.tight_layout()
+    plt.show()
 
 
 if __name__ == '__main__':
