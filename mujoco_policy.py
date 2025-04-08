@@ -11,7 +11,7 @@ import numpy.typing as npt
 import mujoco
 import mujoco.viewer
 
-from src.envs import unitree_go2_v7 as unitree_go2
+from src.envs import unitree_go2_v8 as unitree_go2
 from src.algorithms.ppo.load_utilities import load_policy
 
 jax.config.update("jax_enable_x64", True)
@@ -35,19 +35,6 @@ def controller(
     motor_targets = default_control + action * action_scale
     motor_targets = np.clip(motor_targets, ctrl_lb, ctrl_ub)
     return motor_targets
-
-
-def rotate(vec: np.ndarray, quat: np.ndarray) -> np.ndarray:
-    if len(vec.shape) != 1:
-        raise ValueError('vec must have no batch dimensions.')
-    s, u = quat[0], quat[1:]
-    r = 2 * (np.dot(u, vec) * u) + (s * s - np.dot(u, u)) * vec
-    r = r + 2 * s * np.cross(u, vec)
-    return r
-
-
-def quat_inv(q: np.ndarray) -> np.ndarray:
-    return q * np.array([1, -1, -1, -1])
 
 
 def main(argv=None):
@@ -89,18 +76,13 @@ def main(argv=None):
 
     key = jax.random.key(0)
     termination_flag = False
-    command_history = []
 
     global_steps = 0
-    previous_ctrl = action
     with mujoco.viewer.launch_passive(model, data) as viewer:
         viewer.cam.trackbodyid = 1
         viewer.cam.distance = 5
 
         while viewer.is_running() and not termination_flag:
-            # if global_steps >= 1000:
-            #     termination_flag = True
-
             for event in pygame.event.get():
                 if event.type == pygame.JOYDEVICEADDED:
                     joy = pygame.joystick.Joystick(event.device_index)
@@ -143,11 +125,6 @@ def main(argv=None):
             )
             action, _ = inference_fn(observation, action_rng)
             ctrl = controller_fn(action)
-
-            # Smooth Control:
-            # alpha = 1.0
-            # ctrl = alpha * ctrl + (1 - alpha) * previous_ctrl
-            # previous_ctrl = ctrl
 
             data.ctrl = ctrl
 

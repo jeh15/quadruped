@@ -9,13 +9,14 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import numpy.typing as npt
+from scipy.spatial.transform import Rotation as R
 
 from unitree_api_bindings import unitree_api
 
 import mujoco
 import mujoco.viewer
 
-from src.envs import unitree_go2_v7 as unitree_go2
+from src.envs import unitree_go2_v8 as unitree_go2
 from src.algorithms.ppo.load_utilities import load_policy
 
 jax.config.update("jax_enable_x64", True)
@@ -38,53 +39,6 @@ def controller(
     return motor_targets
 
 
-def rotate(vec: np.ndarray, quat: np.ndarray) -> np.ndarray:
-    if len(vec.shape) != 1:
-        raise ValueError('vec must have no batch dimensions.')
-    s, u = quat[0], quat[1:]
-    r = 2 * (np.dot(u, vec) * u) + (s * s - np.dot(u, u)) * vec
-    r = r + 2 * s * np.cross(u, vec)
-    return r
-
-
-def quat_inv(q: np.ndarray) -> np.ndarray:
-    return q * np.array([1, -1, -1, -1])
-
-
-def get_observation(
-    observation: npt.ArrayLike,
-    imu_state: unitree_api.IMUState,
-    motor_state: unitree_api.MotorState,
-    command: npt.ArrayLike,
-    previous_action: npt.ArrayLike,
-    default_position: npt.ArrayLike,
-) -> npt.ArrayLike:
-    base_rotation = np.asarray(imu_state.quaternion)
-    base_angular_velocity = np.asarray(imu_state.gyroscope)
-    joint_positions = np.asarray(motor_state.q)
-
-    # Calculate Body frame Yaw Rate and Projected Gravity:
-    inverse_base_rotation = quat_inv(base_rotation)
-    projected_gravity = rotate(
-        np.array([0.0, 0.0, -1.0]),
-        inverse_base_rotation,
-    )
-
-    new_observation = np.concatenate([
-        base_angular_velocity,
-        projected_gravity,
-        joint_positions - default_position,
-        previous_action,
-        command,
-    ])
-
-    # Stack Observation:
-    observation = np.roll(observation, new_observation.size)
-    observation[:new_observation.size] = new_observation
-
-    return observation
-
-
 def main(argv=None):
     # Set up Logger:
     logging.use_absl_handler()
@@ -92,7 +46,7 @@ def main(argv=None):
         os.path.dirname(__file__),
         'logs',
     )
-    logging.get_absl_handler().use_absl_log_file(program_name='policy_test', log_dir=log_directory) 
+    logging.get_absl_handler().use_absl_log_file(program_name='policy_spoof', log_dir=log_directory) 
     logging.set_verbosity(logging.INFO)
 
     # Load from Env:
@@ -101,6 +55,7 @@ def main(argv=None):
 
     data = mujoco.MjData(model)
     control_rate = 0.02
+    control_rate_ns = 2e7
     num_physics_steps = int(control_rate / model.opt.timestep)
 
     # Load Policy:
@@ -138,6 +93,54 @@ def main(argv=None):
     motor_commands.damping = [0.0, 0.0, 0.0] * 4
     unitree_driver.update_command(motor_commands)
 
+    # Wait for Keyboard Input:
+    print('Press any key to Calibrate IMU...')
+    input()
+
+    acceleration_data = []
+    orientation_data = []
+
+    start_time = time.time()
+    while (time.time() - start_time) < 10.0:
+        step_time = time.time()
+        imu_state = unitree_driver.get_imu_state()
+        
+        # Update Data:
+        acceleration_data.append(np.asarray(imu_state.accelerometer))
+        orientation_data.append(np.asarray(imu_state.quaternion))
+
+        sleep_time = control_rate - (time.time() - step_time)
+        if sleep_time > 0:
+            time.sleep(sleep_time)
+        else:
+            print('Warning: Control rate exceeded.')
+
+
+    # Elapsed Time:
+    elapsed_time = time.time() - start_time
+    print(f'Elapsed Time: {elapsed_time:.2f} seconds')
+
+    # Convert Data to Numpy Arrays:
+    acceleration_data = np.array(acceleration_data)
+    orientation_data = np.array(orientation_data)
+
+    # Calculate Mean and Standard Deviation:
+    acceleration_mean = np.mean(acceleration_data, axis=0)
+    orientation_mean = np.mean(orientation_data, axis=0)
+
+    # Rotate Acceleration to World Frame to calculate Bias:
+    r = R.from_quat(orientation_mean)
+    acceleration_world_nt = r.as_matrix() @ acceleration_mean
+    acceleration_world_t = r.as_matrix().T @ acceleration_mean
+    accelerometer_bias_nt = np.array([0.0, 0.0, -9.81]) - acceleration_world_nt
+    accelerometer_bias_t = np.array([0.0, 0.0, -9.81]) - acceleration_world_t
+
+    print(f'Accelerometer Bias (Not Transposed): {accelerometer_bias_nt}')
+    print(f'Accelerometer Bias (Transposed): {accelerometer_bias_t}')
+
+    print('Press any key to start get up sequence...')
+    input()
+
     # Initialize Thread:
     unitree_driver.initialize_thread()
 
@@ -159,7 +162,7 @@ def main(argv=None):
     print(f"Base Rotation: {base_rotation}")
 
     # Wait for Keyboard Input:
-    print('Press any key to start the simulation...')
+    print('Press any key to start the Control...')
     input()
 
     # Initialize Observation History:
@@ -190,14 +193,19 @@ def main(argv=None):
     mujoco.mj_forward(model, data) 
 
     key = jax.random.key(0)
+    key, subkey = jax.random.split(key)
 
     # Setup Joystick:
     joysticks = {}
     policy_control_mode = False
     damping_control_mode = False
     is_running = True
+    next_time_ns = time.clock_gettime_ns(time.CLOCK_MONOTONIC)
+
+    action_test=action
+
     while is_running:
-        step_time = time.time()
+        next_time_ns += control_rate_ns
         for event in pygame.event.get():
             if event.type == pygame.JOYDEVICEADDED:
                 joy = pygame.joystick.Joystick(event.device_index)
@@ -234,7 +242,7 @@ def main(argv=None):
             lateral_command = -1 * joystick.get_axis(0)
             rotation_command = -1 * joystick.get_axis(3)
 
-        action_rng, key = jax.random.split(key)
+        key, subkey = jax.random.split(subkey)
         imu_state = unitree_driver.get_imu_state()
         motor_state = unitree_driver.get_motor_state()
         observation = env.hardware_observation(
@@ -243,11 +251,46 @@ def main(argv=None):
             command=command,
             previous_action=action,
         )
-        action, _ = inference_fn(observation, action_rng)
+        action, _ = inference_fn(observation, subkey)
         action.block_until_ready()
         action = jax.device_put(action, jax.devices('cpu')[0])
         action = np.asarray(action)
         ctrl = controller_fn(action)
+
+        obs = env.hardware_observation_test(
+            imu_state=imu_state,
+            motor_state=motor_state,
+            command=command,
+            previous_action=action_test,
+            spoof_quaternion=True,
+            spoof_accelerometer=True,
+            spoof_gyroscope=True,
+        )
+        action_test, _ = inference_fn(obs, subkey)
+        action_test.block_until_ready()
+        action_test = jax.device_put(action_test, jax.devices('cpu')[0])
+        action_test = np.asarray(action_test)
+        ctrl_test = controller_fn(action_test)
+
+        motor_state_str = f'Motor States: {motor_state.q}'
+        ctrl_str = f'Policy: {ctrl}'
+        ctrl_spoof_str = f'Policy Spoof Data: {ctrl_test}'
+        logging.info(motor_state_str)
+        logging.info(ctrl_str)
+        logging.info(ctrl_spoof_str)
+
+        # # Print Acceleration Data:
+        # accelerometer = np.asarray(imu_state.accelerometer)
+
+        # r = R.from_quat(np.asarray(imu_state.quaternion))
+        # C = r.as_matrix()
+
+        # not_transposed = accelerometer + C.T @ accelerometer_bias_nt
+        # transposed = accelerometer + C @ accelerometer_bias_t
+
+        # print(f'Accelerometer: {accelerometer}')
+        # print(f'Not Transposed: {not_transposed}')
+        # print(f'Transposed: {transposed}')
 
         # motor_state_str = f'Motor States: {motor_state.q}'
         # ctrl_str = f'Policy: {ctrl}'
@@ -256,22 +299,30 @@ def main(argv=None):
 
         # To Control the Robot:
         if policy_control_mode:
+            motor_commands = unitree_api.MotorCommand()
             motor_commands.q_setpoint = ctrl.tolist()
+            motor_commands.qd_setpoint = [0.0, 0.0, 0.0] * 4
+            motor_commands.torque_feedforward = [0.0, 0.0, 0.0] * 4
             motor_commands.stiffness = [35.0, 35.0, 35.0] * 4
             motor_commands.damping = [0.5, 0.5, 0.5] * 4
             unitree_driver.update_command(motor_commands)
 
         if damping_control_mode:
+            motor_commands = unitree_api.MotorCommand()
             motor_commands.q_setpoint = ctrl.tolist()
+            motor_commands.qd_setpoint = [0.0, 0.0, 0.0] * 4
+            motor_commands.torque_feedforward = [0.0, 0.0, 0.0] * 4
             motor_commands.stiffness = [0.0, 0.0, 0.0] * 4
             motor_commands.damping = [5.0, 5.0, 5.0] * 4
             unitree_driver.update_command(motor_commands)
 
-        sleep_time = control_rate - (time.time() - step_time)
-        if sleep_time > 0:
-            time.sleep(sleep_time)
+        now_ns = time.clock_gettime_ns(time.CLOCK_MONOTONIC)
+        if now_ns < next_time_ns:
+            sleep_time_ns = next_time_ns - now_ns
+            time.sleep(sleep_time_ns / 1e9)
         else:
             print('Warning: Control rate exceeded.')
+            next_time_ns = now_ns
 
     
     # Stop Thread:

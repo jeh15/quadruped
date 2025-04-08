@@ -1,6 +1,5 @@
 """
-    Unitree Go2 Environment:
-        Playground formulation using single time step observation, priviledged observations, and pose regularization.
+    Unitree Go2 Environment: Higher Gains Kp 50 Kd 0.5
 """
 
 from typing import Any, Dict, Union
@@ -179,8 +178,7 @@ class UnitreeGo2Env(PipelineEnv):
         self.step_dt = 0.02
         sys = sys.tree_replace({'opt.timestep': 0.004})
 
-        # kp = 35.0 kd = 0.5: Common in the literature
-        kp = 35.0
+        kp = 50.0
         kd = 0.5
         sys = sys.replace(
             dof_damping=sys.dof_damping.at[6:].set(kd),

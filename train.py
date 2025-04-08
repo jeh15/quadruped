@@ -11,7 +11,7 @@ import optax
 import wandb
 import orbax.checkpoint as ocp
 
-from src.envs import unitree_go2_v8 as unitree_go2
+from src.envs import unitree_go2_v10 as unitree_go2
 from src.algorithms.ppo import network_utilities as ppo_networks
 from src.algorithms.ppo.loss_utilities import loss_function
 from src.distribution_utilities import ParametricDistribution
@@ -28,8 +28,6 @@ os.environ['XLA_FLAGS'] = (
 )
 
 jax.config.update("jax_enable_x64", True)
-
-jax.config.update("jax_disable_jit", True)
 
 logging.set_verbosity(logging.ERROR)
 
@@ -53,7 +51,7 @@ def main(argv=None):
         pose_regularization=0.5,
         # Orientation Regularization Terms:
         orientation_regularization=-5.0,
-        linear_z_velocity=-2.0,
+        linear_z_velocity=-0.5,
         angular_xy_velocity=-0.05,
         # Energy Regularization Terms:
         torque=-2e-4,

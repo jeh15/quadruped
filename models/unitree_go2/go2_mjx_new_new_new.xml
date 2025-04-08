@@ -8,24 +8,24 @@
   <default>
     <default class="go2">
       <geom friction="0.6" contype="0" conaffinity="0" type="mesh"/>
-      <joint axis="0 1 0" damping="0.5" armature="0.005"/>
-      <general forcerange="-23.7 23.7" biastype="affine" gainprm="35 0 0" biasprm="0 -35 -0.5"/>
+      <joint axis="0 1 0" damping="2" armature="0.01"/>
+      <general forcerange="-23.7 23.7" biastype="affine" gainprm="50 0 0" biasprm="0 -50 -0.5"/>
       <default class="go2/abduction">
-        <joint axis="1 0 0" range="-1.0472 1.0472" frictionloss="0.3"/>
+        <joint axis="1 0 0" range="-1.0472 1.0472"/>
         <general ctrlrange="-0.9472 0.9472"/>
       </default>
       <default class="go2/hip">
         <default class="go2/front_hip">
-          <joint range="-1.5708 3.4907" frictionloss="0.3"/>
+          <joint range="-1.5708 3.4907"/>
           <general ctrlrange="-1.4 2.5"/>
         </default>
         <default class="go2/back_hip">
-          <joint range="-0.5236 4.5379" frictionloss="0.3"/>
+          <joint range="-0.5236 4.5379"/>
           <general ctrlrange="-1.4 2.5"/>
         </default>
       </default>
       <default class="go2/knee">
-        <joint range="-2.7227 -0.83776" frictionloss="1.0"/>
+        <joint range="-2.7227 -0.83776"/>
         <general ctrlrange="-2.6227 -0.84776"/>
       </default>
       <default class="go2/foot">
@@ -34,7 +34,7 @@
       <default class="go2/collision">
         <geom group="3" contype="0" conaffinity="1"/>
         <default class="go2/collision/foot">
-          <geom type="sphere" size="0.022" pos="-0.002 0 -0.213" solimp="0.9 .95 0.022" condim="6" friction="0.8 0.02 0.01"/>
+          <geom type="sphere" size="0.022" pos="-0.002 0 -0.213" solimp="0.015 1 0.031" condim="6" friction="0.8 0.02 0.01"/>
         </default>
       </default>
     </default>
