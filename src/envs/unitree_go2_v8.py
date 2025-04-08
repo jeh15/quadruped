@@ -901,11 +901,19 @@ class UnitreeGo2Env(PipelineEnv):
         def quat_inv(q: np.ndarray) -> np.ndarray:
             return q * np.array([1, -1, -1, -1])
 
-        base_rotation = np.asarray(imu_state.quaternion)
-        accelerometer = np.asarray(imu_state.accelerometer)
-        gyroscope = np.asarray(imu_state.gyroscope)
-        joint_positions = np.asarray(motor_state.q)
-        joint_velocities = np.asarray(motor_state.qd)
+        # Set to Correct Data Type:
+        base_rotation = np.asarray(imu_state.quaternion, dtype=np.float32)
+        accelerometer = np.asarray(imu_state.accelerometer, dtype=np.float32)
+        gyroscope = np.asarray(imu_state.gyroscope, dtype=np.float32)
+        joint_positions = np.asarray(motor_state.q, dtype=np.float32)
+        joint_velocities = np.asarray(motor_state.qd, dtype=np.float32)
+
+        # Cast to float64:
+        base_rotation = base_rotation.astype(np.float64)
+        accelerometer = accelerometer.astype(np.float64)
+        gyroscope = gyroscope.astype(np.float64)
+        joint_positions = joint_positions.astype(np.float64)
+        joint_velocities = joint_velocities.astype(np.float64)
 
         if bias is not None:
             r = R.from_quat(base_rotation)
@@ -933,75 +941,6 @@ class UnitreeGo2Env(PipelineEnv):
             'state': observation,
             'priviledged_state': np.zeros((self.num_privileged_observations,)),
         }
-    
-    def hardware_observation_test(
-        self,
-        imu_state: Any,
-        motor_state: Any,
-        command: np.ndarray,
-        previous_action: np.ndarray,
-        spoof_quaternion: bool = False,
-        spoof_accelerometer: bool = False,
-        spoof_gyroscope: bool = False,
-    ) -> np.ndarray:
-        # Numpy implementation of the observation function:
-        def rotate(vec: np.ndarray, quat: np.ndarray) -> np.ndarray:
-            if len(vec.shape) != 1:
-                raise ValueError('vec must have no batch dimensions.')
-            s, u = quat[0], quat[1:]
-            r = 2 * (np.dot(u, vec) * u) + (s * s - np.dot(u, u)) * vec
-            r = r + 2 * s * np.cross(u, vec)
-            return r
-
-        def quat_inv(q: np.ndarray) -> np.ndarray:
-            return q * np.array([1, -1, -1, -1])
-
-        # Spoof Quaternion:
-        if spoof_quaternion:
-            base_rotation = np.array([1.0, 0.0, 0.0, 0.0])
-        else:
-            base_rotation = np.asarray(imu_state.quaternion)
-
-        # Normalize Quaternion:
-        base_rotation = base_rotation / (np.linalg.norm(base_rotation) + 1e-6)
-
-        # Spoof Accelermeter Readings:
-        if spoof_accelerometer:
-            accelerometer = np.asarray([0.0, 0.0, 9.81]) + np.random.uniform(low=-0.1, high=0.1, size=(3,))
-        else:
-            accelerometer = np.asarray(imu_state.accelerometer)
-
-        # Spoof Gyroscope Readings:
-        if spoof_gyroscope:
-            gyroscope = np.asarray([0.0, 0.0, 0.0]) + np.random.uniform(low=-0.1, high=0.1, size=(3,))
-        else:
-            gyroscope = np.asarray(imu_state.gyroscope)
-
-        # Calculate Body frame Yaw Rate and Projected Gravity:
-        inverse_base_rotation = quat_inv(base_rotation)
-        projected_gravity = rotate(
-            np.array([0.0, 0.0, -1.0]),
-            inverse_base_rotation,
-        )
-
-        joint_positions = np.asarray(motor_state.q)
-        joint_velocities = np.asarray(motor_state.qd)
-
-        observation = np.concatenate([
-            accelerometer,
-            gyroscope,
-            projected_gravity,
-            joint_positions - self.default_ctrl,
-            joint_velocities,
-            previous_action,
-            command,
-        ])
-
-        return {
-            'state': observation,
-            'priviledged_state': np.zeros((self.num_privileged_observations,)),
-        }
-
 
 envs.register_environment('unitree_go2', UnitreeGo2Env)
 

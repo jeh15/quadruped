@@ -51,7 +51,7 @@ def main(argv=None):
         pose_regularization=0.5,
         # Orientation Regularization Terms:
         orientation_regularization=-5.0,
-        linear_z_velocity=-0.5,
+        linear_z_velocity=-2.0,
         angular_xy_velocity=-0.05,
         # Energy Regularization Terms:
         torque=-2e-4,

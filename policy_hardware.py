@@ -201,9 +201,6 @@ def main(argv=None):
     damping_control_mode = False
     is_running = True
     next_time_ns = time.clock_gettime_ns(time.CLOCK_MONOTONIC)
-
-    action_test=action
-
     while is_running:
         next_time_ns += control_rate_ns
         for event in pygame.event.get():
@@ -242,6 +239,13 @@ def main(argv=None):
             lateral_command = -1 * joystick.get_axis(0)
             rotation_command = -1 * joystick.get_axis(3)
 
+        # Filter and Clip Command:
+        command = np.array([
+            forward_command, lateral_command, rotation_command,
+        ])
+        command = np.where(np.abs(command) < 0.1, 0.0, command)
+        command = np.clip(command, -0.75, 0.75)
+
         key, subkey = jax.random.split(subkey)
         imu_state = unitree_driver.get_imu_state()
         motor_state = unitree_driver.get_motor_state()
@@ -256,46 +260,7 @@ def main(argv=None):
         action = jax.device_put(action, jax.devices('cpu')[0])
         action = np.asarray(action)
         ctrl = controller_fn(action)
-
-        obs = env.hardware_observation_test(
-            imu_state=imu_state,
-            motor_state=motor_state,
-            command=command,
-            previous_action=action_test,
-            spoof_quaternion=True,
-            spoof_accelerometer=True,
-            spoof_gyroscope=True,
-        )
-        action_test, _ = inference_fn(obs, subkey)
-        action_test.block_until_ready()
-        action_test = jax.device_put(action_test, jax.devices('cpu')[0])
-        action_test = np.asarray(action_test)
-        ctrl_test = controller_fn(action_test)
-
-        motor_state_str = f'Motor States: {motor_state.q}'
-        ctrl_str = f'Policy: {ctrl}'
-        ctrl_spoof_str = f'Policy Spoof Data: {ctrl_test}'
-        logging.info(motor_state_str)
-        logging.info(ctrl_str)
-        logging.info(ctrl_spoof_str)
-
-        # # Print Acceleration Data:
-        # accelerometer = np.asarray(imu_state.accelerometer)
-
-        # r = R.from_quat(np.asarray(imu_state.quaternion))
-        # C = r.as_matrix()
-
-        # not_transposed = accelerometer + C.T @ accelerometer_bias_nt
-        # transposed = accelerometer + C @ accelerometer_bias_t
-
-        # print(f'Accelerometer: {accelerometer}')
-        # print(f'Not Transposed: {not_transposed}')
-        # print(f'Transposed: {transposed}')
-
-        # motor_state_str = f'Motor States: {motor_state.q}'
-        # ctrl_str = f'Policy: {ctrl}'
-        # logging.info(motor_state_str)
-        # logging.info(ctrl_str)
+        ctrl = ctrl.astype(np.float32)
 
         # To Control the Robot:
         if policy_control_mode:
