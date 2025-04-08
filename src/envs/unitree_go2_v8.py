@@ -658,8 +658,8 @@ class UnitreeGo2Env(PipelineEnv):
         self, qpos: jax.Array,
     ) -> jax.Array:
         weight = jnp.array([1.0, 1.0, 0.1] * 4)
-        error = jnp.sum(jnp.square(qpos - self.default_pose))
-        return jnp.exp(-error * weight)
+        error = jnp.sum(jnp.square(qpos - self.default_pose) * weight)
+        return jnp.exp(-error)
 
     def _reward_torques(self, torques: jax.Array) -> jax.Array:
         # Penalize torques
