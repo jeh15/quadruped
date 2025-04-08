@@ -98,8 +98,8 @@ def main(argv=None):
         viewer.cam.distance = 5
 
         while viewer.is_running() and not termination_flag:
-            if global_steps >= 1000:
-                termination_flag = True
+            # if global_steps >= 1000:
+            #     termination_flag = True
 
             for event in pygame.event.get():
                 if event.type == pygame.JOYDEVICEADDED:

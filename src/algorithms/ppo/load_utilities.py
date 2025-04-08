@@ -7,6 +7,8 @@ import jax.numpy as jnp
 import orbax.checkpoint as ocp
 import flax.linen as nn
 import optax
+import distrax
+
 from brax.training.acme import running_statistics, specs
 from brax.envs.base import Env
 
@@ -16,6 +18,7 @@ from src.algorithms.ppo.network_utilities import PPONetworkParams
 from src.algorithms.ppo.checkpoint_utilities import (
     RestoredCheckpoint, TrainState,
 )
+from src.distribution_utilities import ParametricDistribution
 
 
 @dataclasses.dataclass
@@ -77,6 +80,12 @@ def load_policy(checkpoint_name: str, environment: Env, restore_iteration: Optio
         activation=eval(network_metadata['activation']),
         policy_kernel_init=eval(network_metadata['policy_kernel_init']),
         value_kernel_init=eval(network_metadata['value_kernel_init']),
+        policy_observation_key=network_metadata['policy_observation_key'],
+        value_observation_key=network_metadata['value_observation_key'],
+        action_distribution=ParametricDistribution(
+            distribution=distrax.Normal,
+            bijector=distrax.Tanh(),
+        ),
     )
     optimizer = eval(training_metadata['optimizer'])
 
