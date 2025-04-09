@@ -28,7 +28,6 @@ os.environ['XLA_FLAGS'] = (
 )
 
 jax.config.update("jax_enable_x64", True)
-jax.config.update("jax_disable_jit", True)
 
 logging.set_verbosity(logging.ERROR)
 
