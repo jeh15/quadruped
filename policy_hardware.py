@@ -14,7 +14,6 @@ from scipy.spatial.transform import Rotation as R
 from unitree_api_bindings import unitree_api
 
 import mujoco
-import mujoco.viewer
 
 from src.envs import unitree_go2_v8 as unitree_go2
 from src.algorithms.ppo.load_utilities import load_policy

@@ -1,3 +1,4 @@
+import os
 from absl import app, flags
 import functools
 import time
@@ -11,7 +12,7 @@ import numpy.typing as npt
 import mujoco
 import mujoco.viewer
 
-from src.envs import unitree_go2_v10 as unitree_go2
+from src.envs import unitree_go2_v12 as unitree_go2
 from src.algorithms.ppo.load_utilities import load_policy
 
 jax.config.update("jax_enable_x64", True)
@@ -40,10 +41,21 @@ def controller(
 def main(argv=None):
     # Load from Env:
     env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx.xml')
-    model = env.sys.mj_model
+    model_mjx = env.sys.mj_model
+    
+    # High Fidelity Model:
+    model_path = os.path.join(
+        os.path.dirname(__file__),
+        'models/unitree_go2/scene_mjx.xml',
+    )
 
-    data = mujoco.MjData(model)  # type: ignore
-    mujoco.mj_resetData(model, data)  # type: ignore
+    model = mujoco.MjModel.from_xml_path(
+        model_path,
+    )
+    model.opt.timestep = 0.002
+
+    data = mujoco.MjData(model)
+    mujoco.mj_resetData(model, data)
     control_rate = 0.02
     num_steps = int(control_rate / model.opt.timestep)
 
@@ -66,9 +78,9 @@ def main(argv=None):
     )
 
     # Test:
-    data.qpos = model.key_qpos.flatten()
+    data.qpos = model_mjx.key_qpos.flatten()
     command = np.array([0.0, 0.0, 0.0])
-    action = model.key_ctrl.flatten()
+    action = model_mjx.key_ctrl.flatten()
     observation = np.zeros(env.num_observations)
 
     # Setup Joystick:

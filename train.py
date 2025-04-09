@@ -11,7 +11,7 @@ import optax
 import wandb
 import orbax.checkpoint as ocp
 
-from src.envs import unitree_go2_v10 as unitree_go2
+from src.envs import unitree_go2_v12 as unitree_go2
 from src.algorithms.ppo import network_utilities as ppo_networks
 from src.algorithms.ppo.loss_utilities import loss_function
 from src.distribution_utilities import ParametricDistribution
@@ -28,6 +28,7 @@ os.environ['XLA_FLAGS'] = (
 )
 
 jax.config.update("jax_enable_x64", True)
+jax.config.update("jax_disable_jit", True)
 
 logging.set_verbosity(logging.ERROR)
 
@@ -170,7 +171,10 @@ def main(argv=None):
         print('\n')
 
     # Setup Checkpoint Manager:
-    manager_options = checkpoint_utilities.default_checkpoint_options()
+    manager_options = ocp.CheckpointManagerOptions(
+        save_interval_steps=1,
+        create=True,
+    )
     checkpoint_direrctory = os.path.join(
         os.path.dirname(__file__),
         f"checkpoints/{run.name}",
