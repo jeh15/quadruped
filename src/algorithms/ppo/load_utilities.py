@@ -123,7 +123,7 @@ def load_policy(checkpoint_name: str, environment: Env, restore_iteration: Optio
         train_state.normalization_params, train_state.params.policy_params,
     )
 
-    return make_policy, params
+    return make_policy, params, metadata
 
 
 def load_checkpoint(

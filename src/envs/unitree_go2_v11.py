@@ -611,7 +611,7 @@ class UnitreeGo2Env(PipelineEnv):
         feet_velocity = self.get_feet_velocity(pipeline_state).ravel()
 
 
-        priviledged_observation = jnp.concatenate([
+        privileged_observation = jnp.concatenate([
             observation,                                                                                # 48
             accelerometer,                                                                              # 3
             gyroscope,                                                                                  # 3
@@ -633,7 +633,7 @@ class UnitreeGo2Env(PipelineEnv):
 
         return {
             'state': observation,
-            'priviledged_state': priviledged_observation,
+            'privileged_state': privileged_observation,
         }
 
     def _reward_vertical_velocity(
@@ -876,7 +876,7 @@ class UnitreeGo2Env(PipelineEnv):
 
         return {
             'state': observation,
-            'priviledged_state': np.zeros((self.num_privileged_observations,)),
+            'privileged_state': np.zeros((self.num_privileged_observations,)),
         }
     
     def hardware_observation(
@@ -929,7 +929,7 @@ class UnitreeGo2Env(PipelineEnv):
 
         return {
             'state': observation,
-            'priviledged_state': np.zeros((self.num_privileged_observations,)),
+            'privileged_state': np.zeros((self.num_privileged_observations,)),
         }
     
     def hardware_observation_test(
@@ -997,7 +997,7 @@ class UnitreeGo2Env(PipelineEnv):
 
         return {
             'state': observation,
-            'priviledged_state': np.zeros((self.num_privileged_observations,)),
+            'privileged_state': np.zeros((self.num_privileged_observations,)),
         }
 
 

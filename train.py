@@ -81,7 +81,7 @@ def main(argv=None):
         policy_kernel_init='jax.nn.initializers.lecun_uniform()',
         value_kernel_init='jax.nn.initializers.variance_scaling(scale=0.01, mode="fan_in", distribution="uniform")',
         policy_observation_key='state',
-        value_observation_key='priviledged_state',
+        value_observation_key='privileged_state',
         action_distribution='ParametricDistribution(distribution=distrax.Normal, bijector=distrax.Tanh())',
     )
     loss_metadata = checkpoint_utilities.loss_metadata(
@@ -134,7 +134,7 @@ def main(argv=None):
         policy_kernel_init=jax.nn.initializers.lecun_uniform(),
         value_kernel_init=jax.nn.initializers.variance_scaling(scale=0.01, mode="fan_in", distribution="uniform"),
         policy_observation_key='state',
-        value_observation_key='priviledged_state',
+        value_observation_key='privileged_state',
         action_distribution=ParametricDistribution(
             distribution=distrax.Normal,
             bijector=distrax.Tanh(),
@@ -149,9 +149,9 @@ def main(argv=None):
         gae_lambda=loss_metadata.gae_lambda,
         normalize_advantages=loss_metadata.normalize_advantages,
     )
-    env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx.xml', config=reward_config)
-    eval_env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx.xml', config=reward_config)
-    render_env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx.xml', config=reward_config)
+    env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx.xml', config=reward_config, action_scale=0.5)
+    eval_env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx.xml', config=reward_config, action_scale=0.5)
+    render_env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx.xml', config=reward_config, action_scale=0.5)
 
     def progress_fn(iteration, num_steps, metrics):
         print(

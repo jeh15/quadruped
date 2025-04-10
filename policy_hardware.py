@@ -15,7 +15,7 @@ from unitree_api_bindings import unitree_api
 
 import mujoco
 
-from src.envs import unitree_go2_v8 as unitree_go2
+from src.envs import unitree_go2_v12 as unitree_go2
 from src.algorithms.ppo.load_utilities import load_policy
 
 jax.config.update("jax_enable_x64", True)
@@ -29,13 +29,10 @@ flags.DEFINE_string(
 def controller(
     action: npt.ArrayLike,
     default_control: npt.ArrayLike,
-    ctrl_lb: npt.ArrayLike,
-    ctrl_ub: npt.ArrayLike,
     action_scale: float,
 ) -> np.ndarray:
     motor_targets = default_control + action * action_scale
-    motor_targets = np.clip(motor_targets, ctrl_lb, ctrl_ub)
-    return motor_targets
+    return np.asarray(motor_targets)
 
 
 def main(argv=None):
@@ -45,11 +42,11 @@ def main(argv=None):
         os.path.dirname(__file__),
         'logs',
     )
-    logging.get_absl_handler().use_absl_log_file(program_name='policy_spoof', log_dir=log_directory) 
+    logging.get_absl_handler().use_absl_log_file(program_name='hardware_test', log_dir=log_directory) 
     logging.set_verbosity(logging.INFO)
 
     # Load from Env:
-    env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx.xml')
+    env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx.xml', action_scale=0.5)
     model = env.sys.mj_model
 
     data = mujoco.MjData(model)
@@ -58,7 +55,7 @@ def main(argv=None):
     num_physics_steps = int(control_rate / model.opt.timestep)
 
     # Load Policy:
-    make_policy, params = load_policy(
+    make_policy, params, _ = load_policy(
         checkpoint_name=FLAGS.checkpoint_name,
         environment=env,
     )
@@ -69,8 +66,6 @@ def main(argv=None):
     controller_fn = functools.partial(
         controller,
         default_control=env.default_ctrl,
-        ctrl_lb=env.ctrl_lb,
-        ctrl_ub=env.ctrl_ub,
         action_scale=env._action_scale,
     )
 
@@ -199,6 +194,7 @@ def main(argv=None):
     policy_control_mode = False
     damping_control_mode = False
     is_running = True
+    previous_action = np.zeros_like(env.default_ctrl)
     next_time_ns = time.clock_gettime_ns(time.CLOCK_MONOTONIC)
     while is_running:
         next_time_ns += control_rate_ns
@@ -258,18 +254,38 @@ def main(argv=None):
         action.block_until_ready()
         action = jax.device_put(action, jax.devices('cpu')[0])
         action = np.asarray(action)
+
+        # Filter Action:
+        alpha = 0.8
+        action = alpha * action + (1 - alpha) * previous_action
+        previous_action = action
+
         ctrl = controller_fn(action)
         ctrl = ctrl.astype(np.float32)
+
+        # Remove Abduction Control:
+        ctrl = np.reshape(ctrl, (4, 3))
+        ctrl[:, 0] = 0.0
+        ctrl = ctrl.flatten()
+
+        action_list = action.tolist()
+        q_setpoint = ctrl.tolist()
+
+        # Log Data:
+        logging.info(f'Action: {action_list}')
+        logging.info(f'Command: {q_setpoint}')
+        logging.info(f'Joint Position: {motor_state.q}')
 
         # To Control the Robot:
         if policy_control_mode:
             motor_commands = unitree_api.MotorCommand()
-            motor_commands.q_setpoint = ctrl.tolist()
+            motor_commands.q_setpoint = q_setpoint
             motor_commands.qd_setpoint = [0.0, 0.0, 0.0] * 4
             motor_commands.torque_feedforward = [0.0, 0.0, 0.0] * 4
             motor_commands.stiffness = [35.0, 35.0, 35.0] * 4
             motor_commands.damping = [0.5, 0.5, 0.5] * 4
             unitree_driver.update_command(motor_commands)
+            # policy_control_mode = False
 
         if damping_control_mode:
             motor_commands = unitree_api.MotorCommand()

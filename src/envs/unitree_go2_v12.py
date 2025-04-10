@@ -1,6 +1,6 @@
 """
     Unitree Go2 Environment:
-        Playground formulation using single time step observation, priviledged observations, pose regularization, and go2_mjx_v2.
+        Playground formulation using single time step observation, privileged observations, pose regularization, and go2_mjx_v2.
 """
 
 from typing import Any, Dict, Union
@@ -60,7 +60,7 @@ class RewardConfig:
 
 @flax.struct.dataclass
 class NoiseConfig:
-    joint_position: float = 0.03
+    joint_position: float = 0.05
     joint_velocity: float = 1.5
     gyroscope: float = 0.2
     gravity_vector: float = 0.05
@@ -627,7 +627,7 @@ class UnitreeGo2Env(PipelineEnv):
         feet_velocity = self.get_feet_velocity(pipeline_state).ravel()
 
 
-        priviledged_observation = jnp.concatenate([
+        privileged_observation = jnp.concatenate([
             observation,                                                                                # 48
             accelerometer,                                                                              # 3
             gyroscope,                                                                                  # 3
@@ -649,7 +649,7 @@ class UnitreeGo2Env(PipelineEnv):
 
         return {
             'state': observation,
-            'priviledged_state': priviledged_observation,
+            'privileged_state': privileged_observation,
         }
 
     def _reward_vertical_velocity(
@@ -892,7 +892,7 @@ class UnitreeGo2Env(PipelineEnv):
 
         return {
             'state': observation,
-            'priviledged_state': np.zeros((self.num_privileged_observations,)),
+            'privileged_state': np.zeros((self.num_privileged_observations,)),
         }
     
     def hardware_observation(
@@ -953,7 +953,7 @@ class UnitreeGo2Env(PipelineEnv):
 
         return {
             'state': observation,
-            'priviledged_state': np.zeros((self.num_privileged_observations,)),
+            'privileged_state': np.zeros((self.num_privileged_observations,)),
         }
 
 envs.register_environment('unitree_go2', UnitreeGo2Env)

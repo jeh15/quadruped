@@ -1,5 +1,5 @@
 import os
-from absl import app, flags
+from absl import app, flags, logging
 import functools
 import time
 
@@ -39,8 +39,17 @@ def controller(
 
 
 def main(argv=None):
+    # Set up Logger:
+    logging.use_absl_handler()
+    log_directory = os.path.join(
+        os.path.dirname(__file__),
+        'logs',
+    )
+    logging.get_absl_handler().use_absl_log_file(program_name='simulation_test', log_dir=log_directory) 
+    logging.set_verbosity(logging.INFO)
+
     # Load from Env:
-    env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx.xml')
+    env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx.xml', action_scale=0.5)
     model_mjx = env.sys.mj_model
     
     # High Fidelity Model:
@@ -52,7 +61,7 @@ def main(argv=None):
     model = mujoco.MjModel.from_xml_path(
         model_path,
     )
-    model.opt.timestep = 0.002
+    model.opt.timestep = 0.004
 
     data = mujoco.MjData(model)
     mujoco.mj_resetData(model, data)
@@ -60,7 +69,7 @@ def main(argv=None):
     num_steps = int(control_rate / model.opt.timestep)
 
     # Load Policy:
-    make_policy, params = load_policy(
+    make_policy, params, _ = load_policy(
         checkpoint_name=FLAGS.checkpoint_name,
         environment=env,
         restore_iteration=FLAGS.checkpoint_iteration,
@@ -138,7 +147,17 @@ def main(argv=None):
             action, _ = inference_fn(observation, action_rng)
             ctrl = controller_fn(action)
 
-            data.ctrl = ctrl
+            action_list = action.tolist()
+            q_setpoint = ctrl.tolist()
+            joint_position = data.qpos[7:].tolist()
+
+            # Log Data:
+            logging.info(f'Action: {action_list}')
+            logging.info(f'Command: {q_setpoint}')
+            logging.info(f'Joint Position: {joint_position}')
+
+            # data.ctrl = ctrl
+            data.ctrl = np.asarray([0, 0.9, -1.8] * 4)
 
             for _ in range(num_steps):
                 mujoco.mj_step(model, data)  # type: ignore
