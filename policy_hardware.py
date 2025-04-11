@@ -45,6 +45,9 @@ def main(argv=None):
     logging.get_absl_handler().use_absl_log_file(program_name='hardware_test', log_dir=log_directory) 
     logging.set_verbosity(logging.INFO)
 
+    # Load Bias Data from Calibration:
+    accelerometer_bias = np.loadtxt('csv/bias.csv', delimiter=',')
+
     # Load from Env:
     env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx.xml', action_scale=0.5)
     model = env.sys.mj_model
@@ -86,51 +89,6 @@ def main(argv=None):
     motor_commands.stiffness = [0.0, 0.0, 0.0] * 4
     motor_commands.damping = [0.0, 0.0, 0.0] * 4
     unitree_driver.update_command(motor_commands)
-
-    # Wait for Keyboard Input:
-    print('Press any key to Calibrate IMU...')
-    input()
-
-    acceleration_data = []
-    orientation_data = []
-
-    start_time = time.time()
-    while (time.time() - start_time) < 10.0:
-        step_time = time.time()
-        imu_state = unitree_driver.get_imu_state()
-        
-        # Update Data:
-        acceleration_data.append(np.asarray(imu_state.accelerometer))
-        orientation_data.append(np.asarray(imu_state.quaternion))
-
-        sleep_time = control_rate - (time.time() - step_time)
-        if sleep_time > 0:
-            time.sleep(sleep_time)
-        else:
-            print('Warning: Control rate exceeded.')
-
-
-    # Elapsed Time:
-    elapsed_time = time.time() - start_time
-    print(f'Elapsed Time: {elapsed_time:.2f} seconds')
-
-    # Convert Data to Numpy Arrays:
-    acceleration_data = np.array(acceleration_data)
-    orientation_data = np.array(orientation_data)
-
-    # Calculate Mean and Standard Deviation:
-    acceleration_mean = np.mean(acceleration_data, axis=0)
-    orientation_mean = np.mean(orientation_data, axis=0)
-
-    # Rotate Acceleration to World Frame to calculate Bias:
-    r = R.from_quat(orientation_mean)
-    acceleration_world_nt = r.as_matrix() @ acceleration_mean
-    acceleration_world_t = r.as_matrix().T @ acceleration_mean
-    accelerometer_bias_nt = np.array([0.0, 0.0, -9.81]) - acceleration_world_nt
-    accelerometer_bias_t = np.array([0.0, 0.0, -9.81]) - acceleration_world_t
-
-    print(f'Accelerometer Bias (Not Transposed): {accelerometer_bias_nt}')
-    print(f'Accelerometer Bias (Transposed): {accelerometer_bias_t}')
 
     print('Press any key to start get up sequence...')
     input()
@@ -194,7 +152,11 @@ def main(argv=None):
     policy_control_mode = False
     damping_control_mode = False
     is_running = True
+    
     previous_action = np.zeros_like(env.default_ctrl)
+    previous_imu_state = imu_state
+    previous_motor_state = motor_state
+
     next_time_ns = time.clock_gettime_ns(time.CLOCK_MONOTONIC)
     while is_running:
         next_time_ns += control_rate_ns
@@ -244,37 +206,42 @@ def main(argv=None):
         key, subkey = jax.random.split(subkey)
         imu_state = unitree_driver.get_imu_state()
         motor_state = unitree_driver.get_motor_state()
-        observation = env.hardware_observation(
+        observation = env.smooth_observation(
             imu_state=imu_state,
             motor_state=motor_state,
+            previous_imu_state=previous_imu_state,
+            previous_motor_state=previous_motor_state,
             command=command,
             previous_action=action,
         )
-        action, _ = inference_fn(observation, subkey)
-        action.block_until_ready()
+        previous_imu_state = imu_state
+        previous_motor_state = motor_state
+
+        action, _ = jax.block_until_ready(
+            inference_fn(observation, subkey),
+        )
         action = jax.device_put(action, jax.devices('cpu')[0])
         action = np.asarray(action)
 
         # Filter Action:
-        alpha = 0.8
-        action = alpha * action + (1 - alpha) * previous_action
-        previous_action = action
+        # alpha = 0.8
+        # action = alpha * action + (1 - alpha) * previous_action
+        # previous_action = action
 
         ctrl = controller_fn(action)
         ctrl = ctrl.astype(np.float32)
-
-        # Remove Abduction Control:
-        ctrl = np.reshape(ctrl, (4, 3))
-        ctrl[:, 0] = 0.0
-        ctrl = ctrl.flatten()
 
         action_list = action.tolist()
         q_setpoint = ctrl.tolist()
 
         # Log Data:
+        logging.info(f'Accelerometer: {imu_state.accelerometer}')
+        logging.info(f'Gyroscope: {imu_state.gyroscope}')
+        logging.info(f'Quaternion: {imu_state.quaternion}')
+        logging.info(f'Joint Position: {motor_state.q}')
+        logging.info(f'Joint Velocity: {motor_state.qd}')
         logging.info(f'Action: {action_list}')
         logging.info(f'Command: {q_setpoint}')
-        logging.info(f'Joint Position: {motor_state.q}')
 
         # To Control the Robot:
         if policy_control_mode:

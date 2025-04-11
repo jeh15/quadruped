@@ -1,4 +1,5 @@
-from absl import app
+import os
+from absl import app, logging
 import time
 
 
@@ -14,66 +15,15 @@ import matplotlib.pyplot as plt
 jax.config.update("jax_enable_x64", True)
 
 
-def controller(
-    action: npt.ArrayLike,
-    default_control: npt.ArrayLike,
-    ctrl_lb: npt.ArrayLike,
-    ctrl_ub: npt.ArrayLike,
-    action_scale: float,
-) -> np.ndarray:
-    motor_targets = default_control + action * action_scale
-    motor_targets = np.clip(motor_targets, ctrl_lb, ctrl_ub)
-    return motor_targets
-
-
-def rotate(vec: np.ndarray, quat: np.ndarray) -> np.ndarray:
-    if len(vec.shape) != 1:
-        raise ValueError('vec must have no batch dimensions.')
-    s, u = quat[0], quat[1:]
-    r = 2 * (np.dot(u, vec) * u) + (s * s - np.dot(u, u)) * vec
-    r = r + 2 * s * np.cross(u, vec)
-    return r
-
-
-def quat_inv(q: np.ndarray) -> np.ndarray:
-    return q * np.array([1, -1, -1, -1])
-
-
-def get_observation(
-    observation: npt.ArrayLike,
-    imu_state: unitree_api.IMUState,
-    motor_state: unitree_api.MotorState,
-    command: npt.ArrayLike,
-    previous_action: npt.ArrayLike,
-    default_position: npt.ArrayLike,
-) -> npt.ArrayLike:
-    base_rotation = np.asarray(imu_state.quaternion)
-    base_angular_velocity = np.asarray(imu_state.gyroscope)
-    joint_positions = np.asarray(motor_state.q)
-
-    # Calculate Body frame Yaw Rate and Projected Gravity:
-    inverse_base_rotation = quat_inv(base_rotation)
-    projected_gravity = rotate(
-        np.array([0.0, 0.0, -1.0]),
-        inverse_base_rotation,
-    )
-
-    new_observation = np.concatenate([
-        base_angular_velocity,
-        projected_gravity,
-        joint_positions - default_position,
-        previous_action,
-        command,
-    ])
-
-    # Stack Observation:
-    observation = np.roll(observation, new_observation.size)
-    observation[:new_observation.size] = new_observation
-
-    return observation
-
-
 def main(argv=None):
+    logging.use_absl_handler()
+    log_directory = os.path.join(
+        os.path.dirname(__file__),
+        'logs',
+    )
+    logging.get_absl_handler().use_absl_log_file(program_name='calibration', log_dir=log_directory) 
+    logging.set_verbosity(logging.INFO)
+
     control_rate = 0.02
 
     # Initialize Unitree-Api:
@@ -141,9 +91,27 @@ def main(argv=None):
     joint_velocity_std = np.std(joint_velocity_data, axis=0)
 
     # Rotate Acceleration to World Frame to calculate Bias:
-    r = R.from_quat(orientation_mean)
-    acceleration_world = r.as_matrix() @ acceleration_mean
-    bias = np.array([0.0, 0.0, -9.81]) - acceleration_world
+    r = R.from_quat(orientation_mean, scalar_first=True)
+    acceleration_world = r.as_matrix().T @ acceleration_mean
+    bias = acceleration_world + np.array([0.0, 0.0, -9.81])
+
+    # Log Data:
+    logging.info(f'Accelerometer Mean: {acceleration_mean}')
+    logging.info(f'Accelerometer Std: {acceleration_std}')
+    logging.info(f'Gyroscope Mean: {angular_velocity_mean}')
+    logging.info(f'Gyroscope Std: {angular_velocity_std}')
+    logging.info(f'Orientation Mean: {orientation_mean}')
+    logging.info(f'Orientation Std: {orientation_std}')
+    logging.info(f'Joint Velocity Mean: {joint_velocity_mean}')
+    logging.info(f'Joint Velocity Std: {joint_velocity_std}')
+    logging.info(f'Accelerometer Bias: {bias}')
+
+    # Save to CSV for easy Loading:
+    np.savetxt('csv/accelerometer_data.csv', (acceleration_mean, acceleration_std), delimiter=',')
+    np.savetxt('csv/gyroscope_data.csv', (angular_velocity_mean, angular_velocity_std), delimiter=',')
+    np.savetxt('csv/orientation_data.csv', (orientation_mean, orientation_std), delimiter=',')
+    np.savetxt('csv/joint_velocity_data.csv', (joint_velocity_mean, joint_velocity_std), delimiter=',')
+    np.savetxt('csv/bias.csv', bias, delimiter=',')
 
     # Plot Data:
     fig, axs = plt.subplots(4, 1, figsize=(10, 10))

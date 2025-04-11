@@ -20,6 +20,9 @@ bazel_dep(name = "eigen", version = "4.0.0-20241125.bcr.1")
 # OSQP Cpp Wrapper:
 bazel_dep(name = "osqp-cpp", version = "0.0.0-20231004-4343373.bcr.1")
 
+# ONNX Runtime:
+bazel_dep(name = "onnx", version = "1.17.0")
+
 # MoJoCo:
 bazel_dep(name = "mujoco-bazel")
 archive_override(

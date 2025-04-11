@@ -17,8 +17,6 @@ from src.algorithms.ppo.load_utilities import load_policy
 
 import matplotlib.pyplot as plt
 
-# jax.config.update("jax_enable_x64", True)
-
 os.environ["MUJOCO_GL"] = "egl"
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
 
@@ -177,44 +175,15 @@ def main(argv=None):
     # Define the TensorFlow input signature
     spec = [tf.TensorSpec(shape=(1, obs_size["state"][0]), dtype=tf.float32, name="obs")]
 
+    # Build the Model:
     tensorflow_pred = tf_policy_network(test_input)[0]
     # Build the model by calling it with example data
     print(f"Tensorflow prediction: {tensorflow_pred}")
-
     tf_policy_network.output_names = ['continuous_actions']
 
-    # opset 11 matches isaac lab.
-    output_path = f"go2_policy.onnx"
+    # Save ONNX Model:
+    output_path = f"onnx_models/{FLAGS.checkpoint_name}.onnx"
     model_proto, _ = tf2onnx.convert.from_keras(tf_policy_network, input_signature=spec, opset=11, output_path=output_path)
-
-    # Run inference with ONNX Runtime
-    output_names = ['continuous_actions']
-    providers = ['CPUExecutionProvider']
-    m = rt.InferenceSession(output_path, providers=providers)
-
-    onnx_input = {
-        'obs': np.ones((1, obs_size["state"][0]), dtype=np.float32)
-    }
-    # Prepare inputs for ONNX Runtime
-    onnx_pred = m.run(output_names, onnx_input)[0][0]
-
-    print("ONNX prediction:", onnx_pred)
-
-    test_input = {
-        'state': jnp.ones(obs_size["state"]),
-        'privileged_state': jnp.zeros(obs_size["privileged_state"])
-    }
-    jax_pred, _ = inference_fn(test_input, jax.random.PRNGKey(0))
-    print(jax_pred)
-
-    print(onnx_pred.shape)
-    print(tensorflow_pred.shape)
-    print(jax_pred.shape)
-    plt.plot(onnx_pred, label='onnx')
-    plt.plot(tensorflow_pred, label='tensorflow')
-    plt.plot(jax_pred, label='jax')
-    plt.legend()
-    plt.show()
 
 
 if __name__ == '__main__':

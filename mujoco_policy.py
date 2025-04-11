@@ -147,17 +147,8 @@ def main(argv=None):
             action, _ = inference_fn(observation, action_rng)
             ctrl = controller_fn(action)
 
-            action_list = action.tolist()
-            q_setpoint = ctrl.tolist()
-            joint_position = data.qpos[7:].tolist()
-
-            # Log Data:
-            logging.info(f'Action: {action_list}')
-            logging.info(f'Command: {q_setpoint}')
-            logging.info(f'Joint Position: {joint_position}')
-
             # data.ctrl = ctrl
-            data.ctrl = np.asarray([0, 0.9, -1.8] * 4)
+            data.ctrl = ctrl
 
             for _ in range(num_steps):
                 mujoco.mj_step(model, data)  # type: ignore

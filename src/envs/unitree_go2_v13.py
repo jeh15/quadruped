@@ -1,6 +1,6 @@
 """
     Unitree Go2 Environment:
-        Playground formulation using single time step observation, privileged observations, pose regularization, and go2_mjx_v2.
+        Playground formulation using single time step observation, privileged observations, pose regularization, and go2_mjx_v2, No acceleration Observation.
 """
 
 from typing import Any, Dict, Union
@@ -302,8 +302,8 @@ class UnitreeGo2Env(PipelineEnv):
 
         # Constants:
         self.foot_radius = 0.022
-        self.num_observations = 48
-        self.num_privileged_observations = 123
+        self.num_observations = 45
+        self.num_privileged_observations = 120
 
     def sample_command(self, rng: jax.Array) -> jax.Array:
         forward_velocity_range = [-0.6, 1.5]
@@ -545,7 +545,6 @@ class UnitreeGo2Env(PipelineEnv):
     ) -> Dict[str, jax.Array]:
         """
             Observation: [
-                accelerometer,
                 gyroscope,
                 projected_gravity,
                 relative_motor_positions,
@@ -556,17 +555,6 @@ class UnitreeGo2Env(PipelineEnv):
         """
         q = pipeline_state.q[7:]
         qd = pipeline_state.qd[6:]
-
-        # Accelerometer Noise:
-        accelerometer = self.get_accelerometer(pipeline_state)
-        state_info['rng'], noise_key = jax.random.split(state_info['rng'])
-        accelerometer_noise = jax.random.uniform(
-            noise_key,
-            shape=accelerometer.shape,
-            minval=-self.noise_config.accelerometer,
-            maxval=self.noise_config.accelerometer,
-        )
-        noisy_accelerometer = accelerometer + accelerometer_noise
 
         # Gyroscope Noise:
         gyroscope = self.get_gyro(pipeline_state)
@@ -611,7 +599,6 @@ class UnitreeGo2Env(PipelineEnv):
         noisy_joint_velocities = qd + joint_velocity_noise
 
         observation = jnp.concatenate([
-            noisy_accelerometer,                        # 3
             noisy_angular_rate,                         # 3
             noisy_projected_gravity,                    # 3
             noisy_joint_positions - self.default_pose,  # 12
@@ -619,8 +606,9 @@ class UnitreeGo2Env(PipelineEnv):
             state_info['previous_action'],              # 12
             state_info['command'],                      # 3
         ])
-        # Size: 48
+        # Size: 45
 
+        accelerometer = self.get_accelerometer(pipeline_state)
         linear_velocity = self.get_local_linvel(pipeline_state)
         global_angular_velocity = self.get_global_angvel(pipeline_state)
         actuator_force = pipeline_state.actuator_force
@@ -628,7 +616,7 @@ class UnitreeGo2Env(PipelineEnv):
 
 
         privileged_observation = jnp.concatenate([
-            observation,                                                                                # 48
+            observation,                                                                                # 45
             accelerometer,                                                                              # 3
             gyroscope,                                                                                  # 3
             projected_gravity,                                                                          # 3
@@ -645,7 +633,7 @@ class UnitreeGo2Env(PipelineEnv):
                 state_info['steps_since_last_disturbance'] >= state_info['steps_until_next_disturbance']
             ]),                                                                                         # 1
         ])
-        # Size: 123
+        # Size: 120
 
         return {
             'state': observation,
@@ -873,7 +861,6 @@ class UnitreeGo2Env(PipelineEnv):
         q = mj_data.qpos[7:]
         qd = mj_data.qvel[6:]
 
-        accelerometer = self.get_accelerometer(mj_data)
         gyroscope = self.get_gyro(mj_data)
 
         inverse_trunk_rotation = quat_inv(base_w)
@@ -882,17 +869,6 @@ class UnitreeGo2Env(PipelineEnv):
         )
 
         if add_noise:
-            # Noise does not play a big role here...
-            bias = np.random.uniform(
-                low=-0.5,
-                high=0.2,
-                size=accelerometer.shape,
-            )
-            accelerometer = accelerometer + np.random.uniform(
-                low=-self.noise_config.accelerometer,
-                high=self.noise_config.accelerometer,
-                size=accelerometer.shape,
-            ) + bias
             # Noise Plays a role in stability:
             gyroscope = gyroscope + np.random.uniform(
                 low=-self.noise_config.gyroscope,
@@ -919,7 +895,6 @@ class UnitreeGo2Env(PipelineEnv):
             )
 
         observation = np.concatenate([
-            accelerometer,
             gyroscope,
             projected_gravity,
             q - self.default_ctrl,
@@ -939,7 +914,6 @@ class UnitreeGo2Env(PipelineEnv):
         motor_state: Any,
         command: np.ndarray,
         previous_action: np.ndarray,
-        bias: Union[np.ndarray | None] = None,
     ) -> np.ndarray:
         # Numpy implementation of the observation function:
         def rotate(vec: np.ndarray, quat: np.ndarray) -> np.ndarray:
@@ -955,22 +929,15 @@ class UnitreeGo2Env(PipelineEnv):
 
         # Set to Correct Data Type:
         base_rotation = np.asarray(imu_state.quaternion, dtype=np.float32)
-        accelerometer = np.asarray(imu_state.accelerometer, dtype=np.float32)
         gyroscope = np.asarray(imu_state.gyroscope, dtype=np.float32)
         joint_positions = np.asarray(motor_state.q, dtype=np.float32)
         joint_velocities = np.asarray(motor_state.qd, dtype=np.float32)
 
         # Cast to float64:
         base_rotation = base_rotation.astype(np.float64)
-        accelerometer = accelerometer.astype(np.float64)
         gyroscope = gyroscope.astype(np.float64)
         joint_positions = joint_positions.astype(np.float64)
         joint_velocities = joint_velocities.astype(np.float64)
-
-        if bias is not None:
-            r = R.from_quat(base_rotation)
-            body_frame_bias = r.as_matrix() @ bias
-            accelerometer = accelerometer + body_frame_bias
 
         # Calculate Body frame Yaw Rate and Projected Gravity:
         inverse_base_rotation = quat_inv(base_rotation)
@@ -980,7 +947,6 @@ class UnitreeGo2Env(PipelineEnv):
         )
 
         observation = np.concatenate([
-            accelerometer,
             gyroscope,
             projected_gravity,
             joint_positions - self.default_ctrl,
@@ -1002,7 +968,6 @@ class UnitreeGo2Env(PipelineEnv):
         previous_motor_state: Any,
         command: np.ndarray,
         previous_action: np.ndarray,
-        bias: Union[np.ndarray | None] = None,
     ) -> np.ndarray:
         # Numpy implementation of the observation function:
         def rotate(vec: np.ndarray, quat: np.ndarray) -> np.ndarray:
@@ -1018,13 +983,11 @@ class UnitreeGo2Env(PipelineEnv):
 
         # Set to Correct Data Type:
         base_rotation = np.asarray(imu_state.quaternion, dtype=np.float32)
-        accelerometer = np.asarray(imu_state.accelerometer, dtype=np.float32)
         gyroscope = np.asarray(imu_state.gyroscope, dtype=np.float32)
         joint_positions = np.asarray(motor_state.q, dtype=np.float32)
         joint_velocities = np.asarray(motor_state.qd, dtype=np.float32)
 
         previous_base_rotation = np.asarray(previous_imu_state.quaternion, dtype=np.float32)
-        previous_accelerometer = np.asarray(previous_imu_state.accelerometer, dtype=np.float32)
         previous_gyroscope = np.asarray(previous_imu_state.gyroscope, dtype=np.float32)
         previous_joint_positions = np.asarray(previous_motor_state.q, dtype=np.float32)
         previous_joint_velocities = np.asarray(previous_motor_state.qd, dtype=np.float32)
@@ -1046,15 +1009,9 @@ class UnitreeGo2Env(PipelineEnv):
         alpha = 0.8
         smooth_rotation = alpha * (base_rotation) + (1 - alpha) * (previous_base_rotation)
         smooth_rotation = smooth_rotation / np.linalg.norm(smooth_rotation)
-        smooth_accelerometer = alpha * (accelerometer) + (1 - alpha) * (previous_accelerometer)
         smooth_gyroscope = alpha * (gyroscope) + (1 - alpha) * (previous_gyroscope)
         smooth_joint_positions = alpha * (joint_positions) + (1 - alpha) * (previous_joint_positions)
         smooth_joint_velocities = alpha * (joint_velocities) + (1 - alpha) * (previous_joint_velocities)
-
-        if bias is not None:
-            r = R.from_quat(base_rotation)
-            body_frame_bias = r.as_matrix() @ bias
-            smooth_accelerometer = smooth_accelerometer - body_frame_bias
 
         # Calculate Body frame Yaw Rate and Projected Gravity:
         inverse_base_rotation = quat_inv(smooth_rotation)
@@ -1064,7 +1021,6 @@ class UnitreeGo2Env(PipelineEnv):
         )
 
         observation = np.concatenate([
-            smooth_accelerometer,
             smooth_gyroscope,
             smooth_projected_gravity,
             smooth_joint_positions - self.default_ctrl,

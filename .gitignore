@@ -296,3 +296,6 @@ checkpoints/*
 .bazelversion
 # User-specific .bazelrc
 user.bazelrc
+
+# ONNX Models:
+# *.onnx

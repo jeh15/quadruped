@@ -125,3 +125,14 @@ cc_binary(
     ],
     visibility = ["//visibility:public"],
 )
+
+cc_binary(
+    name = "onnx_test",
+    srcs = ["onnx_test.cc"],
+    data = ["//onnx_models:onnx_models"],
+    deps = [
+        "@onnx//:onnx",
+        "@rules_cc//cc/runfiles:runfiles",
+        "@bazel_tools//tools/cpp/runfiles",
+    ],
+)
