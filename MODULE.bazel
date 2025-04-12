@@ -21,7 +21,12 @@ bazel_dep(name = "eigen", version = "4.0.0-20241125.bcr.1")
 bazel_dep(name = "osqp-cpp", version = "0.0.0-20231004-4343373.bcr.1")
 
 # ONNX Runtime:
-bazel_dep(name = "onnx", version = "1.17.0")
+bazel_dep(name = "onnxruntime-bazel")
+archive_override(
+    module_name = "onnxruntime-bazel",
+    strip_prefix = "onnxruntime-bazel-main",
+    urls = ["https://github.com/jeh15/onnxruntime-bazel/archive/refs/heads/main.zip"],
+)
 
 # MoJoCo:
 bazel_dep(name = "mujoco-bazel")

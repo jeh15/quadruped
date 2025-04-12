@@ -53,8 +53,6 @@
     "https://bcr.bazel.build/modules/jsoncpp/1.9.5/MODULE.bazel": "31271aedc59e815656f5736f282bb7509a97c7ecb43e927ac1a37966e0578075",
     "https://bcr.bazel.build/modules/jsoncpp/1.9.5/source.json": "4108ee5085dd2885a341c7fab149429db457b3169b86eb081fa245eadf69169d",
     "https://bcr.bazel.build/modules/libpfm/4.11.0/MODULE.bazel": "45061ff025b301940f1e30d2c16bea596c25b176c8b6b3087e92615adbd52902",
-    "https://bcr.bazel.build/modules/onnx/1.17.0/MODULE.bazel": "a241635b136dbefedf4f4f96815540198b674051846cfa212a6ce1cd2dfb5162",
-    "https://bcr.bazel.build/modules/onnx/1.17.0/source.json": "b9a53cf11aa3d1245d220444e2ed97585fc9db46b734ffcdd470186b879fc60e",
     "https://bcr.bazel.build/modules/osqp-cpp/0.0.0-20231004-4343373.bcr.1/MODULE.bazel": "b14ab889b34217419388e927258c6bd1abc47b861e43b9345a016762ba86ea02",
     "https://bcr.bazel.build/modules/osqp-cpp/0.0.0-20231004-4343373.bcr.1/source.json": "0d532e5437bae71da289b36a3dfb5be235c13d1f4b1ef46656cd8f19436452d3",
     "https://bcr.bazel.build/modules/osqp/0.6.3.bcr.2/MODULE.bazel": "fa71b90f2410ae52423d17f2c36cc218c6705762cbeffcf13f8043119807e272",
@@ -76,8 +74,7 @@
     "https://bcr.bazel.build/modules/protobuf/29.0-rc2/MODULE.bazel": "6241d35983510143049943fc0d57937937122baf1b287862f9dc8590fc4c37df",
     "https://bcr.bazel.build/modules/protobuf/29.0-rc3/MODULE.bazel": "33c2dfa286578573afc55a7acaea3cada4122b9631007c594bf0729f41c8de92",
     "https://bcr.bazel.build/modules/protobuf/29.0/MODULE.bazel": "319dc8bf4c679ff87e71b1ccfb5a6e90a6dbc4693501d471f48662ac46d04e4e",
-    "https://bcr.bazel.build/modules/protobuf/29.3/MODULE.bazel": "77480eea5fb5541903e49683f24dc3e09f4a79e0eea247414887bb9fc0066e94",
-    "https://bcr.bazel.build/modules/protobuf/29.3/source.json": "c460e6550ddd24996232c7542ebf201f73c4e01d2183a31a041035fb50f19681",
+    "https://bcr.bazel.build/modules/protobuf/29.0/source.json": "b857f93c796750eef95f0d61ee378f3420d00ee1dd38627b27193aa482f4f981",
     "https://bcr.bazel.build/modules/protobuf/3.19.0/MODULE.bazel": "6b5fbb433f760a99a22b18b6850ed5784ef0e9928a72668b66e4d7ccd47db9b0",
     "https://bcr.bazel.build/modules/pybind11_abseil/202402.0/MODULE.bazel": "73e1d9bee567576fc75dcc8a01a479772528719d9825d13b6d224277c24bcfcc",
     "https://bcr.bazel.build/modules/pybind11_abseil/202402.0/source.json": "77f09963c9a51e05212bcfb21c1a5aab860be0afba6483f2b43a0e4f334af255",
@@ -205,6 +202,33 @@
             "bazel_tools",
             "rules_cc",
             "rules_cc+"
+          ]
+        ]
+      }
+    },
+    "@@onnxruntime-bazel+//third_party:extensions.bzl%onnxruntime_x86_64_extension": {
+      "general": {
+        "bzlTransitiveDigest": "7C58SKuF2S5l5hasrSQh1hjy2/uWUKhZhetwECgX55s=",
+        "usagesDigest": "aD/ARl6+vX7HioXwYM7WEnAIz47ErHDdEBFr/kceMwg=",
+        "recordedFileInputs": {},
+        "recordedDirentsInputs": {},
+        "envVariables": {},
+        "generatedRepoSpecs": {
+          "archive_onnxruntime_x86_64": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
+            "attributes": {
+              "build_file_content": "\nload(\"@rules_cc//cc:defs.bzl\", \"cc_import\", \"cc_library\")\nhdrs = glob([\n    \"include/*.h\",\n    \"include/**/*.h\",\n])\ncc_import(\n    name = \"onnxruntime_lib_import\",\n    hdrs = hdrs,\n    includes = [\"include\"],\n    shared_library = \"lib/libonnxruntime.so\",\n)\ncc_import(\n    name = \"onnxruntime_lib_import_1_21_0\",\n    hdrs = hdrs,\n    includes = [\"include\"],\n    shared_library = \"lib/libonnxruntime.so.1.21.0\",\n)\ncc_import(\n    name = \"onnxruntime_lib_import_1\",\n    hdrs = hdrs,\n    includes = [\"include\"],\n    shared_library = \"lib/libonnxruntime.so.1\",\n)\ncc_import(\n    name = \"onnxruntime_lib_import_providers_shared\",\n    hdrs = hdrs,\n    includes = [\"include\"],\n    shared_library = \"lib/libonnxruntime_providers_shared.so\",\n)\ncc_library(\n    name = \"onnxruntime_lib_linux-x64\",\n    hdrs = hdrs,\n    includes = [\"include\"],\n    copts = [\"-fPIC\"],\n    deps = [\n        \":onnxruntime_lib_import\",\n        \":onnxruntime_lib_import_1_21_0\",\n        \":onnxruntime_lib_import_1\",\n        \":onnxruntime_lib_import_providers_shared\",\n    ],\n    visibility = [\"//visibility:public\"],\n)\n",
+              "strip_prefix": "onnxruntime-linux-x64-1.21.0",
+              "url": "https://github.com/microsoft/onnxruntime/releases/download/v1.21.0/onnxruntime-linux-x64-1.21.0.tgz",
+              "integrity": "sha256-dIXH56rGUBsn41PcvgaORcYatR+69ZjROXDfrmadIL8="
+            }
+          }
+        },
+        "recordedRepoMappingEntries": [
+          [
+            "onnxruntime-bazel+",
+            "bazel_tools",
+            "bazel_tools"
           ]
         ]
       }
