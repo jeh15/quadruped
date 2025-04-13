@@ -100,3 +100,19 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
 )
+
+cc_library(
+    name = "policy_interface",
+    srcs = ["policy_interface.h"],
+    deps = [
+        ":aliases",
+        ":containers",
+        ":constants",
+        ":logger",
+        "@unitree-bazel//:unitree_go2_api",
+        "@eigen//:eigen",
+        "@onnxruntime-bazel//:onnxruntime",
+        "@abseil-cpp//absl/log:absl_check",
+        "@abseil-cpp//absl/status:status",
+    ],
+)

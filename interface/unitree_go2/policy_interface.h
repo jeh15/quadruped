@@ -10,7 +10,6 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
-#include <numbers>
 
 #include "absl/status/status.h"
 #include "absl/log/absl_check.h"
@@ -47,7 +46,6 @@ class PolicyInterface {
         PolicyInterface(
             std::filesystem::path onnx_model_path,
             std::shared_ptr<RobotDriver> unitree_driver,
-            LoggerArgs log_args
         ) : 
             onnx_model_path(onnx_model_path),
             unitree_driver(unitree_driver) {}
@@ -61,6 +59,9 @@ class PolicyInterface {
             // Initialize Policy:
             if(!session_initialized)
                 result.Update(initialize_session());
+            // Get Initial Position for Get Up Routine:
+            if(!initial_position_initialized)
+                result.Update(get_initial_position());
 
             ABSL_CHECK(result.ok()) << result.message();
             
@@ -73,7 +74,7 @@ class PolicyInterface {
             session_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_EXTENDED);
             session_ptr = std::make_unique<Ort::Session>(env, onnx_model_path.c_str(), session_options);
             if (!session_ptr) {
-                return absl::InternalError("Failed to create ONNX session");
+                return absl::InternalError("Policy Interface: Failed to create ONNX session");
             }
 
             // Initialize Inputs and Outputs:
@@ -109,8 +110,61 @@ class PolicyInterface {
             session_initialized = true;
             return absl::OkStatus();
         }
+
+        absl::Status get_initial_position() {
+            if(!unitree_driver->is_initialized())
+                return absl::FailedPreconditionError("Policy Interface: Unitree Driver not initialized");
+
+            unitree::containers::MotorState motor_state = unitree_driver->get_motor_state();
+            initial_position = Eigen::Map<common::MotorVector<float>>(motor_state.q.data());
+            initial_position_initialized = true;
+            return absl::OkStatus();
+        }
+
+        absl::Status initialize_thread() {
+            if(!session_initialized)
+                return absl::FailedPreconditionError("Policy Interface: ONNX Session not initialized");
+            if(!initial_position_initialized)
+                return absl::FailedPreconditionError("Policy Interface: Initial Position not initialized");
+
+            thread = std::thread(&PolicyInterface::control_loop, this);
+            thread_initialized = true;
+            return absl::OkStatus();
+        }
+
+        absl::Status initialize_threads() {
+            // Initialize all threads:
+            absl::Status result;
+            if(!thread_initialized)
+                result.Update(initialize_thread());
+            if(!unitree_driver->is_thread_initialized())
+                result.Update(unitree_driver->initialize_thread());
+
+            ABSL_CHECK(result.ok()) << result.message();
+
+            return absl::OkStatus();
+        }
+
+        absl::Status stop_thread() {
+            if(!thread_initialized)
+                return absl::FailedPreconditionError("Policy Interface: Control Thread not initialized");
+
+            running = false;
+            thread.join();
+            return absl::OkStatus();
+        }
+
+        absl::Status stop_threads() {
+            absl::Status result;
+            result.Update(stop_thread());
+            result.Update(unitree_driver->stop_thread());
+
+            return result;
+        }
     
     private:
+        /* Shared Variables */
+        common::Vector3<float> command = common::Vector3<float>::Zero();
         /* ONNX Variables */
         std::filesystem::path onnx_model_path;
         Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "ONNXPolicy");
@@ -126,6 +180,8 @@ class PolicyInterface {
         std::vector<std::vector<int64_t>> output_shapes;
         /* Initialization Flags */
         bool session_initialized = false;
+        bool thread_initialized = false;
+        bool initial_position_initialized = false;
         /* Unitree Driver */
         std::shared_ptr<RobotDriver> unitree_driver;
         /* Thread Variables */
@@ -139,6 +195,13 @@ class PolicyInterface {
         std::vector<float> policy_output;
         Eigen::Vector<float, Eigen::Dynamic> observation;
         /* Default Command Values */
+        common::MotorVector<float> initial_position;
+        common::MotorVector<float> default_position = {
+            0.0f, 0.9f, -1.8f,
+            0.0f, 0.9f, -1.8f,
+            0.0f, 0.9f, -1.8f,
+            0.0f, 0.9f, -1.8f,
+        };
         std::array<float, unitree::containers::num_motors> q_setpoint = {
             0.0f, 0.9f, -1.8f,
             0.0f, 0.9f, -1.8f,
@@ -149,8 +212,9 @@ class PolicyInterface {
         std::array<float, unitree::containers::num_motors> torque_feedforward = {0.0f};
         std::array<float, unitree::containers::num_motors> stiffness = {35.0f};
         std::array<float, unitree::containers::num_motors> damping = {0.5f};
-
-
+        /* Control Variables */
+        ControlMode control_mode = ControlMode::Damping;
+        const int control_rate_us = 20000;  // 50Hz
 
         absl::Status inference_policy() {
             // Initialize Input and Output Tensors:
@@ -215,7 +279,7 @@ class PolicyInterface {
             common::MotorVector<float> previous_actions = Eigen::Map<common::MotorVector<float>>(policy_output.data());
             
             // Velocity Commands:
-            common::Vector3<float> commands = common::Vector3<float>::Zero();
+            common::Vector3<float> commands = command;
             
             // Set Observation:
             observation << gyroscope_measurement,
@@ -247,5 +311,62 @@ class PolicyInterface {
             };
 
             return motor_command;
+        }
+
+        void control_loop() {
+            using Clock = std::chrono::steady_clock;
+            auto next_time = Clock::now();
+            while(running) {
+                next_time += std::chrono::microseconds(control_rate_us);
+                /* Lock Guard Scope */
+                {
+                    std::lock_guard<std::mutex> lock(mutex);
+
+                    absl::Status result;
+
+                    // Update Observation:
+                    result.Update(get_observation());
+
+                    // Inference Policy:
+                    result.Update(inference_policy());
+
+                    // Get Motor Command:
+                    unitree::containers::MotorCommand motor_command;
+                    switch(control_mode) {
+                        case ControlMode::Damping:
+                            motor_command = interface::constants::controller::damping_motor_command;
+                            break;
+                        case ControlMode::GetUp:
+                            [motor_command, control_mode] = interface::utilities::get_up_routine(
+                                initial_position,
+                                default_position,
+                                control_rate_us
+                            );
+                            break;
+                        case ControlMode::Stand:
+                            motor_command = interface::constants::controller::stand_motor_command;
+                            break;
+                        case ControlMode::Policy:
+                            motor_command = get_motor_command();
+                            break;
+                    }
+
+                    // Send Motor Command:
+                    unitree_driver->update_command(motor_command);
+                }
+
+                // Check for overrun and sleep until next time:
+                auto now = Clock::now();
+                if (now < next_time) {
+                    std::this_thread::sleep_until(next_time);
+                } 
+                else {
+                    // Log overrun:
+                    auto overrun = std::chrono::duration_cast<std::chrono::microseconds>(now - next_time);
+                    std::cout << "Interface Control Loop Execution Time Exceeded Control Rate: " 
+                        << overrun.count() << "us" << std::endl;
+                    next_time = now;
+                }
+            }
         }
 };

@@ -13,8 +13,10 @@ namespace interface::containers {
 
         enum class ControlMode {
             Damping,
-            Default,
-            OperationalSpaceController
+            GetUp,
+            Stand,
+            OperationalSpaceController,
+            Policy
         };
 
         struct OperationalSpaceControllerArgs {

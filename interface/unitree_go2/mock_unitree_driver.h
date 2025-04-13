@@ -17,8 +17,6 @@
 #include "Eigen/Dense"
 #include "mujoco/mujoco.h"
 
-#include "operational-space-control/unitree_go2/operational_space_controller.h"
-#include "operational-space-control/unitree_go2/constants.h"
 #include "unitree-api/containers.h"
 
 #include "interface/unitree_go2/aliases.h"
@@ -26,7 +24,6 @@
 
 
 using namespace interface::containers::mock_unitree_driver;
-using namespace operational_space_controller;
 
 
 class MockUnitreeDriver {
@@ -63,19 +60,19 @@ class MockUnitreeDriver {
             mj_forward(mj_model, mj_data);
             
             // Accelerations are initially extremely unstable... (probably due to contacts)
-            const int initialization_steps = 1000;
-            for(int i = 0; i < initialization_steps; i++) {
-                double kp = 60.0;
-                double kd = 5.0;
-                interface::aliases::common::MotorVector<double> qpos = 
-                    Eigen::Map<interface::aliases::common::MotorVector<double>>(mj_data->qpos + 7);
-                interface::aliases::common::MotorVector<double> qvel = 
-                    Eigen::Map<interface::aliases::common::MotorVector<double>>(mj_data->qvel + 6);
-                interface::aliases::common::MotorVector<double> ctrl = kp * (qpos_setpoint - qpos) - kd * qvel;
-                Eigen::Map<interface::aliases::common::MotorVector<double>>(mj_data->ctrl) = ctrl;
+            // const int initialization_steps = 1000;
+            // for(int i = 0; i < initialization_steps; i++) {
+            //     double kp = 60.0;
+            //     double kd = 5.0;
+            //     interface::aliases::common::MotorVector<double> qpos = 
+            //         Eigen::Map<interface::aliases::common::MotorVector<double>>(mj_data->qpos + 7);
+            //     interface::aliases::common::MotorVector<double> qvel = 
+            //         Eigen::Map<interface::aliases::common::MotorVector<double>>(mj_data->qvel + 6);
+            //     interface::aliases::common::MotorVector<double> ctrl = kp * (qpos_setpoint - qpos) - kd * qvel;
+            //     Eigen::Map<interface::aliases::common::MotorVector<double>>(mj_data->ctrl) = ctrl;
 
-                mj_step(mj_model, mj_data);
-            }
+            //     mj_step(mj_model, mj_data);
+            // }
 
             initialized = true;
             return absl::OkStatus();
@@ -268,7 +265,7 @@ class MockUnitreeDriver {
         bool thread_initialized = false;
         // Random Number Generator:
         absl::BitGen gen;
-        float quaternion_noise = 0.01;
+        float quaternion_noise = 0.001;
         float accelerometer_noise = 0.01;
         float gyroscope_noise = 0.01;
         float joint_position_noise = 0.001;
