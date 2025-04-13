@@ -28,8 +28,8 @@ using namespace interface::containers::mock_unitree_driver;
 
 class MockUnitreeDriver {
     public:
-        MockUnitreeDriver(std::filesystem::path xml_path, int control_rate_us) :
-            xml_path(xml_path), control_rate_us(control_rate_us) {}
+        MockUnitreeDriver(std::filesystem::path xml_path, int control_rate_us, int keyframe_id = 0) :
+            xml_path(xml_path), control_rate_us(control_rate_us), keyframe_id(keyframe_id) {}
         ~MockUnitreeDriver() {}
 
         // Mujoco Model and Data public for visualization and testing:
@@ -50,14 +50,10 @@ class MockUnitreeDriver {
             mj_model->opt.timestep = timestep;
             mj_data = mj_makeData(mj_model);
 
-            // Initialize mj_data:
-            mj_data->qpos = mj_model->key_qpos;
-            mj_data->qvel = mj_model->key_qvel;
-            mj_data->ctrl = mj_model->key_ctrl;
-            interface::aliases::common::MotorVector<double> qpos_setpoint = 
-                Eigen::Map<interface::aliases::common::MotorVector<double>>(mj_model->key_qpos + 7);
-
+            // Initialize mj_data from key:
+            mj_resetDataKeyframe(mj_model, mj_data, keyframe_id);
             mj_forward(mj_model, mj_data);
+            mj_step(mj_model, mj_data);
             
             // Accelerations are initially extremely unstable... (probably due to contacts)
             // const int initialization_steps = 1000;
@@ -272,6 +268,8 @@ class MockUnitreeDriver {
         float joint_velocity_noise = 0.001;
         float joint_acceleration_noise = 0.01;
         float motor_torque_noise = 0.01;
+        // Keyframe ID:
+        int keyframe_id = 0;
 
         void control_loop() {
             using Clock = std::chrono::steady_clock;

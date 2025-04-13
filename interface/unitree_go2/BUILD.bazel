@@ -32,6 +32,21 @@ cc_library(
 )
 
 cc_library(
+    name = "utilities",
+    srcs = ["utilities.h"],
+    deps = [
+        ":aliases",
+        ":containers",
+        ":constants",
+        "@unitree-bazel//:unitree_go2_api",
+        "@eigen//:eigen",
+        "@abseil-cpp//absl/log:absl_check",
+        "@abseil-cpp//absl/status:status",
+    ],
+    visibility = ["//visibility:public"],
+)
+
+cc_library(
     name = "logger",
     srcs = ["logger.h"],
     deps = [
@@ -108,11 +123,12 @@ cc_library(
         ":aliases",
         ":containers",
         ":constants",
-        ":logger",
+        ":utilities",
         "@unitree-bazel//:unitree_go2_api",
         "@eigen//:eigen",
         "@onnxruntime-bazel//:onnxruntime",
         "@abseil-cpp//absl/log:absl_check",
         "@abseil-cpp//absl/status:status",
     ],
+    visibility = ["//visibility:public"],
 )

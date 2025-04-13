@@ -1,7 +1,6 @@
 #pragma once
 
 #include <iostream>
-#include <string>
 #include <vector>
 #include <array>
 #include <filesystem>
@@ -10,6 +9,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <numeric>
 
 #include "absl/status/status.h"
 #include "absl/log/absl_check.h"
@@ -21,22 +21,20 @@
 #include "unitree-api/unitree_driver.h"
 #include "unitree-api/containers.h"
 
-#include "interface/unitree_go2/safety_controller.h"
-#include "interface/unitree_go2/logger.h"
-#include "interface/estimators/imu_estimator.h"
 #include "interface/unitree_go2/aliases.h"
 #include "interface/unitree_go2/containers.h"
 #include "interface/unitree_go2/constants.h"
+#include "interface/unitree_go2/utilities.h"
 
 using namespace interface::aliases::common;
 using namespace interface::containers::controller;
-using namespace interface::containers::logger;
-using namespace interface::containers::estimator;
 
 
-template <typename T>
-T vector_product(const std::vector<T>& v) {
-    return std::accumulate(v.begin(), v.end(), 1, std::multiplies<T>());
+namespace {
+    template <typename T>
+    T vector_product(const std::vector<T>& v) {
+        return std::accumulate(v.begin(), v.end(), 1, std::multiplies<T>());
+    }
 }
 
 //TODO(jeh15): Compile time constants.
@@ -45,7 +43,7 @@ class PolicyInterface {
     public:
         PolicyInterface(
             std::filesystem::path onnx_model_path,
-            std::shared_ptr<RobotDriver> unitree_driver,
+            std::shared_ptr<RobotDriver> unitree_driver
         ) : 
             onnx_model_path(onnx_model_path),
             unitree_driver(unitree_driver) {}
@@ -72,7 +70,7 @@ class PolicyInterface {
             Ort::SessionOptions session_options;
             session_options.SetIntraOpNumThreads(1);
             session_options.SetGraphOptimizationLevel(GraphOptimizationLevel::ORT_ENABLE_EXTENDED);
-            session_ptr = std::make_unique<Ort::Session>(env, onnx_model_path.c_str(), session_options);
+            session_ptr = std::make_unique<Ort::Session>(*env, onnx_model_path.c_str(), session_options);
             if (!session_ptr) {
                 return absl::InternalError("Policy Interface: Failed to create ONNX session");
             }
@@ -116,7 +114,7 @@ class PolicyInterface {
                 return absl::FailedPreconditionError("Policy Interface: Unitree Driver not initialized");
 
             unitree::containers::MotorState motor_state = unitree_driver->get_motor_state();
-            initial_position = Eigen::Map<common::MotorVector<float>>(motor_state.q.data());
+            initial_position = Eigen::Map<MotorVector<float>>(motor_state.q.data());
             initial_position_initialized = true;
             return absl::OkStatus();
         }
@@ -164,10 +162,10 @@ class PolicyInterface {
     
     private:
         /* Shared Variables */
-        common::Vector3<float> command = common::Vector3<float>::Zero();
+        Vector3<float> command = Vector3<float>::Zero();
         /* ONNX Variables */
         std::filesystem::path onnx_model_path;
-        Ort::Env env(ORT_LOGGING_LEVEL_WARNING, "ONNXPolicy");
+        std::shared_ptr<Ort::Env> env = std::make_shared<Ort::Env>(ORT_LOGGING_LEVEL_WARNING, "ONNXPolicy");
         std::unique_ptr<Ort::Session> session_ptr;
         Ort::AllocatorWithDefaultOptions allocator;
         std::vector<Ort::AllocatedStringPtr> input_nodes;
@@ -195,8 +193,8 @@ class PolicyInterface {
         std::vector<float> policy_output;
         Eigen::Vector<float, Eigen::Dynamic> observation;
         /* Default Command Values */
-        common::MotorVector<float> initial_position;
-        common::MotorVector<float> default_position = {
+        MotorVector<float> initial_position;
+        MotorVector<float> default_position = {
             0.0f, 0.9f, -1.8f,
             0.0f, 0.9f, -1.8f,
             0.0f, 0.9f, -1.8f,
@@ -215,6 +213,7 @@ class PolicyInterface {
         /* Control Variables */
         ControlMode control_mode = ControlMode::Damping;
         const int control_rate_us = 20000;  // 50Hz
+        const float action_scale = 0.5f;
 
         absl::Status inference_policy() {
             // Initialize Input and Output Tensors:
@@ -261,11 +260,11 @@ class PolicyInterface {
             unitree::containers::MotorState motor_state = unitree_driver->get_motor_state();
 
             // IMU State and Motor State measurements:
-            common::Vector3<float> accelerometer_measurement = Eigen::Map<common::Vector3<float>>(imu_state.accelerometer.data());
-            common::Vector3<float> gyroscope_measurement = Eigen::Map<common::Vector3<float>>(imu_state.gyroscope.data());
-            common::Quaternion<float> quaternion_measurement = Eigen::Map<common::Quaternion<float>>(imu_state.quaternion.data());
-            common::MotorVector<float> joint_positions = Eigen::Map<common::MotorVector<float>>(motor_state.q.data());
-            common::MotorVector<float> joint_velocities = Eigen::Map<common::MotorVector<float>>(motor_state.qd.data());
+            Vector3<float> accelerometer_measurement = Eigen::Map<Vector3<float>>(imu_state.accelerometer.data());
+            Vector3<float> gyroscope_measurement = Eigen::Map<Vector3<float>>(imu_state.gyroscope.data());
+            Vector4<float> quaternion_measurement = Eigen::Map<Vector4<float>>(imu_state.quaternion.data());
+            MotorVector<float> joint_positions = Eigen::Map<MotorVector<float>>(motor_state.q.data());
+            MotorVector<float> joint_velocities = Eigen::Map<MotorVector<float>>(motor_state.qd.data());
             
             // Projected Gravity:
             Eigen::Quaternion<float> quaternion(
@@ -273,17 +272,17 @@ class PolicyInterface {
             );
             quaternion.normalize();
             Eigen::Matrix3<float> rotation = quaternion.toRotationMatrix();
-            common::Vector3<float> projected_gravity = rotation.T * common::Vector3<float>(0.0f, 0.0f, -1.0f);
+            Vector3<float> projected_gravity = rotation.transpose() * Vector3<float>(0.0f, 0.0f, -1.0f);
             
             // Set Last Actions from Policy Output:
-            common::MotorVector<float> previous_actions = Eigen::Map<common::MotorVector<float>>(policy_output.data());
+            MotorVector<float> previous_actions = Eigen::Map<MotorVector<float>>(policy_output.data());
             
             // Velocity Commands:
-            common::Vector3<float> commands = command;
+            Vector3<float> commands = command;
             
             // Set Observation:
             observation << gyroscope_measurement,
-                           project_gravity,
+                           projected_gravity,
                            joint_positions - default_position,
                            joint_velocities,
                            previous_actions,
@@ -298,9 +297,9 @@ class PolicyInterface {
         }
 
         unitree::containers::MotorCommand get_motor_command() {
-            common::MotorVector<float> actions = Eigen::Map<common::MotorVector<float>>(policy_output.data());
-            common::MotorVector<float> position_setpoints = default_position + actions * action_scale;
-            Eigen::Map<common::MotorVector<float>>(q_setpoint.data()) = position_setpoints;
+            MotorVector<float> actions = Eigen::Map<MotorVector<float>>(policy_output.data());
+            MotorVector<float> position_setpoints = default_position + actions * action_scale;
+            Eigen::Map<MotorVector<float>>(q_setpoint.data()) = position_setpoints;
             
             unitree::containers::MotorCommand motor_command = {
                 .q_setpoint = q_setpoint,
@@ -337,7 +336,7 @@ class PolicyInterface {
                             motor_command = interface::constants::controller::damping_motor_command;
                             break;
                         case ControlMode::GetUp:
-                            [motor_command, control_mode] = interface::utilities::get_up_routine(
+                            auto [motor_command, control_mode] = interface::utilities::get_up_routine(
                                 initial_position,
                                 default_position,
                                 control_rate_us
