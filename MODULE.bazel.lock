@@ -1,5 +1,5 @@
 {
-  "lockFileVersion": 16,
+  "lockFileVersion": 18,
   "registryFileHashes": {
     "https://bcr.bazel.build/bazel_registry.json": "8a28e4aff06ee60aed2a8c281907fb8bcbf3b753c91fb5a5c57da3215d5b3497",
     "https://bcr.bazel.build/modules/abseil-cpp/20210324.2/MODULE.bazel": "7cd0312e064fde87c8d1cd79ba06c876bd23630c83466e9500321be55c96ace2",
@@ -202,6 +202,33 @@
             "bazel_tools",
             "rules_cc",
             "rules_cc+"
+          ]
+        ]
+      }
+    },
+    "@@mujoco-bazel+//third_party:extensions.bzl%mujoco_x86_64_extension": {
+      "general": {
+        "bzlTransitiveDigest": "2D3l5x2FTn9OOr6vqTUjb3sOn0geAbJIsI90tk1Az/s=",
+        "usagesDigest": "QyaXh6tioFONEJqlR5SEsVQ31NFd6UWXjyxW6LpvE+k=",
+        "recordedFileInputs": {},
+        "recordedDirentsInputs": {},
+        "envVariables": {},
+        "generatedRepoSpecs": {
+          "archive_mujoco_x86_64": {
+            "repoRuleId": "@@bazel_tools//tools/build_defs/repo:http.bzl%http_archive",
+            "attributes": {
+              "build_file_content": "\npackage(default_visibility = [\"//visibility:public\"])\nhdrs = glob([\"include/mujoco/*.h\"])\ncc_import(\n    name = \"mujoco_lib_import\",\n    hdrs = hdrs,\n    includes = [\"include\"],\n    shared_library = \"lib/libmujoco.so\",\n)\ncc_import(\n    name = \"mujoco_lib_import_3_2_7\",\n    hdrs = hdrs,\n    includes = [\"include\"],\n    shared_library = \"lib/libmujoco.so.3.2.7\",\n)\ncc_library(\n    name = \"mujoco_lib_linux-x86_64\",\n    hdrs = hdrs,\n    includes = [\"include\"],\n    copts = [\"-fPIC\"],\n    deps = [\n        \":mujoco_lib_import\",\n        \":mujoco_lib_import_3_2_7\",\n    ],\n    visibility = [\"//visibility:public\"],\n)\n",
+              "strip_prefix": "mujoco-3.2.7",
+              "url": "https://github.com/google-deepmind/mujoco/releases/download/3.2.7/mujoco-3.2.7-linux-x86_64.tar.gz",
+              "integrity": "sha256-Ugpl+7C3XKxSRcwHUmhAVFwB+qNU8YxiOl5is2Vx7WE="
+            }
+          }
+        },
+        "recordedRepoMappingEntries": [
+          [
+            "mujoco-bazel+",
+            "bazel_tools",
+            "bazel_tools"
           ]
         ]
       }

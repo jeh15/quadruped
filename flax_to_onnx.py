@@ -1,21 +1,16 @@
 import os
 
-from absl import app, flags, logging
+from absl import app, flags
 
 import jax
-import jax.numpy as jnp
 import numpy as np
 
 import tf2onnx
 import tensorflow as tf
 from tensorflow.keras import layers
 
-import onnxruntime as rt
-
 from src.envs import unitree_go2_v12 as unitree_go2
 from src.algorithms.ppo.load_utilities import load_policy
-
-import matplotlib.pyplot as plt
 
 os.environ["MUJOCO_GL"] = "egl"
 os.environ["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
@@ -24,6 +19,7 @@ FLAGS = flags.FLAGS
 flags.DEFINE_string(
     'checkpoint_name', None, 'Desired checkpoint folder name to load.', short_name='c',
 )
+
 
 def main(argv=None):
     # Load Policy:
@@ -142,9 +138,9 @@ def main(argv=None):
             'Conv_2': {'kernel': np.ndarray},
             },
             'MLP_0': {
-            'hidden_0': {'kernel': np.ndarray, 'bias': np.ndarray},
-            'hidden_1': {'kernel': np.ndarray, 'bias': np.ndarray},
-            'hidden_2': {'kernel': np.ndarray, 'bias': np.ndarray},
+            'dense_0': {'kernel': np.ndarray, 'bias': np.ndarray},
+            'dense_1': {'kernel': np.ndarray, 'bias': np.ndarray},
+            'dense_2': {'kernel': np.ndarray, 'bias': np.ndarray},
             }
         }
 
@@ -173,17 +169,24 @@ def main(argv=None):
     test_input = [np.ones((1, obs_size["state"][0]), dtype=np.float32)]
 
     # Define the TensorFlow input signature
-    spec = [tf.TensorSpec(shape=(1, obs_size["state"][0]), dtype=tf.float32, name="obs")]
+    spec = [
+        tf.TensorSpec(
+            shape=(1, obs_size["state"][0]), dtype=tf.float32, name="obs"
+        )
+    ]
 
     # Build the Model:
     tensorflow_pred = tf_policy_network(test_input)[0]
-    # Build the model by calling it with example data
-    print(f"Tensorflow prediction: {tensorflow_pred}")
     tf_policy_network.output_names = ['continuous_actions']
 
     # Save ONNX Model:
     output_path = f"onnx_models/{FLAGS.checkpoint_name}.onnx"
-    model_proto, _ = tf2onnx.convert.from_keras(tf_policy_network, input_signature=spec, opset=11, output_path=output_path)
+    model_proto, _ = tf2onnx.convert.from_keras(
+        tf_policy_network,
+        input_signature=spec,
+        opset=11,
+        output_path=output_path,
+    )
 
 
 if __name__ == '__main__':
