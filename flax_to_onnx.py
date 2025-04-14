@@ -9,7 +9,7 @@ import tf2onnx
 import tensorflow as tf
 from tensorflow.keras import layers
 
-from src.envs import unitree_go2_v12 as unitree_go2
+from src.envs import unitree_go2_v13 as unitree_go2
 from src.algorithms.ppo.load_utilities import load_policy
 
 os.environ["MUJOCO_GL"] = "egl"

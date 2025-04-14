@@ -21,7 +21,7 @@ namespace interface::utilities  {
         const MotorVector<float>& initial_position,
         const MotorVector<float>& desired_position,
         const float control_rate_us,
-        const float duration_s = 5.0f
+        const float duration_s = 3.0f
     ) {
         static float stand_percent = 0.0;
 
@@ -49,10 +49,10 @@ namespace interface::utilities  {
                 0, 0, 0
             };
             motor_command.stiffness = {
-                35.0, 35.0, 35.0,
-                35.0, 35.0, 35.0,
-                35.0, 35.0, 35.0,
-                35.0, 35.0, 35.0
+                60.0, 60.0, 60.0,
+                60.0, 60.0, 60.0,
+                60.0, 60.0, 60.0,
+                60.0, 60.0, 60.0
             };
             motor_command.damping = {
                 0.5, 0.5, 0.5,
@@ -83,10 +83,10 @@ namespace interface::utilities  {
                 0, 0, 0
             };
             motor_command.stiffness = {
-                35.0, 35.0, 35.0,
-                35.0, 35.0, 35.0,
-                35.0, 35.0, 35.0,
-                35.0, 35.0, 35.0
+                60.0, 60.0, 60.0,
+                60.0, 60.0, 60.0,
+                60.0, 60.0, 60.0,
+                60.0, 60.0, 60.0
             };
             motor_command.damping = {
                 0.5, 0.5, 0.5,

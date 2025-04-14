@@ -36,3 +36,26 @@ cc_binary(
     ],
     visibility = ["//visibility:public"],
 )
+
+cc_binary(
+    name = "policy_hardware",
+    srcs = ["policy_hardware.cc"],
+    data = [
+        "//onnx_models:onnx_models",
+    ],
+    deps = [
+        "//interface/unitree_go2:aliases",
+        "//interface/unitree_go2:containers",
+        "//interface/unitree_go2:constants",
+        "//interface/unitree_go2:policy_interface",
+        "@unitree-bazel//:unitree_go2_api",
+        "@eigen//:eigen",
+        "@glfw-bazel//:glfw",
+        "@onnxruntime-bazel//:onnxruntime",
+        "@abseil-cpp//absl/log:absl_check",
+        "@abseil-cpp//absl/status:status",
+        "@rules_cc//cc/runfiles:runfiles",
+        "@bazel_tools//tools/cpp/runfiles",
+    ],
+    visibility = ["//visibility:public"],
+)

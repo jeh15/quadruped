@@ -4,11 +4,10 @@
 #include "absl/log/absl_check.h"
 #include "rules_cc/cc/runfiles/runfiles.h"
 
-#include "mujoco/mujoco.h"
 #include "Eigen/Dense"
 #include "GLFW/glfw3.h"
 
-#include "interface/unitree_go2/mock_unitree_driver.h"
+#include "unitree-api/unitree_driver.h"
 #include "interface/unitree_go2/policy_interface.h"
 
 #include "unitree-api/containers.h"
@@ -17,14 +16,6 @@
 
 using namespace interface::containers::controller;
 using rules_cc::cc::runfiles::Runfiles;
-
-
-// Visualization:
-mjvCamera cam;
-mjvPerturb pert;
-mjvOption opt;
-mjvScene scn;
-mjrContext con;
 
 
 // Helper function to convert joystick button index to string
@@ -82,15 +73,13 @@ int main(int argc, char** argv) {
     std::filesystem::path onnx_model_path = 
         runfiles->Rlocation("unitree-interface/onnx_models/genial-breeze-150.onnx");
 
-
-    std::filesystem::path mock_model_path = 
-        runfiles->Rlocation("mujoco-models/models/unitree_go2/scene_collision.xml");
-
     absl::Status result;
 
-    // Initialize Mock Unitree Driver:
-    std::shared_ptr<MockUnitreeDriver> unitree_driver = 
-        std::make_shared<MockUnitreeDriver>(mock_model_path, 2000, 1);
+    // Initialize Unitree Driver:
+    std::string network_name = "eno2";
+    int control_rate = 2000;
+    std::shared_ptr<UnitreeDriver> unitree_driver = 
+        std::make_shared<UnitreeDriver>(network_name, control_rate);
     result.Update(unitree_driver->initialize());
     ABSL_CHECK(result.ok()) << result.message();
 
@@ -102,15 +91,10 @@ int main(int argc, char** argv) {
     result.Update(policy_interface.initialize());
     ABSL_CHECK(result.ok()) << result.message();
 
-    // Expose mj_model and mj_data for visualization:
-    auto mj_model = unitree_driver->mj_model;
-    auto mj_data = unitree_driver->mj_data;
-
-    // Visualization:
+    // Initialize GLFW for Joystick Control:
     glfwInit();
-    GLFWwindow* window = glfwCreateWindow(800, 600, "Demo", NULL, NULL);
+    GLFWwindow* window = glfwCreateWindow(800, 600, "Hardware Control", NULL, NULL);
     glfwMakeContextCurrent(window);
-    glfwSwapInterval(1);
 
     // Set Joystick Callback:
     glfwSetJoystickCallback(joystickCallback);
@@ -132,26 +116,15 @@ int main(int argc, char** argv) {
     // Store previous button states to detect changes
     std::vector<unsigned char> prevButtonStates;
 
-    // initialize visualization data structures
-    mjv_defaultCamera(&cam);
-    mjv_defaultPerturb(&pert);
-    mjv_defaultOption(&opt);
-    mjr_defaultContext(&con);
-    mjv_makeScene(mj_model, &scn, 1000);
-    mjr_makeContext(mj_model, &con, mjFONTSCALE_100);
-
-    // get framebuffer viewport
-    mjrRect viewport = {0, 0, 0, 0};
-    glfwGetFramebufferSize(window, &viewport.width, &viewport.height);
+    // Initialize Motor Command to be in Damping Mode:
+    unitree::containers::MotorCommand motor_command;
+    motor_command = interface::constants::controller::damping_motor_command;
+    unitree_driver->update_command(motor_command);
 
     // Initialize Unitree Driver and Policy Driver threads:
     result.Update(policy_interface.initialize_thread());
     result.Update(unitree_driver->initialize_thread());
     ABSL_CHECK(result.ok()) << result.message();
-
-    double visualization_timer = unitree_driver->mj_data->time;
-    double visualization_start_time = visualization_timer;
-    double visualization_interval = 0.01;
 
     bool terminate = false;
     while(!terminate) {
@@ -200,10 +173,6 @@ int main(int argc, char** argv) {
             
             // Only print significant movements to reduce output spam
             const float deadzone = 0.25f;
-            // axes[0] == Horizontal Axis of DPad -> Left = -1 Right = 1
-            // axes[1] == Vertical Axis of DPad -> Up = -1 Down = 1
-            // axes[3] == Horizontal Axis of Right Stick -> Left = -1 Right = 1
-            // axes[4] == Vertical Axis of Right Stick -> Up = -1 Down = 1
             for (int i = 0; i < axisCount; i++) {
                 std::string name = getAxisName(i);
                 if (std::abs(axes[i]) > deadzone) {
@@ -226,35 +195,15 @@ int main(int argc, char** argv) {
             lateral_command,
             yaw_command
         );
-        policy_interface.set_command(command);
-
-        // Mujoco Simulation:
-        visualization_timer = unitree_driver->mj_data->time - visualization_start_time;
-
-        mj_data = unitree_driver->mj_data;
-        if(visualization_timer > visualization_interval) {
-            visualization_start_time = unitree_driver->mj_data->time;
-
-            mjv_updateScene(mj_model, mj_data, &opt, &pert, &cam, mjCAT_ALL, &scn);
-            mjr_render(viewport, &scn, &con);
-
-            // swap OpenGL buffers (blocking call due to v-sync)
-            glfwSwapBuffers(window);
-
-            // process pending GUI events, call GLFW callbacks
-            glfwPollEvents();
-        }
+        std::ignore = policy_interface.set_command(command);
     }
 
-    // Clean up visualization:
+    // Clean up GLFW:
     glfwTerminate();
-    mjv_freeScene(&scn);
-    mjr_freeContext(&con);
 
     // Stop Threads and Clean up:
     result.Update(policy_interface.stop_thread());
     result.Update(unitree_driver->stop_thread());
-    result.Update(unitree_driver->clean_up());
     ABSL_CHECK(result.ok()) << result.message();
 
     return 0;

@@ -159,6 +159,28 @@ class PolicyInterface {
 
             return result;
         }
+
+        absl::Status set_control_mode(ControlMode mode) {
+            std::lock_guard<std::mutex> lock(mutex);
+            control_mode = mode;
+            return absl::OkStatus();
+        }
+
+        ControlMode get_control_mode() {
+            std::lock_guard<std::mutex> lock(mutex);
+            return control_mode;
+        }
+
+        absl::Status set_command(const Vector3<float>& new_command) {
+            std::lock_guard<std::mutex> lock(mutex);
+            command = new_command;
+            return absl::OkStatus();
+        }
+
+        Vector3<float> get_command() {
+            std::lock_guard<std::mutex> lock(mutex);
+            return command;
+        }
     
     private:
         /* Shared Variables */
@@ -198,19 +220,38 @@ class PolicyInterface {
             0.0f, 0.9f, -1.8f,
             0.0f, 0.9f, -1.8f,
             0.0f, 0.9f, -1.8f,
-            0.0f, 0.9f, -1.8f,
+            0.0f, 0.9f, -1.8f
         };
         std::array<float, unitree::containers::num_motors> q_setpoint = {
             0.0f, 0.9f, -1.8f,
             0.0f, 0.9f, -1.8f,
             0.0f, 0.9f, -1.8f,
-            0.0f, 0.9f, -1.8f,
+            0.0f, 0.9f, -1.8f
         };
-        std::array<float, unitree::containers::num_motors> qd_setpoint = {0.0f};
-        std::array<float, unitree::containers::num_motors> torque_feedforward = {0.0f};
-        std::array<float, unitree::containers::num_motors> stiffness = {35.0f};
-        std::array<float, unitree::containers::num_motors> damping = {0.5f};
-        /* Control Variables */
+        std::array<float, unitree::containers::num_motors> qd_setpoint = {
+            0.0f, 0.0f, 0.0f,
+            0.0f, 0.0f, 0.0f,
+            0.0f, 0.0f, 0.0f,
+            0.0f, 0.0f, 0.0f
+        };
+        std::array<float, unitree::containers::num_motors> torque_feedforward = {
+            0.0f, 0.0f, 0.0f,
+            0.0f, 0.0f, 0.0f,
+            0.0f, 0.0f, 0.0f,
+            0.0f, 0.0f, 0.0f
+        };
+        std::array<float, unitree::containers::num_motors> stiffness = {
+            35.0f, 35.0f, 35.0f,
+            35.0f, 35.0f, 35.0f,
+            35.0f, 35.0f, 35.0f,
+            35.0f, 35.0f, 35.0f
+        };
+        std::array<float, unitree::containers::num_motors> damping = {
+            0.5f, 0.5f, 0.5f,
+            0.5f, 0.5f, 0.5f,
+            0.5f, 0.5f, 0.5f,
+            0.5f, 0.5f, 0.5f
+        };
         ControlMode control_mode = ControlMode::Damping;
         const int control_rate_us = 20000;  // 50Hz
         const float action_scale = 0.5f;
@@ -300,7 +341,7 @@ class PolicyInterface {
             MotorVector<float> actions = Eigen::Map<MotorVector<float>>(policy_output.data());
             MotorVector<float> position_setpoints = default_position + actions * action_scale;
             Eigen::Map<MotorVector<float>>(q_setpoint.data()) = position_setpoints;
-            
+
             unitree::containers::MotorCommand motor_command = {
                 .q_setpoint = q_setpoint,
                 .qd_setpoint = qd_setpoint,
@@ -336,7 +377,7 @@ class PolicyInterface {
                             motor_command = interface::constants::controller::damping_motor_command;
                             break;
                         case ControlMode::GetUp:
-                            auto [motor_command, control_mode] = interface::utilities::get_up_routine(
+                            std::tie(motor_command, control_mode) = interface::utilities::get_up_routine(
                                 initial_position,
                                 default_position,
                                 control_rate_us
@@ -347,6 +388,10 @@ class PolicyInterface {
                             break;
                         case ControlMode::Policy:
                             motor_command = get_motor_command();
+                            break;
+                        case ControlMode::OperationalSpaceController:
+                            control_mode = ControlMode::Damping;
+                            motor_command = interface::constants::controller::damping_motor_command;
                             break;
                     }
 
