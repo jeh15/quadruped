@@ -2,6 +2,7 @@ from absl import app, flags, logging
 import os
 import functools
 import time
+from dataclasses import dataclass
 
 import pygame
 
@@ -10,6 +11,7 @@ import jax.numpy as jnp
 import numpy as np
 import numpy.typing as npt
 from scipy.spatial.transform import Rotation as R
+from scipy import signal
 
 from unitree_api_bindings import unitree_api
 
@@ -25,6 +27,118 @@ FLAGS = flags.FLAGS
 flags.DEFINE_string(
     'checkpoint_name', None, 'Desired checkpoint folder name to load.', short_name='c',
 )
+
+
+@dataclass 
+class FilterData:
+    accelerometer: np.ndarray
+    gyroscope: np.ndarray
+    projected_gravity: np.ndarray
+    joint_position: np.ndarray
+    joint_velocity: np.ndarray
+
+
+class Filter:
+    def __init__(self, window_size: int, cutoff: float, fs: float, order: int = 5):
+        assert window_size > 0, 'Window size must be greater than 0.'
+        assert cutoff > 0, 'Cutoff frequency must be greater than 0.'
+        assert fs > 0, 'Sampling frequency must be greater than 0.'
+        assert order > 0, 'Order must be greater than 0.'
+        
+        # Sensor Index:
+        self.accelerometer_id = slice(0, 3)
+        self.gyroscope_id = slice(3, 6)
+        self.projected_gravity_id = slice(6, 9)
+        self.joint_position_id = slice(9, 21)
+        self.joint_velocity_id = slice(21, 33)
+        self.data_size = 33
+        
+        # Initialize Filter:
+        self.window_size = window_size
+        self.cutoff = cutoff
+        self.fs = fs
+        self.order = order
+        self.queue = np.zeros((self.data_size, self.window_size))
+        self.filtered_data = np.zeros_like(self.queue)
+        self.lowpass_filter = signal.butter(
+            N=order,
+            Wn=cutoff,
+            btype='low',
+            analog=False,
+            output='sos',
+            fs=fs,
+        )
+    
+    @staticmethod
+    def rotate(vec: np.ndarray, quat: np.ndarray) -> np.ndarray:
+            if len(vec.shape) != 1:
+                raise ValueError('vec must have no batch dimensions.')
+            s, u = quat[0], quat[1:]
+            r = 2 * (np.dot(u, vec) * u) + (s * s - np.dot(u, u)) * vec
+            r = r + 2 * s * np.cross(u, vec)
+            return r
+    
+    @staticmethod
+    def quat_inv(q: np.ndarray) -> np.ndarray:
+        return q * np.array([1, -1, -1, -1])
+
+    def add_data(self, imu_state: unitree_api.IMUState, motor_state: unitree_api.MotorState):
+        # Unpack Data to Numpy Arrays:
+        quaternion = np.asarray(imu_state.quaternion, dtype=np.float32)
+        accelerometer = np.asarray(imu_state.accelerometer, dtype=np.float32)
+        gyroscope = np.asarray(imu_state.gyroscope, dtype=np.float32)
+        joint_positions = np.asarray(motor_state.q, dtype=np.float32)
+        joint_velocities = np.asarray(motor_state.qd, dtype=np.float32)
+
+        # Cast to float64:
+        quaternion = quaternion.astype(np.float64)
+        accelerometer = accelerometer.astype(np.float64)
+        gyroscope = gyroscope.astype(np.float64)
+        joint_positions = joint_positions.astype(np.float64)
+        joint_velocities = joint_velocities.astype(np.float64)
+
+        # Normalize Quaternion Estimate and Calculate Projected Gravity:
+        normalized_quaternion = quaternion / np.linalg.norm(quaternion)
+        projected_gravity = self.rotate(
+            vec=np.array([0, 0, -1]),
+            quat=self.quat_inv(normalized_quaternion)
+        )
+
+        # Add data to queue:
+        self.queue = np.roll(self.queue, -1, axis=-1)
+        self.queue[:, -1] = np.concatenate([
+            accelerometer,
+            gyroscope,
+            projected_gravity,
+            joint_positions,
+            joint_velocities,
+        ])
+
+    def apply_filter(self) -> FilterData:
+        self.filtered_data = signal.sosfilt(self.lowpass_filter, self.queue, axis=-1)
+        return FilterData(
+            accelerometer=self.filtered_data[self.accelerometer_id, -1],
+            gyroscope=self.filtered_data[self.gyroscope_id, -1],
+            projected_gravity=self.filtered_data[self.projected_gravity_id, -1],
+            joint_position=self.filtered_data[self.joint_position_id, -1],
+            joint_velocity=self.filtered_data[self.joint_velocity_id, -1],
+        )
+
+    def get_acceleration(self) -> np.ndarray:
+        return self.filtered_data[self.accelerometer_id, -1]
+    
+    def get_angular_velocity(self) -> np.ndarray:
+        return self.filtered_data[self.gyroscope_id, -1]
+    
+    def get_projected_gravity(self) -> np.ndarray:
+        return self.filtered_data[self.projected_gravity_id, -1]
+    
+    def get_joint_position(self) -> np.ndarray:
+        return self.filtered_data[self.joint_position_id, -1]
+    
+    def get_joint_velocity(self) -> np.ndarray:
+        return self.filtered_data[self.joint_velocity_id, -1]
+    
 
 def controller(
     action: npt.ArrayLike,
@@ -52,10 +166,8 @@ def main(argv=None):
     env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx.xml', action_scale=0.5)
     model = env.sys.mj_model
 
-    data = mujoco.MjData(model)
     control_rate = 0.02
     control_rate_ns = 2e7
-    num_physics_steps = int(control_rate / model.opt.timestep)
 
     # Load Policy:
     make_policy, params, _ = load_policy(
@@ -70,6 +182,15 @@ def main(argv=None):
         controller,
         default_control=env.default_ctrl,
         action_scale=env._action_scale,
+    )
+
+    # Initialize Filter:
+    sample_rate = int(1 / control_rate)
+    lowpass_filter = Filter(
+        window_size=10,
+        cutoff=10.0,
+        fs=sample_rate,
+        order=5,
     )
 
     # Initialize Unitree-Api:
@@ -126,12 +247,21 @@ def main(argv=None):
         step_time = time.time()
         imu_state = unitree_driver.get_imu_state()
         motor_state = unitree_driver.get_motor_state()
-        observation = env.hardware_observation(
-            imu_state=imu_state,
-            motor_state=motor_state,
-            command=command,
-            previous_action=action,
-        )
+
+        # Filter:
+        lowpass_filter.add_data(imu_state, motor_state)
+        filtered_data = lowpass_filter.apply_filter()
+        
+        # Make Observation:
+        observation = np.concatenate([
+            filtered_data.gyroscope,
+            filtered_data.projected_gravity,
+            filtered_data.joint_position - env.default_ctrl,
+            filtered_data.joint_velocity,
+            action,
+            command,
+        ])
+        
         sleep_time = control_rate - (time.time() - step_time)
         if sleep_time > 0:
             time.sleep(sleep_time)
@@ -139,10 +269,6 @@ def main(argv=None):
             print('Warning: Control rate exceeded.')
 
     print(f'Observation History Completed...')
-
-    # Update Data:
-    data.qpos = model.key_qpos.flatten()
-    mujoco.mj_forward(model, data) 
 
     key = jax.random.key(0)
     key, subkey = jax.random.split(key)
@@ -152,10 +278,6 @@ def main(argv=None):
     policy_control_mode = False
     damping_control_mode = False
     is_running = True
-    
-    previous_action = np.zeros_like(env.default_ctrl)
-    previous_imu_state = imu_state
-    previous_motor_state = motor_state
 
     next_time_ns = time.clock_gettime_ns(time.CLOCK_MONOTONIC)
     while is_running:
@@ -206,27 +328,26 @@ def main(argv=None):
         key, subkey = jax.random.split(subkey)
         imu_state = unitree_driver.get_imu_state()
         motor_state = unitree_driver.get_motor_state()
-        observation = env.smooth_observation(
-            imu_state=imu_state,
-            motor_state=motor_state,
-            previous_imu_state=previous_imu_state,
-            previous_motor_state=previous_motor_state,
-            command=command,
-            previous_action=action,
-        )
-        previous_imu_state = imu_state
-        previous_motor_state = motor_state
+        
+        # Filter:
+        lowpass_filter.add_data(imu_state, motor_state)
+        filtered_data = lowpass_filter.apply_filter()
+
+        # Make Observation:
+        observation = np.concatenate([
+            filtered_data.gyroscope,
+            filtered_data.projected_gravity,
+            filtered_data.joint_position - env.default_ctrl,
+            filtered_data.joint_velocity,
+            action,
+            command,
+        ])
 
         action, _ = jax.block_until_ready(
             inference_fn(observation, subkey),
         )
         action = jax.device_put(action, jax.devices('cpu')[0])
         action = np.asarray(action)
-
-        # Filter Action:
-        # alpha = 0.8
-        # action = alpha * action + (1 - alpha) * previous_action
-        # previous_action = action
 
         ctrl = controller_fn(action)
         ctrl = ctrl.astype(np.float32)

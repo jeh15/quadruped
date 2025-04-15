@@ -959,6 +959,74 @@ class UnitreeGo2Env(PipelineEnv):
             'state': observation,
             'privileged_state': np.zeros((self.num_privileged_observations,)),
         }
+    
+    def observation_test(
+        self,
+        accelerometer: np.ndarray,
+        gyroscope: np.ndarray,
+        projected_gravity: np.ndarray,
+        joint_positions: np.ndarray,
+        joint_velocities: np.ndarray,
+        command: np.ndarray,
+        previous_action: np.ndarray,
+    ) -> np.ndarray:
+        observation = np.concatenate([
+            gyroscope,
+            projected_gravity,
+            joint_positions - self.default_ctrl,
+            joint_velocities,
+            previous_action,
+            command,
+        ])
+
+        return {
+            'state': observation,
+            'privileged_state': np.zeros((self.num_privileged_observations,)),
+        }
+
+    def get_noisy_sensor_data(
+        self,
+        mj_data: mujoco.MjData,
+    ) -> np.ndarray:
+        accelerometer = self.get_accelerometer(mj_data)
+        gyroscope = self.get_gyro(mj_data)
+        quaternion = mj_data.qpos[3:7]
+        joint_positions = mj_data.qpos[7:]
+        joint_velocities = mj_data.qvel[6:]
+
+        # Noise Plays a role in stability:
+        gyroscope = gyroscope + np.random.uniform(
+            low=-self.noise_config.gyroscope,
+            high=self.noise_config.gyroscope,
+            size=gyroscope.shape,
+        )
+        # Noise Plays a role in stability:
+        quaternion = quaternion + np.random.uniform(
+            low=-0.001,
+            high=0.001,
+            size=quaternion.shape,
+        )
+        quaternion = quaternion / np.linalg.norm(quaternion)
+        # Noise Plays a role but not that bad...
+        joint_positions = joint_positions + np.random.uniform(
+            low=-self.noise_config.joint_position,
+            high=self.noise_config.joint_position,
+            size=joint_positions.shape,
+        )
+        # Noise Plays a role but not that bad...
+        joint_velocities = joint_velocities + np.random.uniform(
+            low=-self.noise_config.joint_velocity,
+            high=self.noise_config.joint_velocity,
+            size=joint_velocities.shape,
+        )
+
+        return np.concatenate([
+            accelerometer,
+            gyroscope,
+            quaternion,
+            joint_positions,
+            joint_velocities,
+        ])
 
     def smooth_observation(
         self,
