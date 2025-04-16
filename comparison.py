@@ -263,19 +263,6 @@ def main(argv=None):
     damping_control_mode = False
     is_running = True
 
-    # Data:
-    gyroscope_history = []
-    projected_gravity_history = []
-    quaternion_history = []
-    joint_position_history = []
-    joint_velocity_history = []
-    filtered_gyroscope_history = []
-    filtered_projected_gravity_history = []
-    filtered_joint_position_history = []
-    filtered_joint_velocity_history = []
-    action_history = []
-    ctrl_history = []
-
     next_time_ns = time.clock_gettime_ns(time.CLOCK_MONOTONIC)
     while is_running:
         next_time_ns += control_rate_ns
@@ -357,25 +344,14 @@ def main(argv=None):
         action_list = action.tolist()
         q_setpoint = ctrl.tolist()
 
-        # Append Data:
-        if policy_control_mode:
-            quaternion = np.asarray(imu_state.quaternion)
-            normalized_quaternion = quaternion / np.linalg.norm(quaternion)
-            projected_gravity = lowpass_filter.rotate(
-                vec=np.array([0, 0, -1]),
-                quat=lowpass_filter.quat_inv(normalized_quaternion)
-            )
-            gyroscope_history.append(imu_state.gyroscope)
-            projected_gravity_history.append(projected_gravity)
-            quaternion_history.append(imu_state.quaternion)
-            joint_position_history.append(motor_state.q)
-            joint_velocity_history.append(motor_state.qd)
-            filtered_gyroscope_history.append(filtered_data.gyroscope)
-            filtered_projected_gravity_history.append(filtered_data.projected_gravity)
-            filtered_joint_position_history.append(filtered_data.joint_position)
-            filtered_joint_velocity_history.append(filtered_data.joint_velocity)
-            action_history.append(action_list)
-            ctrl_history.append(q_setpoint)
+        # # Log Data:
+        # logging.info(f'Accelerometer: {imu_state.accelerometer}')
+        # logging.info(f'Gyroscope: {imu_state.gyroscope}')
+        # logging.info(f'Quaternion: {imu_state.quaternion}')
+        # logging.info(f'Joint Position: {motor_state.q}')
+        # logging.info(f'Joint Velocity: {motor_state.qd}')
+        # logging.info(f'Action: {action_list}')
+        # logging.info(f'Command: {q_setpoint}')
 
         # To Control the Robot:
         if policy_control_mode:
@@ -405,74 +381,6 @@ def main(argv=None):
             print('Warning: Control rate exceeded.')
             next_time_ns = now_ns
 
-    # Save Data:
-    gyroscope_data = np.asarray(gyroscope_history)
-    projected_gravity_data = np.asarray(projected_gravity_history)
-    quaternion_data = np.asarray(quaternion_history)
-    joint_position_data = np.asarray(joint_position_history)
-    joint_velocity_data = np.asarray(joint_velocity_history)
-    filtered_gyroscope_data = np.asarray(filtered_gyroscope_history)
-    filtered_projected_gravity_data = np.asarray(filtered_projected_gravity_history)
-    filtered_joint_position_data = np.asarray(filtered_joint_position_history)
-    filtered_joint_velocity_data = np.asarray(filtered_joint_velocity_history)
-    action_data = np.asarray(action_history)
-    ctrl_data = np.asarray(ctrl_history)
-
-    np.savetxt(
-        os.path.join(log_directory, 'hardware_gyroscope_data.txt'),
-        gyroscope_data,
-        delimiter=',',
-    )
-    np.savetxt(
-        os.path.join(log_directory, 'hardware_projected_gravity_data.txt'),
-        projected_gravity_data,
-        delimiter=',',
-    )
-    np.savetxt(
-        os.path.join(log_directory, 'hardware_quaternion_data.txt'),
-        quaternion_data,
-        delimiter=',',
-    )
-    np.savetxt(
-        os.path.join(log_directory, 'hardware_joint_position_data.txt'),
-        joint_position_data,
-        delimiter=',',
-    )
-    np.savetxt(
-        os.path.join(log_directory, 'hardware_joint_velocity_data.txt'),
-        joint_velocity_data,
-        delimiter=',',
-    )
-    np.savetxt(
-        os.path.join(log_directory, 'hardware_filtered_gyroscope_data.txt'),
-        filtered_gyroscope_data,
-        delimiter=',',
-    )
-    np.savetxt(
-        os.path.join(log_directory, 'hardware_filtered_projected_gravity_data.txt'),
-        filtered_projected_gravity_data,
-        delimiter=',',
-    )
-    np.savetxt(
-        os.path.join(log_directory, 'hardware_filtered_joint_position_data.txt'),
-        filtered_joint_position_data,
-        delimiter=',',
-    )
-    np.savetxt(
-        os.path.join(log_directory, 'hardware_filtered_joint_velocity_data.txt'),
-        filtered_joint_velocity_data,
-        delimiter=',',
-    )
-    np.savetxt(
-        os.path.join(log_directory, 'hardware_action_data.txt'),
-        action_data,
-        delimiter=',',
-    )
-    np.savetxt(
-        os.path.join(log_directory, 'hardware_ctrl_data.txt'),
-        ctrl_data,
-        delimiter=',',
-    )
     
     # Stop Thread:
     unitree_driver.stop_thread()
