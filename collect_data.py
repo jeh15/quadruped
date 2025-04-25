@@ -1,7 +1,7 @@
-from typing import Tuple
-
+from absl import app, flags, logging
 import os
-from absl import app
+import functools
+import time
 import pickle
 
 import jax
@@ -9,9 +9,13 @@ import jax.numpy as jnp
 import numpy as np
 
 from brax.io import mjcf
-from brax.mjx import pipeline
+
+from unitree_api_bindings import unitree_api
+
 
 jax.config.update('jax_enable_x64', True)
+
+jax.config.update('jax_disable_jit', True)
 
 
 def main(argv=None):
@@ -22,7 +26,7 @@ def main(argv=None):
     )
     sys = mjcf.load(filepath)
 
-    # Random Initial State Generator:
+    # Generate Control Trajectory:
     def random_initial_state(
         home_position: jax.Array,
         key: jax.Array,
@@ -52,13 +56,13 @@ def main(argv=None):
         num_time_steps: int = 500,
     ) -> jnp.ndarray:
         abduction_amplitude = jax.random.uniform(
-            key, shape=(4,), minval=-0.1, maxval=0.1,
+            key, shape=(4,), minval=-0.2, maxval=0.2,
         )
         hip_amplitude = jax.random.uniform(
-            key, shape=(4,), minval=-0.3, maxval=0.3,
+            key, shape=(4,), minval=-0.5, maxval=0.5,
         )
         knee_amplitude = jax.random.uniform(
-            key, shape=(4,), minval=-0.2, maxval=0.2,
+            key, shape=(4,), minval=-0.5, maxval=0.5,
         )
 
         abduction_frequency = jax.random.randint(
@@ -72,17 +76,33 @@ def main(argv=None):
         )
 
         x = jnp.arange(num_time_steps)
-        abduction_trajectory = initial_position + abduction_amplitude * jnp.sin(
-            abduction_frequency * x,
+
+        sinusoid_fn = jax.jit(
+            jax.vmap(
+                lambda x, y, z, w: x + y * jnp.sin(w / z), 
+                in_axes=(None, None, None, 0),
+                out_axes=0,
+            ),
         )
-        hip_trajectory = initial_position + hip_amplitude * jnp.sin(
-            hip_frequency * x,
+
+        abduction_trajectory = sinusoid_fn(
+            initial_position[:, 0], abduction_amplitude, abduction_frequency, x,
         )
-        knee_trajectory = initial_position + knee_amplitude * jnp.sin(
-            knee_frequency * x,
+        hip_trajectory = sinusoid_fn(
+            initial_position[:, 1], hip_amplitude, hip_frequency, x,
         )
-        control_trajectory = jnp.vstack(
+        knee_trajectory = sinusoid_fn(
+            initial_position[:, 2], knee_amplitude, knee_frequency, x,
+        )
+
+        format_array = lambda x: jnp.expand_dims(x, -1)
+        abduction_trajectory = format_array(abduction_trajectory)
+        hip_trajectory = format_array(hip_trajectory)
+        knee_trajectory = format_array(knee_trajectory)
+
+        control_trajectory = jnp.concatenate(
             (abduction_trajectory, hip_trajectory, knee_trajectory),
+            axis=-1,
         )
         return control_trajectory
         
@@ -99,16 +119,118 @@ def main(argv=None):
 
     key = jax.random.key(42)
     key, state_key, ctrl_key = jax.random.split(key, 3)
-    num_trials = 100
+    num_trials = 10
     state_keys = jax.random.split(state_key, num_trials)
     control_keys = jax.random.split(ctrl_key, num_trials)
 
     home_position = jnp.array(sys.mj_model.keyframe('home').qpos[:])
     qpos = initial_state_fn(home_position, state_keys)
-    control_trajectory = control_trajectory_fn(
+    control_trajectories = control_trajectory_fn(
         qpos, control_keys,
     )
-    pass
+    control_trajectories = np.asarray(control_trajectories)
+    
+    # Initalize Unitree API:
+    control_rate = 0.02
+    control_rate_ns = 2e7
+
+    # Initialize Unitree-Api:
+    network_name = "eno2"
+    inner_control_rate = 2000
+    unitree_driver = unitree_api.UnitreeDriver(
+        network_name,
+        inner_control_rate,
+    )
+    unitree_driver.initialize()
+
+    # Default Control:
+    motor_commands = unitree_api.MotorCommand()
+    motor_commands.q_setpoint = [0.0, 0.9, -1.8] * 4
+    motor_commands.qd_setpoint = [0.0, 0.0, 0.0] * 4
+    motor_commands.torque_feedforward = [0.0, 0.0, 0.0] * 4
+    motor_commands.stiffness = [0.0, 0.0, 0.0] * 4
+    motor_commands.damping = [0.0, 0.0, 0.0] * 4
+    unitree_driver.update_command(motor_commands)
+
+    print('Press any key to start get up sequence...')
+    input()
+
+    # Initialize Thread:
+    unitree_driver.initialize_thread()
+
+    # Ramp to Default Control:
+    ramp_time = 5.0
+    num_steps = 1000
+    stifness_ramp = np.linspace(0.0, 60.0, num_steps)
+    damping_ramp = np.linspace(0.0, 5.0, num_steps)
+    for stiffness, damping in zip(stifness_ramp, damping_ramp):
+        motor_commands.stiffness = [stiffness, stiffness, stiffness] * 4
+        motor_commands.damping = [damping, damping, damping] * 4
+        unitree_driver.update_command(motor_commands)
+        time.sleep(ramp_time / num_steps)
+
+    print('Press any key to start tests...')
+    input()
+
+    # Control Loop:
+    for control_trajectory in control_trajectories:
+        # Move to initial position for test:
+        motor_state = unitree_driver.get_motor_state()
+
+        desired_position = control_trajectory[0].flatten()
+        current_position = np.asarray(motor_state.q)
+
+        # Linear Iterpolation to desired position:
+        trajectory = np.linspace(
+            current_position, desired_position, num=100,
+        )
+        next_time_ns = time.clock_gettime_ns(time.CLOCK_MONOTONIC)
+        for position in trajectory:
+            next_time_ns += control_rate_ns
+            motor_commands.q_setpoint = position
+            motor_commands.qd_setpoint = [0.0, 0.0, 0.0] * 4
+            motor_commands.torque_feedforward = [0.0, 0.0, 0.0] * 4
+            motor_commands.stiffness = [60.0, 60.0, 60.0] * 4
+            motor_commands.damping = [5.0, 5.0, 5.0] * 4
+            unitree_driver.update_command(motor_commands)
+            now_ns = time.clock_gettime_ns(time.CLOCK_MONOTONIC)
+            if now_ns < next_time_ns:
+                sleep_time_ns = next_time_ns - now_ns
+                time.sleep(sleep_time_ns / 1e9)
+            else:
+                print('Warning: Control rate exceeded.')
+                next_time_ns = now_ns
+
+        pass
+
+        # Run Test:
+        motor_states = []
+        for setpoint in control_trajectory:
+            next_time_ns += control_rate_ns
+            
+            # This will be the output of the previous step:
+            motor_state = unitree_driver.get_motor_state()
+            motor_states.append(motor_state)
+
+            motor_commands.q_setpoint = setpoint.flatten()
+            motor_commands.qd_setpoint = [0.0, 0.0, 0.0] * 4
+            motor_commands.torque_feedforward = [0.0, 0.0, 0.0] * 4
+            motor_commands.stiffness = [35.0, 35.0, 35.0] * 4
+            motor_commands.damping = [0.5, 0.5, 0.5] * 4
+            unitree_driver.update_command(motor_commands)
+
+            now_ns = time.clock_gettime_ns(time.CLOCK_MONOTONIC)
+            if now_ns < next_time_ns:
+                sleep_time_ns = next_time_ns - now_ns
+                time.sleep(sleep_time_ns / 1e9)
+            else:
+                print('Warning: Control rate exceeded.')
+                next_time_ns = now_ns
+
+        pass
+
+    # Stop Thread:
+    unitree_driver.stop_thread()
 
 
 
