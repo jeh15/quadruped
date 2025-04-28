@@ -33,13 +33,13 @@ def main(argv=None):
     ) -> jnp.ndarray:
         home_position = jnp.reshape(home_position, (4, -1))
         abduction_range = jnp.array([
-            -0.1, 0.1,
+            -0.2, 0.2,
         ])
         hip_range = jnp.array([
-            -0.3, 0.3,
+            -0.5, 0.5,
         ])
         knee_range = jnp.array([
-            -0.2, 0.2,
+            -0.5, 0.5,
         ])
         bounds = jnp.vstack(
             (abduction_range, hip_range, knee_range),
@@ -55,24 +55,27 @@ def main(argv=None):
         key: jax.Array,
         num_time_steps: int = 500,
     ) -> jnp.ndarray:
+        key, abduction_amplitude_key, hip_amplitude_key, knee_amplitude_key = jax.random.split(key, 4)
+        key, abduction_frequency_key, hip_frequency_key, knee_frequency_key = jax.random.split(key, 4)
+
         abduction_amplitude = jax.random.uniform(
-            key, shape=(4,), minval=-0.2, maxval=0.2,
+            abduction_amplitude_key, shape=(4,), minval=-0.2, maxval=0.2,
         )
         hip_amplitude = jax.random.uniform(
-            key, shape=(4,), minval=-0.5, maxval=0.5,
+            hip_amplitude_key, shape=(4,), minval=-0.5, maxval=0.5,
         )
         knee_amplitude = jax.random.uniform(
-            key, shape=(4,), minval=-0.5, maxval=0.5,
+            knee_amplitude_key, shape=(4,), minval=-0.5, maxval=0.5,
         )
 
         abduction_frequency = jax.random.randint(
-            key, shape=(4,), minval=50, maxval=150,
+            abduction_frequency_key, shape=(4,), minval=15, maxval=100,
         )
         hip_frequency = jax.random.randint(
-            key, shape=(4,), minval=50, maxval=150,
+            hip_frequency_key, shape=(4,), minval=15, maxval=100,
         )
         knee_frequency = jax.random.randint(
-            key, shape=(4,), minval=50, maxval=150,
+            knee_frequency_key, shape=(4,), minval=15, maxval=100,
         )
 
         x = jnp.arange(num_time_steps)
@@ -119,7 +122,7 @@ def main(argv=None):
 
     key = jax.random.key(42)
     key, state_key, ctrl_key = jax.random.split(key, 3)
-    num_trials = 10
+    num_trials = 3
     state_keys = jax.random.split(state_key, num_trials)
     control_keys = jax.random.split(ctrl_key, num_trials)
 
@@ -173,7 +176,10 @@ def main(argv=None):
     input()
 
     # Control Loop:
-    for control_trajectory in control_trajectories:
+    data = []
+    for trial, control_trajectory in enumerate(control_trajectories):
+        print(f'Trial {trial + 1} of {num_trials}...')
+
         # Move to initial position for test:
         motor_state = unitree_driver.get_motor_state()
 
@@ -210,7 +216,14 @@ def main(argv=None):
             
             # This will be the output of the previous step:
             motor_state = unitree_driver.get_motor_state()
-            motor_states.append(motor_state)
+            joint_positions = np.asarray(motor_state.q)
+            joint_velocities = np.asarray(motor_state.qd)
+            joint_torques = np.asarray(motor_state.torque_estimate)
+            joint_state = np.concatenate(
+                (joint_positions, joint_velocities, joint_torques),
+                axis=0,
+            )
+            motor_states.append(joint_state)
 
             motor_commands.q_setpoint = setpoint.flatten()
             motor_commands.qd_setpoint = [0.0, 0.0, 0.0] * 4
@@ -227,7 +240,23 @@ def main(argv=None):
                 print('Warning: Control rate exceeded.')
                 next_time_ns = now_ns
 
-        pass
+        data.append(motor_states)
+
+    # Save Data:
+    data = np.asarray(data)
+
+    # Save data to file:
+    data_dir = os.path.join(
+        os.path.dirname(__file__),
+        'data',
+    )
+    os.makedirs(data_dir, exist_ok=True)
+    data_file = os.path.join(
+        data_dir,
+        'unitree_data.pkl',
+    )
+    with open(data_file, 'wb') as f:
+        pickle.dump(data, f)
 
     # Stop Thread:
     unitree_driver.stop_thread()
