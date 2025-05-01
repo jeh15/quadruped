@@ -23,7 +23,7 @@ def _get_observation_size(
     observation_size: types.ObservationSize, observation_key: str
 ) -> int:
     observation_size = observation_size[observation_key] if isinstance(observation_size, Mapping) else observation_size
-    return jax.tree_util.tree_flatten(observation_size)[0][-1]
+    return jax.tree.flatten(observation_size)[0][-1]
 
 
 class MLP(nn.Module):

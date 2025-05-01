@@ -70,7 +70,7 @@ def load_policy(checkpoint_name: str, environment: Env, restore_iteration: Optio
     else:
         normalization_fn = lambda x, y: x
 
-    network_observation_shape = jax.tree_util.tree_map(lambda x: x.shape[:], env_state.obs)
+    network_observation_shape = jax.tree.map(lambda x: x.shape[:], env_state.obs)
     network = ppo_networks.make_ppo_networks(
         observation_size=network_observation_shape,
         action_size=env.action_size,
@@ -95,7 +95,7 @@ def load_policy(checkpoint_name: str, environment: Env, restore_iteration: Optio
         policy_params=network.policy_network.init(key),
         value_params=network.value_network.init(key),
     )
-    trainstate_observation_shape = jax.tree_util.tree_map(
+    trainstate_observation_shape = jax.tree.map(
         lambda x: specs.Array(x.shape[-1:], jnp.dtype('float32')), env_state.obs
     )
     train_state = TrainState(
@@ -173,7 +173,7 @@ def load_checkpoint(
     else:
         normalization_fn = lambda x, y: x
 
-    network_observation_shape = jax.tree_util.tree_map(lambda x: x.shape[:], env_state.obs)
+    network_observation_shape = jax.tree.map(lambda x: x.shape[:], env_state.obs)
     network = ppo_networks.make_ppo_networks(
         observation_size=network_observation_shape,
         action_size=env.action_size,
@@ -192,7 +192,7 @@ def load_checkpoint(
         policy_params=network.policy_network.init(key),
         value_params=network.value_network.init(key),
     )
-    trainstate_observation_shape = jax.tree_util.tree_map(
+    trainstate_observation_shape = jax.tree.map(
         lambda x: specs.Array(x.shape[-1:], jnp.dtype('float32')), env_state.obs
     )
     train_state = TrainState(

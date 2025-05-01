@@ -137,7 +137,7 @@ def train(
 
     # Initialize Network:
     # functools.partial network_factory to capture parameters:
-    observation_shape = jax.tree_util.tree_map(lambda x: x.shape[2:], env_state.obs)
+    observation_shape = jax.tree.map(lambda x: x.shape[2:], env_state.obs)
     if restored_checkpoint is None:
         network = network_factory(
             observation_size=observation_shape,
@@ -196,7 +196,7 @@ def train(
             x = jnp.reshape(x, (num_minibatches, -1) + x.shape[1:])
             return x
 
-        shuffled_data = jax.tree_util.tree_map(permute_data, data)
+        shuffled_data = jax.tree.map(permute_data, data)
         (opt_state, params, _), metrics = jax.lax.scan(
             functools.partial(
                 minibatch_step, normalization_params=normalization_params,
@@ -241,8 +241,8 @@ def train(
         )
 
         # Swap leading dimensions: (T, B, ...) -> (B, T, ...)
-        data = jax.tree_util.tree_map(lambda x: jnp.swapaxes(x, 1, 2), data)
-        data = jax.tree_util.tree_map(
+        data = jax.tree.map(lambda x: jnp.swapaxes(x, 1, 2), data)
+        data = jax.tree.map(
             lambda x: jnp.reshape(x, (-1,) + x.shape[2:]), data,
         )
 
@@ -282,7 +282,7 @@ def train(
             (),
             length=num_training_steps,
         )
-        loss_metrics = jax.tree_util.tree_map(jnp.mean, loss_metrics)
+        loss_metrics = jax.tree.map(jnp.mean, loss_metrics)
         return train_state, state, loss_metrics
 
     training_epoch = jax.pmap(training_epoch, axis_name=_PMAP_AXIS_NAME)
@@ -299,8 +299,8 @@ def train(
         result = training_epoch(train_state, state, key)
         train_state, state, metrics = strip_weak_type(result)
 
-        metrics = jax.tree_map(jnp.mean, metrics)
-        jax.tree_util.tree_map(lambda x: x.block_until_ready(), metrics)
+        metrics = jax.tree.map(jnp.mean, metrics)
+        jax.tree.map(lambda x: x.block_until_ready(), metrics)
 
         epoch_training_time = time.time() - start_time
         training_walltime += epoch_training_time
@@ -319,7 +319,7 @@ def train(
             value_params=network.value_network.init(value_key),
         )
         # Can't pass optimizer function to device_put_replicated:
-        observation_shape = jax.tree_util.tree_map(
+        observation_shape = jax.tree.map(
             lambda x: specs.Array(x.shape[-1:], jnp.dtype('float32')), env_state.obs
         )
         train_state = TrainState(

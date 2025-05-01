@@ -47,7 +47,7 @@ def main(argv=None):
     # Config:
     reward_config = unitree_go2.RewardConfig(
         tracking_linear_velocity=1.5,
-        tracking_angular_velocity=0.8,
+        tracking_angular_velocity=1.0,
         pose_regularization=0.5,
         # Orientation Regularization Terms:
         orientation_regularization=-5.0,
@@ -93,7 +93,7 @@ def main(argv=None):
         normalize_advantages=True,
     )
     training_metadata = checkpoint_utilities.training_metadata(
-        num_epochs=35,
+        num_epochs=20,
         num_training_steps=20,
         episode_length=1000,
         num_policy_steps=40,

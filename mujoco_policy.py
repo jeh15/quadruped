@@ -127,18 +127,18 @@ def main(argv=None):
 
             for joystick in joysticks.values():
                 # If Switch Controller:
-                # if joystick.get_button(11) == 1:
-                #     termination_flag = True
-                # In Logitech Controller:
-                if joystick.get_button(7) == 1:
+                if joystick.get_button(11) == 1:
                     termination_flag = True
+                # In Logitech Controller:
+                # if joystick.get_button(7) == 1:
+                #     termination_flag = True
 
                 forward_command = -1 * joystick.get_axis(1)
                 lateral_command = -1 * joystick.get_axis(0)
                 # If Switch Controller:
-                # rotation_command = -1 * joystick.get_axis(2)
+                rotation_command = -1 * joystick.get_axis(2)
                 # If Logitech Controller:
-                rotation_command = -1 * joystick.get_axis(3)
+                # rotation_command = -1 * joystick.get_axis(3)
 
 
             # Filter and Clip Command:

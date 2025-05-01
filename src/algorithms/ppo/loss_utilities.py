@@ -72,7 +72,7 @@ def loss_function(
     value_apply = ppo_networks.value_network.apply
 
     # Reorder data: (B, T, ...) -> (T, B, ...)
-    data = jax.tree_util.tree_map(lambda x: jnp.swapaxes(x, 0, 1), data)
+    data = jax.tree.map(lambda x: jnp.swapaxes(x, 0, 1), data)
 
     logits = policy_apply(
         normalization_params, params.policy_params, data.observation,
@@ -80,7 +80,7 @@ def loss_function(
     values = value_apply(
         normalization_params, params.value_params, data.observation,
     )
-    terminal_observation = jax.tree_util.tree_map(lambda x: x[-1], data.next_observation)
+    terminal_observation = jax.tree.map(lambda x: x[-1], data.next_observation)
     bootstrap_values = value_apply(
         normalization_params, params.value_params, terminal_observation,
     )
