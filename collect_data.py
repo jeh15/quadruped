@@ -1,6 +1,5 @@
 from absl import app, flags, logging
 import os
-import functools
 import time
 import pickle
 
@@ -14,8 +13,6 @@ from unitree_api_bindings import unitree_api
 
 
 jax.config.update('jax_enable_x64', True)
-
-jax.config.update('jax_disable_jit', True)
 
 
 def main(argv=None):
@@ -59,13 +56,13 @@ def main(argv=None):
         key, abduction_frequency_key, hip_frequency_key, knee_frequency_key = jax.random.split(key, 4)
 
         abduction_amplitude = jax.random.uniform(
-            abduction_amplitude_key, shape=(4,), minval=-0.2, maxval=0.2,
+            abduction_amplitude_key, shape=(4,), minval=-0.3, maxval=0.3,
         )
         hip_amplitude = jax.random.uniform(
-            hip_amplitude_key, shape=(4,), minval=-0.5, maxval=0.5,
+            hip_amplitude_key, shape=(4,), minval=-0.85, maxval=0.85,
         )
         knee_amplitude = jax.random.uniform(
-            knee_amplitude_key, shape=(4,), minval=-0.5, maxval=0.5,
+            knee_amplitude_key, shape=(4,), minval=-0.85, maxval=0.85,
         )
 
         abduction_frequency = jax.random.randint(
@@ -122,7 +119,7 @@ def main(argv=None):
 
     key = jax.random.key(42)
     key, state_key, ctrl_key = jax.random.split(key, 3)
-    num_trials = 3
+    num_trials = 20
     state_keys = jax.random.split(state_key, num_trials)
     control_keys = jax.random.split(ctrl_key, num_trials)
 
@@ -138,7 +135,7 @@ def main(argv=None):
     control_rate_ns = 2e7
 
     # Initialize Unitree-Api:
-    network_name = "eno2"
+    network_name = "enx7cc2c647de4f"
     inner_control_rate = 2000
     unitree_driver = unitree_api.UnitreeDriver(
         network_name,
@@ -211,6 +208,7 @@ def main(argv=None):
 
         # Run Test:
         motor_states = []
+        previous_setpoint = position.flatten()
         for setpoint in control_trajectory:
             next_time_ns += control_rate_ns
             
@@ -220,10 +218,11 @@ def main(argv=None):
             joint_velocities = np.asarray(motor_state.qd)
             joint_torques = np.asarray(motor_state.torque_estimate)
             joint_state = np.concatenate(
-                (joint_positions, joint_velocities, joint_torques),
+                (joint_positions, joint_velocities, joint_torques, previous_setpoint),
                 axis=0,
             )
             motor_states.append(joint_state)
+            previous_setpoint = setpoint.flatten()
 
             motor_commands.q_setpoint = setpoint.flatten()
             motor_commands.qd_setpoint = [0.0, 0.0, 0.0] * 4
@@ -246,13 +245,13 @@ def main(argv=None):
     data = np.asarray(data)
 
     # Save data to file:
-    data_dir = os.path.join(
+    data_directory = os.path.join(
         os.path.dirname(__file__),
         'data',
     )
-    os.makedirs(data_dir, exist_ok=True)
+    os.makedirs(data_directory, exist_ok=True)
     data_file = os.path.join(
-        data_dir,
+        data_directory,
         'unitree_data.pkl',
     )
     with open(data_file, 'wb') as f:
