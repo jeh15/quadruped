@@ -29,7 +29,7 @@ os.environ['XLA_FLAGS'] = (
 
 jax.config.update("jax_enable_x64", True)
 
-logging.set_verbosity(logging.ERROR)
+logging.set_verbosity(logging.WARNING)
 
 FLAGS = flags.FLAGS
 flags.DEFINE_string(
@@ -47,18 +47,19 @@ def main(argv=None):
     # Config:
     reward_config = unitree_go2.RewardConfig(
         # Rewards:
-        tracking_pose=1.5,
+        tracking_pose=1.0,
         # Pose Regularizations:
         pose_regularization=-5.0,
         abduction_regularization=-1.0,
         # Energy Regularization Terms:
         torque=-2e-4,
-        action_rate=-0.01,
+        action_rate=-0.1,
         mechanical_power=-1e-3,
+        acceleration=-1e-3,
         # Auxilary Terms:
         termination=-1.0,
         # Hyperparameter for exponential kernel:
-        kernel_sigma=0.05,
+        kernel_sigma=0.01,
         kernel_alpha=1.0,
     )
 
@@ -86,7 +87,7 @@ def main(argv=None):
         normalize_advantages=True,
     )
     training_metadata = checkpoint_utilities.training_metadata(
-        num_epochs=10,
+        num_epochs=15,
         num_training_steps=20,
         episode_length=1000,
         num_policy_steps=40,

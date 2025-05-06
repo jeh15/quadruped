@@ -41,6 +41,7 @@ class RewardConfig:
     torque: float = -2e-4
     action_rate: float = -0.01
     mechanical_power: float = -1e-3
+    acceleration: float = -1e-3
     # Auxilary Terms:
     termination: float = -1.0
     # Hyperparameter for exponential kernel:
@@ -248,7 +249,7 @@ class UnitreeGo2Env(PipelineEnv):
         self.num_privileged_observations = 97
 
     def sample_command(self, rng: jax.Array) -> jax.Array:
-        command_range = [0.0, 2.0 * jnp.pi]
+        command_range = [-self.foot_height_amplitude, self.foot_height_amplitude]
         key, subkey = jax.random.split(rng)
         new_cmd = jax.random.uniform(
             subkey,
@@ -342,6 +343,9 @@ class UnitreeGo2Env(PipelineEnv):
             'action_rate': self._reward_action_rate(action, state.info['previous_action']),
             'mechanical_power': self._reward_mechanical_power(
                 joint_velocities, pipeline_state.actuator_force,
+            ),
+            'acceleration': self._reward_acceleration(
+                pipeline_state.qacc,
             ),
             'termination': jnp.float64(
                 self._reward_termination(done, state.info['step'])
@@ -455,7 +459,7 @@ class UnitreeGo2Env(PipelineEnv):
         self, command: jax.Array, foot_position: jax.Array,
     ) -> jax.Array:
         # Tracking of foot positions:
-        desired_foot_height = self.default_feet_position[:, -1] + self.foot_height_amplitude * jnp.sin(command)
+        desired_foot_height = self.default_feet_position[:, -1] + command
         error = jnp.sum(jnp.square(desired_foot_height - foot_position[:, -1]))
         return jnp.exp(-error / self.kernel_sigma)
     
@@ -487,6 +491,12 @@ class UnitreeGo2Env(PipelineEnv):
     ) -> jax.Array:
         # Penalize mechanical power
         return jnp.sum(jnp.abs(torques) * jnp.abs(qd))
+    
+    def _reward_acceleration(
+        self, qacc: jax.Array,
+    ) -> jax.Array:
+        # Penalize Motor/Joint Acceleration
+        return jnp.sqrt(jnp.sum(jnp.square(qacc)))
 
     def _reward_termination(self, done: jax.Array, step: jax.Array) -> jax.Array:
         return done & (step < 500)

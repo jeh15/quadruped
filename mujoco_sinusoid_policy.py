@@ -137,17 +137,17 @@ def main(argv=None):
             command = np.clip(command, -1.0, 1.0)
 
             if(command < 0):
-                command = np.pi + command * ((3 * np.pi / 2) - np.pi) / (-1)
+                command = -0.1 * command
             else:
-                command = command * (np.pi / 2)
+                command = 0.1 * command
 
-            command = np.clip(command, 0.0, 2 * np.pi)
+            command = np.clip(command, -0.1, 0.1)
 
             # Print Tracking Reward:
-            desired_foot_height = env.default_feet_position[:, -1] + env.foot_height_amplitude * np.sin(command)
+            desired_foot_height = env.default_feet_position[:, -1] + command
             foot_position = env.get_feet_pos(data)
             error = np.sum(np.square(desired_foot_height - foot_position[:, -1]))
-            tracking_reward = np.exp(-error / 0.05)
+            tracking_reward = np.exp(-error / 0.01)
 
             print(f'Command: {command}')
             print(f'Desired Height: {desired_foot_height}')
