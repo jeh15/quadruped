@@ -131,7 +131,7 @@ def default_checkpoint_metadata() -> dict:
 
 
 def save_checkpoint(
-    checkpoint_direrctory: str,
+    checkpoint_directory: str,
     manager_options: CheckpointManagerOptions,
     registry: ocp.handlers.CheckpointHandlerRegistry,
     iteration: int,
@@ -139,7 +139,7 @@ def save_checkpoint(
     **metadata: Union[dict[str, Any], flax.struct.PyTreeNode],
 ) -> None:
     with ocp.CheckpointManager(
-        directory=checkpoint_direrctory,
+        directory=checkpoint_directory,
         options=manager_options,
         handler_registry=registry,
     ) as manager:

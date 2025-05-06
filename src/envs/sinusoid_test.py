@@ -1,9 +1,9 @@
 """
     Unitree Go2 Environment:
-        Playground formulation using single time step observation, privileged observations, pose regularization, and go2_mjx_v2, No acceleration Observation.
+        Simple Feet Position Test
 """
 
-from typing import Any, Dict, Union
+from typing import Any, Dict
 from absl import app
 import os
 
@@ -25,7 +25,7 @@ from brax.envs.base import PipelineEnv, State
 from brax.io import mjcf, html
 
 import mujoco
-from mujoco.mjx._src import math as mjx_math
+
 
 # Types:
 PRNGKey = jax.Array
@@ -33,19 +33,18 @@ PRNGKey = jax.Array
 @flax.struct.dataclass
 class RewardConfig:
     # Rewards:
-    tracking_pose: float = 1.5
+    tracking_pose: float = 1.0
     # Pose Regularizations:
-    pose_regularization: float = -1.0
+    pose_regularization: float = -5.0
     abduction_regularization: float = -1.0
     # Energy Regularization Terms:
     torque: float = -2e-4
     action_rate: float = -0.01
     mechanical_power: float = -1e-3
     # Auxilary Terms:
-    stand_still: float = -0.0
     termination: float = -1.0
     # Hyperparameter for exponential kernel:
-    kernel_sigma: float = 0.25
+    kernel_sigma: float = 0.05
     kernel_alpha: float = 1.0
 
 
@@ -55,29 +54,22 @@ class NoiseConfig:
     joint_velocity: float = 1.5
 
 
-@flax.struct.dataclass
-class DisturbanceConfig:
-    wait_times: list[float] = flax.struct.field(default_factory=lambda: [1.0, 3.0])
-    durations: list[float] = flax.struct.field(default_factory=lambda: [0.05, 0.2])
-    magnitudes: list[float] = flax.struct.field(default_factory=lambda: [0.0, 3.0])
-
-
 def domain_randomize(sys: System, rng: PRNGKey) -> tuple[System, System]:
     @jax.vmap
     def randomize_parameters(rng):
         # Joint Friction:
         rng, key = jax.random.split(rng)
-        frictionloss = sys.dof_frictionloss[6:] * jax.random.uniform(
+        frictionloss = sys.dof_frictionloss * jax.random.uniform(
             key, shape=(12,), minval=0.9, maxval=1.1,
         )
-        dof_frictionloss = sys.dof_frictionloss.at[6:].set(frictionloss)
+        dof_frictionloss = sys.dof_frictionloss.at[:].set(frictionloss)
 
         # Armature:
         rng, key = jax.random.split(rng)
-        armature = sys.dof_armature[6:] * jax.random.uniform(
+        armature = sys.dof_armature * jax.random.uniform(
             key, shape=(12,), minval=1.0, maxval=1.05,
         )
-        dof_armature = sys.dof_armature.at[6:].set(armature)
+        dof_armature = sys.dof_armature.at[:].set(armature)
 
         # Link mass randomization:
         rng, key = jax.random.split(rng)
@@ -149,7 +141,6 @@ class UnitreeGo2Env(PipelineEnv):
         self.reward_config = config_dict
 
         self.noise_config = NoiseConfig()
-        self.disturbance_config = DisturbanceConfig()
 
         self.floor_geom_idx = self.sys.mj_model.geom('floor').id
         self.base_idx = mujoco.mj_name2id(
@@ -244,13 +235,17 @@ class UnitreeGo2Env(PipelineEnv):
             "hl_global_linvel",
         ]
 
-        # Get Default Feet Positions:
-        pipeline_state = self.pipeline_init(self.default_pose, jnp.zeros_like(self.default_pose))
-        self.default_feet_position = self.get_feet_pos(pipeline_state)
+        # Get Feet Positions:
+        self.default_feet_position = np.array([
+            [0.217, -0.142, -0.308],
+            [0.217, 0.142, -0.308],
+            [-0.169, -0.142, -0.308],
+            [-0.169, 0.142, -0.308],
+        ])
 
         # Constants:
-        self.num_observations = 39
-        self.num_privileged_observations = 99
+        self.num_observations = 37
+        self.num_privileged_observations = 97
 
     def sample_command(self, rng: jax.Array) -> jax.Array:
         command_range = [0.0, 2.0 * jnp.pi]
@@ -326,6 +321,7 @@ class UnitreeGo2Env(PipelineEnv):
         )
         joint_angles = pipeline_state.q
         joint_velocities = pipeline_state.qd
+        feet_position = self.get_feet_pos(pipeline_state)
 
         # Done if joint limits are reached:
         done = jnp.any(joint_angles < self.joint_lb)
@@ -334,10 +330,10 @@ class UnitreeGo2Env(PipelineEnv):
         # Rewards:
         rewards = {
             'tracking_pose': (
-                self._reward_tracking_pose(state.info['command'], self.get_feet_pos(pipeline_state))
+                self._reward_tracking_pose(state.info['command'], feet_position)
             ),
             'pose_regularization': (
-                self._reward_pose_regularization(self.get_feet_pos(pipeline_state))
+                self._reward_pose_regularization(feet_position)
             ),
             'abduction_regularization': (
                 self._reward_abduction_regularization(joint_angles)
@@ -431,9 +427,9 @@ class UnitreeGo2Env(PipelineEnv):
             noisy_joint_positions - self.default_pose,  # 12
             noisy_joint_velocities,                     # 12
             state_info['previous_action'],              # 12
-            state_info['command'],                      # 3
+            state_info['command'],                      # 1
         ])
-        # Size: 39
+        # Size: 37
 
 
         actuator_force = pipeline_state.actuator_force
@@ -441,14 +437,14 @@ class UnitreeGo2Env(PipelineEnv):
         feet_velocity = self.get_feet_velocity(pipeline_state).ravel()
 
         privileged_observation = jnp.concatenate([
-            observation,               # 39
+            observation,               # 37
             q - self.default_pose,     # 12
             qd,                        # 12
             actuator_force,            # 12
             feet_position,             # 12
             feet_velocity,             # 12
         ])
-        # Size: 99
+        # Size: 97
 
         return {
             'state': observation,
@@ -466,8 +462,8 @@ class UnitreeGo2Env(PipelineEnv):
     def _reward_pose_regularization(
         self, foot_position: jax.Array,
     ) -> jax.Array:
-        error = jnp.sum(jnp.square(foot_position[:, :-1] - self.default_feet_position[:, :-1]))
-        return jnp.exp(-error)
+        # Penalize foot XY deviation from default position:
+        return jnp.sum(jnp.square(self.default_feet_position[:, :-1] - foot_position[:, :-1]))
 
     def _reward_abduction_regularization(
         self, qpos: jax.Array,
@@ -491,15 +487,6 @@ class UnitreeGo2Env(PipelineEnv):
     ) -> jax.Array:
         # Penalize mechanical power
         return jnp.sum(jnp.abs(torques) * jnp.abs(qd))
-
-    def _reward_stand_still(
-        self,
-        commands: jax.Array,
-        joint_angles: jax.Array,
-    ) -> jax.Array:
-        # Penalize motion at zero commands
-        command_norm = jnp.linalg.norm(commands)
-        return jnp.sum(jnp.abs(joint_angles - self.default_pose)) * (command_norm < 0.01)
 
     def _reward_termination(self, done: jax.Array, step: jax.Array) -> jax.Array:
         return done & (step < 500)
