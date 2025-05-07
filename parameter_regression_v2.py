@@ -29,7 +29,7 @@ class minibatch:
 
 
 def main(argv=None):
-    filename = 'models/unitree_go2/scene_mjx_fixed.xml'
+    filename = 'models/unitree_go2/go2_regression_model.xml'
     filepath = os.path.join(
         os.path.dirname(__file__),
         filename,
@@ -42,43 +42,62 @@ def main(argv=None):
 
     file_path = os.path.join(
         os.path.dirname(__file__),
-        'data/unitree_data.pkl',
+        'data/unitree_data_1.pkl',
     )
     with open(file_path, 'rb') as file:
         data = pickle.load(file)
 
     data = np.asarray(data)
     
+    # Get the number of time steps and trials
+    num_motors = 12
+    num_dof = 3
+    num_trials, num_time_steps, _ = data.shape
+
+    # Parse Data:
     q_measured = data[:, :, :12]
     qd_measured = data[:, :, 12:24]
     torque_measured = data[:, :, 24:36]
     setpoints = data[:, :, 36:]
 
-    # Get the number of time steps and trials
-    num_motors = 12
-    num_trials, num_time_steps, _ = data.shape
+    # Concatenate Legs into different trials:
+    process_fn = lambda x: np.concatenate(
+            np.split(
+                np.reshape(x, (num_trials, num_time_steps, 4, 3)),
+                indices_or_sections=4,
+                axis=2,
+            ),
+            axis=0,
+        ).squeeze()
+
+    q_measured = process_fn(q_measured)
+    qd_measured = process_fn(qd_measured)
+    torque_measured = process_fn(torque_measured)
+    setpoints = process_fn(setpoints)
 
     # Structure Data into Minibatches:
-    minibatch_size = 10
+    minibatch_size = 25
     num_batches = num_time_steps // minibatch_size
+
+    # Batch: (4 * num_trial, num_batches, minibatch_size, num_dof)
     q_batch = np.reshape(
-        q_measured, (-1, minibatch_size, num_trials, num_motors),
+        q_measured, (4 * num_trials, num_batches, minibatch_size, num_dof),
     )
     qd_batch = np.reshape(
-        qd_measured, (-1, minibatch_size, num_trials, num_motors),
+        qd_measured, (4 * num_trials, num_batches, minibatch_size, num_dof),
     )
     torque_batch = np.reshape(
-        torque_measured, (-1, minibatch_size, num_trials, num_motors),
+        torque_measured, (4 * num_trials, num_batches, minibatch_size, num_dof),
     )
     ctrl_batch = np.reshape(
-        setpoints, (-1, minibatch_size, num_trials, num_motors),
+        setpoints, (4 * num_trials, num_batches, minibatch_size, num_dof),
     )
 
-    # Axis order: (batch, trial, minibatch, num_motors)
-    q_batch = jnp.asarray(np.swapaxes(q_batch, 1, 2))
-    qd_batch = jnp.asarray(np.swapaxes(qd_batch, 1, 2))
-    torque_batch = jnp.asarray(np.swapaxes(torque_batch, 1, 2))
-    ctrl_batch = jnp.asarray(np.swapaxes(ctrl_batch, 1, 2))
+    # Axis order: (batch, trial, minibatch, num_dof)
+    q_batch = jnp.asarray(np.swapaxes(q_batch, 0, 1))
+    qd_batch = jnp.asarray(np.swapaxes(qd_batch, 0, 1))
+    torque_batch = jnp.asarray(np.swapaxes(torque_batch, 0, 1))
+    ctrl_batch = jnp.asarray(np.swapaxes(ctrl_batch, 0, 1))
 
     # Shuffle Data:
     key = jax.random.PRNGKey(42)
@@ -98,11 +117,6 @@ def main(argv=None):
     # Parameters to Regress:
     damping_params = sys.dof_damping
     kp_params = sys.actuator_gainprm[:, 0]
-
-    initial_params = {
-        'dof_damping': damping_params,
-        'kp': kp_params,
-    }
 
     params = {
         'dof_damping': damping_params,
@@ -150,7 +164,7 @@ def main(argv=None):
             length=minibatch_size,
         )
 
-        # Reshape the data: axis -> (trials, time, num_motors)
+        # Reshape the data: axis -> (trials, time, num_dof)
         q = jnp.swapaxes(q, 0, 1)
         qd = jnp.swapaxes(qd, 0, 1)
 

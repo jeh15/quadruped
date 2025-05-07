@@ -10,8 +10,6 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import numpy.typing as npt
-from scipy.spatial.transform import Rotation as R
-from scipy import signal
 
 from unitree_api_bindings import unitree_api
 
@@ -46,7 +44,7 @@ def main(argv=None):
     logging.set_verbosity(logging.INFO)
 
     # Load from Env:
-    env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx_fixed.xml', action_scale=0.5)
+    env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx_regressed_fixed.xml')
 
     control_rate = 0.02
     control_rate_ns = 2e7
@@ -101,11 +99,21 @@ def main(argv=None):
         unitree_driver.update_command(motor_commands)
         time.sleep(ramp_time / num_steps)
 
+
     # Show State:
     imu_state = unitree_driver.get_imu_state()
     motor_state = unitree_driver.get_motor_state()
     base_rotation = np.asarray(imu_state.quaternion)
     print(f"Base Rotation: {base_rotation}")
+
+    # Switch to Policy Kp and Kd
+    motor_commands = unitree_api.MotorCommand()
+    motor_commands.q_setpoint = [0.0, 0.9, -1.8] * 4
+    motor_commands.qd_setpoint = [0.0, 0.0, 0.0] * 4
+    motor_commands.torque_feedforward = [0.0, 0.0, 0.0] * 4
+    motor_commands.stiffness = [35.0, 35.0, 35.0] * 4
+    motor_commands.damping = [0.5, 0.5, 0.5] * 4
+    unitree_driver.update_command(motor_commands)
 
     # Wait for Keyboard Input:
     print('Press any key to start the Control...')
@@ -114,7 +122,7 @@ def main(argv=None):
     # Initialize Observation History:
     observation = np.zeros(env.num_observations)
     action = np.asarray(env.default_ctrl)
-    command = np.array([0.0, 0.0, 0.0])
+    command = np.array([0.0])
     history_length = 10
     for i in range(history_length):
         step_time = time.time()
@@ -187,13 +195,8 @@ def main(argv=None):
         ])
         command = np.where(np.abs(command) < 0.1, 0.0, command)
         command = np.clip(command, -1.0, 1.0)
-
-        if(command < 0):
-            command = np.pi + command * ((3 * np.pi / 2) - np.pi) / (-1)
-        else:
-            command = command * (np.pi / 2)
-
-        command = np.clip(command, 0.0, 2 * np.pi)
+        command = 0.1 * command
+        command = np.clip(command, -0.1, 0.1)
 
         key, subkey = jax.random.split(subkey)
         imu_state = unitree_driver.get_imu_state()

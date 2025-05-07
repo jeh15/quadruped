@@ -31,12 +31,9 @@ flags.DEFINE_integer(
 def controller(
     action: npt.ArrayLike,
     default_control: npt.ArrayLike,
-    ctrl_lb: npt.ArrayLike,
-    ctrl_ub: npt.ArrayLike,
     action_scale: float,
 ) -> np.ndarray:
     motor_targets = default_control + action * action_scale
-    # motor_targets = np.clip(motor_targets, ctrl_lb, ctrl_ub)
     return motor_targets
 
 
@@ -51,13 +48,13 @@ def main(argv=None):
     logging.set_verbosity(logging.INFO)
 
     # Load from Env:
-    env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx_fixed.xml')
+    env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx_regressed_fixed.xml')
     model_mjx = env.sys.mj_model
     
     # High Fidelity Model:
     model_path = os.path.join(
         os.path.dirname(__file__),
-        'models/unitree_go2/scene_mjx_fixed.xml',
+        'models/unitree_go2/scene_mjx_regressed_fixed.xml',
     )
 
     model = mujoco.MjModel.from_xml_path(
@@ -83,8 +80,6 @@ def main(argv=None):
     controller_fn = functools.partial(
         controller,
         default_control=env.default_ctrl,
-        ctrl_lb=env.ctrl_lb,
-        ctrl_ub=env.ctrl_ub,
         action_scale=env.action_scale,
     )
 
@@ -135,12 +130,7 @@ def main(argv=None):
             ])
             command = np.where(np.abs(command) < 0.1, 0.0, command)
             command = np.clip(command, -1.0, 1.0)
-
-            if(command < 0):
-                command = -0.1 * command
-            else:
-                command = 0.1 * command
-
+            command = 0.1 * command
             command = np.clip(command, -0.1, 0.1)
 
             # Print Tracking Reward:

@@ -1,5 +1,6 @@
-from absl import app, flags, logging
+from absl import app
 import os
+import functools
 import time
 import pickle
 
@@ -48,12 +49,31 @@ def main(argv=None):
         return qpos
     
     def random_control(
-        initial_position: jax.Array,
         key: jax.Array,
         num_time_steps: int = 500,
     ) -> jnp.ndarray:
+        key, abduction_offset_key, front_hip_offset_key, hind_hip_offset_key, knee_offset_key = jax.random.split(key, 5)
         key, abduction_amplitude_key, hip_amplitude_key, knee_amplitude_key = jax.random.split(key, 4)
         key, abduction_frequency_key, hip_frequency_key, knee_frequency_key = jax.random.split(key, 4)
+
+        abduction_offset = [-0.6, 0.3]
+        front_hip_offset = [-0.72, 0.9]
+        hind_hip_offset = [0.9, 1.6]
+        knee_offset = [-1.9, -1.6]
+
+        abduction_offset = jax.random.uniform(
+            abduction_offset_key, shape=(4,), minval=abduction_offset[0], maxval=abduction_offset[1],
+        )
+        front_hip_offset = jax.random.uniform(
+            front_hip_offset_key, shape=(2,), minval=front_hip_offset[0], maxval=front_hip_offset[1],
+        )
+        hind_hip_offset = jax.random.uniform(
+            hind_hip_offset_key, shape=(2,), minval=hind_hip_offset[0], maxval=hind_hip_offset[1],
+        )
+        knee_offset = jax.random.uniform(
+            knee_offset_key, shape=(4,), minval=knee_offset[0], maxval=knee_offset[1],
+        )
+        hip_offset = jnp.concatenate([front_hip_offset, hind_hip_offset])
 
         abduction_amplitude = jax.random.uniform(
             abduction_amplitude_key, shape=(4,), minval=-0.3, maxval=0.3,
@@ -62,17 +82,17 @@ def main(argv=None):
             hip_amplitude_key, shape=(4,), minval=-0.85, maxval=0.85,
         )
         knee_amplitude = jax.random.uniform(
-            knee_amplitude_key, shape=(4,), minval=-0.85, maxval=0.85,
+            knee_amplitude_key, shape=(4,), minval=-0.75, maxval=0.75,
         )
 
         abduction_frequency = jax.random.randint(
-            abduction_frequency_key, shape=(4,), minval=15, maxval=100,
+            abduction_frequency_key, shape=(4,), minval=15, maxval=150,
         )
         hip_frequency = jax.random.randint(
-            hip_frequency_key, shape=(4,), minval=15, maxval=100,
+            hip_frequency_key, shape=(4,), minval=15, maxval=150,
         )
         knee_frequency = jax.random.randint(
-            knee_frequency_key, shape=(4,), minval=15, maxval=100,
+            knee_frequency_key, shape=(4,), minval=15, maxval=150,
         )
 
         x = jnp.arange(num_time_steps)
@@ -86,13 +106,13 @@ def main(argv=None):
         )
 
         abduction_trajectory = sinusoid_fn(
-            initial_position[:, 0], abduction_amplitude, abduction_frequency, x,
+            abduction_offset, abduction_amplitude, abduction_frequency, x,
         )
         hip_trajectory = sinusoid_fn(
-            initial_position[:, 1], hip_amplitude, hip_frequency, x,
+            hip_offset, hip_amplitude, hip_frequency, x,
         )
         knee_trajectory = sinusoid_fn(
-            initial_position[:, 2], knee_amplitude, knee_frequency, x,
+            knee_offset, knee_amplitude, knee_frequency, x,
         )
 
         format_array = lambda x: jnp.expand_dims(x, -1)
@@ -112,21 +132,26 @@ def main(argv=None):
     )
     initial_state_fn = jax.jit(vmap_initial_state)
 
+    random_control_fn = functools.partial(
+        random_control,
+        num_time_steps=1000,
+    )
     vmap_control_trajectory = jax.vmap(
-        random_control, in_axes=(0, 0), out_axes=0,
+        random_control_fn, in_axes=0, out_axes=0,
     )
     control_trajectory_fn = jax.jit(vmap_control_trajectory)
 
     key = jax.random.key(42)
     key, state_key, ctrl_key = jax.random.split(key, 3)
-    num_trials = 20
+    num_trials = 50
     state_keys = jax.random.split(state_key, num_trials)
     control_keys = jax.random.split(ctrl_key, num_trials)
 
     home_position = jnp.array(sys.mj_model.keyframe('home').qpos[:])
     qpos = initial_state_fn(home_position, state_keys)
+
     control_trajectories = control_trajectory_fn(
-        qpos, control_keys,
+        control_keys,
     )
     control_trajectories = np.asarray(control_trajectories)
     
@@ -185,7 +210,7 @@ def main(argv=None):
 
         # Linear Iterpolation to desired position:
         trajectory = np.linspace(
-            current_position, desired_position, num=100,
+            current_position, desired_position, num=200,
         )
         next_time_ns = time.clock_gettime_ns(time.CLOCK_MONOTONIC)
         for position in trajectory:
@@ -252,7 +277,7 @@ def main(argv=None):
     os.makedirs(data_directory, exist_ok=True)
     data_file = os.path.join(
         data_directory,
-        'unitree_data.pkl',
+        'unitree_data_1.pkl',
     )
     with open(data_file, 'wb') as f:
         pickle.dump(data, f)

@@ -3,7 +3,6 @@ import os
 import functools
 
 import jax
-import jax.numpy as jnp
 import flax.linen as nn
 import distrax
 import optax
@@ -29,7 +28,8 @@ os.environ['XLA_FLAGS'] = (
 
 jax.config.update("jax_enable_x64", True)
 
-logging.set_verbosity(logging.WARNING)
+logging.set_verbosity(logging.FATAL)
+
 
 FLAGS = flags.FLAGS
 flags.DEFINE_string(
@@ -143,9 +143,9 @@ def main(argv=None):
         gae_lambda=loss_metadata.gae_lambda,
         normalize_advantages=loss_metadata.normalize_advantages,
     )
-    env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx_fixed.xml', config=reward_config)
-    eval_env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx_fixed.xml', config=reward_config)
-    render_env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx_fixed.xml', config=reward_config)
+    env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx_regressed_fixed.xml', config=reward_config)
+    eval_env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx_regressed_fixed.xml', config=reward_config)
+    render_env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx_regressed_fixed.xml', config=reward_config)
 
     def progress_fn(iteration, num_steps, metrics):
         print(
@@ -200,18 +200,6 @@ def main(argv=None):
         loss_metadata=loss_metadata,
         training_metadata=training_metadata,
     )
-
-    # Create empty metrics?
-    # checkpoint_fn = functools.partial(
-    #     checkpoint_utilities.save_checkpoint,
-    #     checkpoint_directory=checkpoint_directory,
-    #     manager_options=manager_options,
-    #     registry=registry,
-    #     network_metadata=network_metadata,
-    #     loss_metadata=loss_metadata,
-    #     training_metadata=training_metadata,
-    #     metrics={},
-    # )
 
     optimizer = optax.chain(
         optax.adaptive_grad_clip(clipping=0.01),

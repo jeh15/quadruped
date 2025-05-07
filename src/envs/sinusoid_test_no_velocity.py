@@ -12,6 +12,7 @@ import jax
 import jax.numpy as jnp
 
 import numpy as np
+from scipy.spatial.transform import Rotation as R
 
 import flax.struct
 import flax.serialization
@@ -51,7 +52,6 @@ class RewardConfig:
 @flax.struct.dataclass
 class NoiseConfig:
     joint_position: float = 0.05
-    joint_velocity: float = 1.5
 
 
 def domain_randomize(sys: System, rng: PRNGKey) -> tuple[System, System]:
@@ -111,7 +111,7 @@ class UnitreeGo2Env(PipelineEnv):
 
     def __init__(
         self,
-        filename: str = 'unitree_go2/scene_mjx_regressed_fixed.xml',
+        filename: str = 'unitree_go2/scene_mjx_fixed.xml',
         config: RewardConfig = RewardConfig(),
         action_scale: float = 0.3,
         foot_height_amplitude: float = 0.1,
@@ -244,8 +244,8 @@ class UnitreeGo2Env(PipelineEnv):
         ])
 
         # Constants:
-        self.num_observations = 37
-        self.num_privileged_observations = 97
+        self.num_observations = 25
+        self.num_privileged_observations = 85
 
     def sample_command(self, rng: jax.Array) -> jax.Array:
         command_range = [-self.foot_height_amplitude, self.foot_height_amplitude]
@@ -398,7 +398,6 @@ class UnitreeGo2Env(PipelineEnv):
         """
             Observation: [
                 relative_motor_positions,
-                motor_velocities,
                 previous_action,
                 command,
             ]
@@ -416,37 +415,28 @@ class UnitreeGo2Env(PipelineEnv):
         )
         noisy_joint_positions = q + joint_position_noise
 
-        # Joint velocity noise:
-        state_info['rng'], noise_key = jax.random.split(state_info['rng'])
-        joint_velocity_noise = jax.random.uniform(
-            noise_key,
-            shape=qd.shape,
-            minval=-self.noise_config.joint_velocity,
-            maxval=self.noise_config.joint_velocity,
-        )
-        noisy_joint_velocities = qd + joint_velocity_noise
 
         observation = jnp.concatenate([
             noisy_joint_positions - self.default_pose,  # 12
-            noisy_joint_velocities,                     # 12
             state_info['previous_action'],              # 12
             state_info['command'],                      # 1
         ])
-        # Size: 37
+        # Size: 25
+
 
         actuator_force = pipeline_state.actuator_force
         feet_position = self.get_feet_pos(pipeline_state).ravel()
         feet_velocity = self.get_feet_velocity(pipeline_state).ravel()
 
         privileged_observation = jnp.concatenate([
-            observation,               # 37
+            observation,               # 25
             q - self.default_pose,     # 12
             qd,                        # 12
             actuator_force,            # 12
             feet_position,             # 12
             feet_velocity,             # 12
         ])
-        # Size: 97
+        # Size: 85
 
         return {
             'state': observation,
@@ -558,7 +548,6 @@ class UnitreeGo2Env(PipelineEnv):
         add_noise: bool = True,
     ) -> np.ndarray:
         q = mj_data.qpos
-        qd = mj_data.qvel
 
         if add_noise:
             q = q + np.random.uniform(
@@ -566,15 +555,9 @@ class UnitreeGo2Env(PipelineEnv):
                 high=self.noise_config.joint_position,
                 size=q.shape,
             )
-            qd = qd + np.random.uniform(
-                low=-self.noise_config.joint_velocity,
-                high=self.noise_config.joint_velocity,
-                size=qd.shape,
-            )
 
         observation = np.concatenate([
             q - self.default_ctrl,
-            qd,
             previous_action,
             command,
         ])
@@ -592,15 +575,12 @@ class UnitreeGo2Env(PipelineEnv):
     ) -> np.ndarray:
         # Set to Correct Data Type:
         joint_positions = np.asarray(motor_state.q, dtype=np.float32)
-        joint_velocities = np.asarray(motor_state.qd, dtype=np.float32)
 
         # Cast to float64:
         joint_positions = joint_positions.astype(np.float64)
-        joint_velocities = joint_velocities.astype(np.float64)
 
         observation = np.concatenate([
             joint_positions - self.default_ctrl,
-            joint_velocities,
             previous_action,
             command,
         ])
@@ -614,7 +594,7 @@ envs.register_environment('unitree_go2', UnitreeGo2Env)
 
 
 def main(argv=None):
-    env = UnitreeGo2Env(filename='unitree_go2/scene_mjx_regressed_fixed.xml')
+    env = UnitreeGo2Env(filename='unitree_go2/scene_mjx_fixed.xml')
     rng = jax.random.PRNGKey(0)
 
     reset_fn = jax.jit(env.reset)
