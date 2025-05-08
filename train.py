@@ -3,7 +3,6 @@ import os
 import functools
 
 import jax
-import jax.numpy as jnp
 import flax.linen as nn
 import distrax
 import optax
@@ -11,7 +10,7 @@ import optax
 import wandb
 import orbax.checkpoint as ocp
 
-from src.envs import unitree_go2_v13 as unitree_go2
+from src.envs import sinusoid_test as unitree_go2
 from src.algorithms.ppo import network_utilities as ppo_networks
 from src.algorithms.ppo.loss_utilities import loss_function
 from src.distribution_utilities import ParametricDistribution
@@ -29,7 +28,8 @@ os.environ['XLA_FLAGS'] = (
 
 jax.config.update("jax_enable_x64", True)
 
-logging.set_verbosity(logging.ERROR)
+logging.set_verbosity(logging.FATAL)
+
 
 FLAGS = flags.FLAGS
 flags.DEFINE_string(
@@ -46,26 +46,20 @@ flags.DEFINE_string(
 def main(argv=None):
     # Config:
     reward_config = unitree_go2.RewardConfig(
-        tracking_linear_velocity=1.5,
-        tracking_angular_velocity=1.0,
-        pose_regularization=0.5,
-        # Orientation Regularization Terms:
-        orientation_regularization=-5.0,
-        linear_z_velocity=-2.0,
-        angular_xy_velocity=-0.05,
+        # Rewards:
+        tracking_pose=1.0,
+        # Pose Regularizations:
+        pose_regularization=-5.0,
+        abduction_regularization=-1.0,
         # Energy Regularization Terms:
         torque=-2e-4,
-        action_rate=-0.01,
+        action_rate=-0.1,
         mechanical_power=-1e-3,
-        # Auxiliary Terms:
-        stand_still=-1.0,
+        acceleration=-1e-3,
+        # Auxilary Terms:
         termination=-1.0,
-        # Gait Terms:
-        foot_slip=-0.1,
-        air_time=0.2,
-        target_air_time=0.1,
         # Hyperparameter for exponential kernel:
-        kernel_sigma=0.25,
+        kernel_sigma=0.01,
         kernel_alpha=1.0,
     )
 
@@ -93,19 +87,19 @@ def main(argv=None):
         normalize_advantages=True,
     )
     training_metadata = checkpoint_utilities.training_metadata(
-        num_epochs=20,
+        num_epochs=15,
         num_training_steps=20,
         episode_length=1000,
         num_policy_steps=40,
         action_repeat=1,
-        num_envs=8192,
-        num_evaluation_envs=128,
+        num_envs=4096,
+        num_evaluation_envs=64,
         num_evaluations=1,
         deterministic_evaluation=True,
         reset_per_epoch=False,
         seed=42,
         batch_size=256,
-        num_minibatches=32,
+        num_minibatches=16,
         num_ppo_iterations=4,
         normalize_observations=True,
         optimizer='optax.chain(optax.adaptive_grad_clip(clipping=0.01), optax.adam(3e-4),)',
@@ -149,9 +143,9 @@ def main(argv=None):
         gae_lambda=loss_metadata.gae_lambda,
         normalize_advantages=loss_metadata.normalize_advantages,
     )
-    env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx.xml', config=reward_config, action_scale=0.5)
-    eval_env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx.xml', config=reward_config, action_scale=0.5)
-    render_env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx.xml', config=reward_config, action_scale=0.5)
+    env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx_regressed_fixed.xml', config=reward_config)
+    eval_env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx_regressed_fixed.xml', config=reward_config)
+    render_env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx_regressed_fixed.xml', config=reward_config)
 
     def progress_fn(iteration, num_steps, metrics):
         print(
@@ -174,7 +168,7 @@ def main(argv=None):
         save_interval_steps=1,
         create=True,
     )
-    checkpoint_direrctory = os.path.join(
+    checkpoint_directory = os.path.join(
         os.path.dirname(__file__),
         f"checkpoints/{run.name}",
     )
@@ -199,7 +193,7 @@ def main(argv=None):
 
     checkpoint_fn = functools.partial(
         checkpoint_utilities.save_checkpoint,
-        checkpoint_direrctory=checkpoint_direrctory,
+        checkpoint_directory=checkpoint_directory,
         manager_options=manager_options,
         registry=registry,
         network_metadata=network_metadata,
@@ -238,7 +232,7 @@ def main(argv=None):
         restored_checkpoint=restored_checkpoint,
         wandb_run=run,
         render_environment=render_env,
-        render_interval=5,
+        render_interval=1,
     )
 
     policy_generator, params, metrics = train_fn(

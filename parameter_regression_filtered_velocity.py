@@ -18,6 +18,15 @@ from brax.mjx import pipeline
 
 import time
 
+# Scipy Filter:
+from scipy import signal
+from scipy.signal import butter, sosfilt, convolve
+
+
+
+import matplotlib.pyplot as plt
+
+
 jax.config.update('jax_enable_x64', True)
 
 
@@ -26,6 +35,16 @@ class minibatch:
     q: jax.Array
     qd: jax.Array
     ctrl: jax.Array
+
+
+def butter_lowpass(cutoff, fs, order=5):
+    return butter(order, cutoff, btype='low', analog=False, output='sos', fs=fs)
+
+
+def butter_lowpass_filter(data, cutoff, fs, order=5):
+    sos = butter_lowpass(cutoff, fs, order=order)
+    y = sosfilt(sos, data)
+    return y
 
 
 def main(argv=None):
@@ -59,6 +78,18 @@ def main(argv=None):
     qd_measured = data[:, :, 12:24]
     torque_measured = data[:, :, 24:36]
     setpoints = data[:, :, 36:]
+
+    # Filter Velocity Data: (Window of 25 Still captures the initial value)
+    filtered_qd = []
+    window = signal.windows.hann(25)
+    for data in qd_measured:
+        y = []
+        for i in range(num_motors):
+            y.append(convolve(data[:, i], window, mode='same') / sum(window)) 
+        y = np.asarray(y).swapaxes(0, 1)
+        filtered_qd.append(y)
+
+    filtered_qd = np.asarray(filtered_qd)
 
     # Concatenate Legs into different trials:
     process_fn = lambda x: np.concatenate(

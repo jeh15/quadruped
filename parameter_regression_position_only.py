@@ -115,11 +115,9 @@ def main(argv=None):
     solver = optax.adam(learning_rate=1e-2)
 
     # Parameters to Regress:
-    damping_params = sys.dof_damping
     kp_params = sys.actuator_gainprm[:, 0]
 
     params = {
-        'dof_damping': damping_params,
         'kp': kp_params,
     }
 
@@ -149,15 +147,15 @@ def main(argv=None):
         state: pipeline.State,
         batch: minibatch,
         minibatch_size: int,
-    ) -> Tuple[pipeline.State, Tuple[jnp.ndarray, jnp.ndarray]]:
+    ) -> Tuple[pipeline.State, jnp.ndarray]:
         def scan_fn(carry, data):
             state = carry
             control = data
             state = unroll(system, state, control)
             
-            return state, (state.q, state.qd)
+            return state, state.q
 
-        _, (q, qd) = jax.lax.scan(
+        _, q = jax.lax.scan(
             f=scan_fn,
             init=state,
             xs=batch.ctrl,
@@ -166,11 +164,10 @@ def main(argv=None):
 
         # Reshape the data: axis -> (trials, time, num_dof)
         q = jnp.swapaxes(q, 0, 1)
-        qd = jnp.swapaxes(qd, 0, 1)
 
+        # Position Only:
         loss = (
             jnp.mean(jnp.square(q - batch.q))
-            + jnp.mean(jnp.square(qd - batch.qd))
         )
 
         return loss
@@ -206,7 +203,6 @@ def main(argv=None):
 
         # Extract the gradients:
         gradient = {
-            'dof_damping': grad.dof_damping,
             'kp': grad.actuator_gainprm[:, 0]
         }
 
@@ -216,14 +212,11 @@ def main(argv=None):
         )
 
         # Update the system:
-        dof_damping = params['dof_damping']
         kp = params['kp']
-
         gain = sys.actuator_gainprm.at[:, 0].set(kp)
         bias = sys.actuator_biasprm.at[:, 0].set(-kp)
 
         sys = sys.replace(
-            dof_damping=dof_damping,
             actuator_gainprm=gain,
             actuator_biasprm=bias,
         )
@@ -272,11 +265,11 @@ def main(argv=None):
     os.makedirs(data_directory, exist_ok=True)
     param_file = os.path.join(
         data_directory,
-        'param_regression_history.pkl',
+        'param_regression_history_kp.pkl',
     )
     loss_file = os.path.join(
         data_directory,
-        'loss_history.pkl',
+        'loss_history_kp.pkl',
     )
 
     with open(param_file, 'wb') as f:

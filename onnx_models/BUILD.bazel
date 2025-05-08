@@ -1,7 +1,0 @@
-filegroup(
-    name = "onnx_models",
-    srcs = glob([
-        "*.onnx",
-    ]),
-    visibility = ["//visibility:public"],
-)

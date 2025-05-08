@@ -10,12 +10,10 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import numpy.typing as npt
-from scipy.spatial.transform import Rotation as R
-from scipy import signal
 
 from unitree_api_bindings import unitree_api
 
-from src.envs import unitree_go2_v13 as unitree_go2
+from src.envs import sinusoid_test as unitree_go2
 from src.algorithms.ppo.load_utilities import load_policy
 
 jax.config.update("jax_enable_x64", True)
@@ -25,118 +23,6 @@ FLAGS = flags.FLAGS
 flags.DEFINE_string(
     'checkpoint_name', None, 'Desired checkpoint folder name to load.', short_name='c',
 )
-
-
-@dataclass 
-class FilterData:
-    accelerometer: np.ndarray
-    gyroscope: np.ndarray
-    projected_gravity: np.ndarray
-    joint_position: np.ndarray
-    joint_velocity: np.ndarray
-
-
-class Filter:
-    def __init__(self, window_size: int, cutoff: float, fs: float, order: int = 5):
-        assert window_size > 0, 'Window size must be greater than 0.'
-        assert cutoff > 0, 'Cutoff frequency must be greater than 0.'
-        assert fs > 0, 'Sampling frequency must be greater than 0.'
-        assert order > 0, 'Order must be greater than 0.'
-        
-        # Sensor Index:
-        self.accelerometer_id = slice(0, 3)
-        self.gyroscope_id = slice(3, 6)
-        self.projected_gravity_id = slice(6, 9)
-        self.joint_position_id = slice(9, 21)
-        self.joint_velocity_id = slice(21, 33)
-        self.data_size = 33
-        
-        # Initialize Filter:
-        self.window_size = window_size
-        self.cutoff = cutoff
-        self.fs = fs
-        self.order = order
-        self.queue = np.zeros((self.data_size, self.window_size))
-        self.filtered_data = np.zeros_like(self.queue)
-        self.lowpass_filter = signal.butter(
-            N=order,
-            Wn=cutoff,
-            btype='low',
-            analog=False,
-            output='sos',
-            fs=fs,
-        )
-    
-    @staticmethod
-    def rotate(vec: np.ndarray, quat: np.ndarray) -> np.ndarray:
-            if len(vec.shape) != 1:
-                raise ValueError('vec must have no batch dimensions.')
-            s, u = quat[0], quat[1:]
-            r = 2 * (np.dot(u, vec) * u) + (s * s - np.dot(u, u)) * vec
-            r = r + 2 * s * np.cross(u, vec)
-            return r
-    
-    @staticmethod
-    def quat_inv(q: np.ndarray) -> np.ndarray:
-        return q * np.array([1, -1, -1, -1])
-
-    def add_data(self, imu_state: unitree_api.IMUState, motor_state: unitree_api.MotorState):
-        # Unpack Data to Numpy Arrays:
-        quaternion = np.asarray(imu_state.quaternion, dtype=np.float32)
-        accelerometer = np.asarray(imu_state.accelerometer, dtype=np.float32)
-        gyroscope = np.asarray(imu_state.gyroscope, dtype=np.float32)
-        joint_positions = np.asarray(motor_state.q, dtype=np.float32)
-        joint_velocities = np.asarray(motor_state.qd, dtype=np.float32)
-
-        # Cast to float64:
-        quaternion = quaternion.astype(np.float64)
-        accelerometer = accelerometer.astype(np.float64)
-        gyroscope = gyroscope.astype(np.float64)
-        joint_positions = joint_positions.astype(np.float64)
-        joint_velocities = joint_velocities.astype(np.float64)
-
-        # Normalize Quaternion Estimate and Calculate Projected Gravity:
-        normalized_quaternion = quaternion / np.linalg.norm(quaternion)
-        projected_gravity = self.rotate(
-            vec=np.array([0, 0, -1]),
-            quat=self.quat_inv(normalized_quaternion)
-        )
-
-        # Add data to queue:
-        self.queue = np.roll(self.queue, -1, axis=-1)
-        self.queue[:, -1] = np.concatenate([
-            accelerometer,
-            gyroscope,
-            projected_gravity,
-            joint_positions,
-            joint_velocities,
-        ])
-
-    def apply_filter(self) -> FilterData:
-        self.filtered_data = signal.sosfilt(self.lowpass_filter, self.queue, axis=-1)
-        return FilterData(
-            accelerometer=self.filtered_data[self.accelerometer_id, -1],
-            gyroscope=self.filtered_data[self.gyroscope_id, -1],
-            projected_gravity=self.filtered_data[self.projected_gravity_id, -1],
-            joint_position=self.filtered_data[self.joint_position_id, -1],
-            joint_velocity=self.filtered_data[self.joint_velocity_id, -1],
-        )
-
-    def get_acceleration(self) -> np.ndarray:
-        return self.filtered_data[self.accelerometer_id, -1]
-    
-    def get_angular_velocity(self) -> np.ndarray:
-        return self.filtered_data[self.gyroscope_id, -1]
-    
-    def get_projected_gravity(self) -> np.ndarray:
-        return self.filtered_data[self.projected_gravity_id, -1]
-    
-    def get_joint_position(self) -> np.ndarray:
-        return self.filtered_data[self.joint_position_id, -1]
-    
-    def get_joint_velocity(self) -> np.ndarray:
-        return self.filtered_data[self.joint_velocity_id, -1]
-    
 
 def controller(
     action: npt.ArrayLike,
@@ -158,7 +44,7 @@ def main(argv=None):
     logging.set_verbosity(logging.INFO)
 
     # Load from Env:
-    env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx.xml', action_scale=0.5)
+    env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx_regressed_fixed.xml')
 
     control_rate = 0.02
     control_rate_ns = 2e7
@@ -175,20 +61,11 @@ def main(argv=None):
     controller_fn = functools.partial(
         controller,
         default_control=env.default_ctrl,
-        action_scale=env._action_scale,
-    )
-
-    # Initialize Filter:
-    sample_rate = int(1 / control_rate)
-    lowpass_filter = Filter(
-        window_size=10,
-        cutoff=10.0,
-        fs=sample_rate,
-        order=5,
+        action_scale=env.action_scale,
     )
 
     # Initialize Unitree-Api:
-    network_name = "eno2"
+    network_name = "enx7cc2c647de4f"
     inner_control_rate = 2000
     unitree_driver = unitree_api.UnitreeDriver(
         network_name,
@@ -222,11 +99,21 @@ def main(argv=None):
         unitree_driver.update_command(motor_commands)
         time.sleep(ramp_time / num_steps)
 
+
     # Show State:
     imu_state = unitree_driver.get_imu_state()
     motor_state = unitree_driver.get_motor_state()
     base_rotation = np.asarray(imu_state.quaternion)
     print(f"Base Rotation: {base_rotation}")
+
+    # Switch to Policy Kp and Kd
+    motor_commands = unitree_api.MotorCommand()
+    motor_commands.q_setpoint = [0.0, 0.9, -1.8] * 4
+    motor_commands.qd_setpoint = [0.0, 0.0, 0.0] * 4
+    motor_commands.torque_feedforward = [0.0, 0.0, 0.0] * 4
+    motor_commands.stiffness = [35.0, 35.0, 35.0] * 4
+    motor_commands.damping = [0.5, 0.5, 0.5] * 4
+    unitree_driver.update_command(motor_commands)
 
     # Wait for Keyboard Input:
     print('Press any key to start the Control...')
@@ -235,16 +122,12 @@ def main(argv=None):
     # Initialize Observation History:
     observation = np.zeros(env.num_observations)
     action = np.asarray(env.default_ctrl)
-    command = np.array([0.0, 0.0, 0.0])
+    command = np.array([0.0])
     history_length = 10
     for i in range(history_length):
         step_time = time.time()
         imu_state = unitree_driver.get_imu_state()
         motor_state = unitree_driver.get_motor_state()
-
-        # Filter:
-        lowpass_filter.add_data(imu_state, motor_state)
-        filtered_data = lowpass_filter.apply_filter()
         
         sleep_time = control_rate - (time.time() - step_time)
         if sleep_time > 0:
@@ -264,15 +147,8 @@ def main(argv=None):
     is_running = True
 
     # Data:
-    gyroscope_history = []
-    projected_gravity_history = []
-    quaternion_history = []
     joint_position_history = []
     joint_velocity_history = []
-    filtered_gyroscope_history = []
-    filtered_projected_gravity_history = []
-    filtered_joint_position_history = []
-    filtered_joint_velocity_history = []
     action_history = []
     ctrl_history = []
 
@@ -296,14 +172,14 @@ def main(argv=None):
                 print(string)
                 policy_control_mode = True
 
-            if joystick.get_button(7) == 1:
+            if joystick.get_button(1) == 1:
                 string = 'Switching to Damping Control Mode...'
                 logging.info(string)
                 print(string)
                 damping_control_mode = True
                 policy_control_mode = False
 
-            if joystick.get_button(6) == 1:
+            if joystick.get_button(9) == 1:
                 string = 'Terminating...'
                 logging.info(string)
                 print(string)
@@ -311,42 +187,30 @@ def main(argv=None):
                 damping_control_mode = True
                 policy_control_mode = False
 
-            forward_command = -1 * joystick.get_axis(1)
-            lateral_command = -1 * joystick.get_axis(0)
-            rotation_command = -1 * joystick.get_axis(3)
+            command = -1 * joystick.get_axis(1)
 
         # Filter and Clip Command:
         command = np.array([
-            forward_command, lateral_command, rotation_command,
+            command
         ])
         command = np.where(np.abs(command) < 0.1, 0.0, command)
-        command = np.clip(command, -0.75, 0.75)
+        command = np.clip(command, -1.0, 1.0)
+        command = 0.1 * command
+        command = np.clip(command, -0.1, 0.1)
 
         key, subkey = jax.random.split(subkey)
         imu_state = unitree_driver.get_imu_state()
         motor_state = unitree_driver.get_motor_state()
-        
-        # Filter:
-        lowpass_filter.add_data(imu_state, motor_state)
-        filtered_data = lowpass_filter.apply_filter()
 
         # Make Observation:
-        observation = np.concatenate([
-            filtered_data.gyroscope,
-            filtered_data.projected_gravity,
-            filtered_data.joint_position - env.default_ctrl,
-            filtered_data.joint_velocity,
-            action,
-            command,
-        ])
-
-        obs = {
-            'state': observation,
-            'privileged_state': np.zeros((env.num_privileged_observations,)),
-        }
+        observation = env.hardware_observation(
+            motor_state=motor_state,
+            command=command,
+            previous_action=action,
+        )
 
         action, _ = jax.block_until_ready(
-            inference_fn(obs, subkey),
+            inference_fn(observation, subkey),
         )
         action = jax.device_put(action, jax.devices('cpu')[0])
         action = np.asarray(action)
@@ -359,21 +223,8 @@ def main(argv=None):
 
         # Append Data:
         if policy_control_mode:
-            quaternion = np.asarray(imu_state.quaternion)
-            normalized_quaternion = quaternion / np.linalg.norm(quaternion)
-            projected_gravity = lowpass_filter.rotate(
-                vec=np.array([0, 0, -1]),
-                quat=lowpass_filter.quat_inv(normalized_quaternion)
-            )
-            gyroscope_history.append(imu_state.gyroscope)
-            projected_gravity_history.append(projected_gravity)
-            quaternion_history.append(imu_state.quaternion)
             joint_position_history.append(motor_state.q)
             joint_velocity_history.append(motor_state.qd)
-            filtered_gyroscope_history.append(filtered_data.gyroscope)
-            filtered_projected_gravity_history.append(filtered_data.projected_gravity)
-            filtered_joint_position_history.append(filtered_data.joint_position)
-            filtered_joint_velocity_history.append(filtered_data.joint_velocity)
             action_history.append(action_list)
             ctrl_history.append(q_setpoint)
 
@@ -406,33 +257,11 @@ def main(argv=None):
             next_time_ns = now_ns
 
     # Save Data:
-    gyroscope_data = np.asarray(gyroscope_history)
-    projected_gravity_data = np.asarray(projected_gravity_history)
-    quaternion_data = np.asarray(quaternion_history)
     joint_position_data = np.asarray(joint_position_history)
     joint_velocity_data = np.asarray(joint_velocity_history)
-    filtered_gyroscope_data = np.asarray(filtered_gyroscope_history)
-    filtered_projected_gravity_data = np.asarray(filtered_projected_gravity_history)
-    filtered_joint_position_data = np.asarray(filtered_joint_position_history)
-    filtered_joint_velocity_data = np.asarray(filtered_joint_velocity_history)
     action_data = np.asarray(action_history)
     ctrl_data = np.asarray(ctrl_history)
 
-    np.savetxt(
-        os.path.join(log_directory, 'hardware_gyroscope_data.txt'),
-        gyroscope_data,
-        delimiter=',',
-    )
-    np.savetxt(
-        os.path.join(log_directory, 'hardware_projected_gravity_data.txt'),
-        projected_gravity_data,
-        delimiter=',',
-    )
-    np.savetxt(
-        os.path.join(log_directory, 'hardware_quaternion_data.txt'),
-        quaternion_data,
-        delimiter=',',
-    )
     np.savetxt(
         os.path.join(log_directory, 'hardware_joint_position_data.txt'),
         joint_position_data,
@@ -441,26 +270,6 @@ def main(argv=None):
     np.savetxt(
         os.path.join(log_directory, 'hardware_joint_velocity_data.txt'),
         joint_velocity_data,
-        delimiter=',',
-    )
-    np.savetxt(
-        os.path.join(log_directory, 'hardware_filtered_gyroscope_data.txt'),
-        filtered_gyroscope_data,
-        delimiter=',',
-    )
-    np.savetxt(
-        os.path.join(log_directory, 'hardware_filtered_projected_gravity_data.txt'),
-        filtered_projected_gravity_data,
-        delimiter=',',
-    )
-    np.savetxt(
-        os.path.join(log_directory, 'hardware_filtered_joint_position_data.txt'),
-        filtered_joint_position_data,
-        delimiter=',',
-    )
-    np.savetxt(
-        os.path.join(log_directory, 'hardware_filtered_joint_velocity_data.txt'),
-        filtered_joint_velocity_data,
         delimiter=',',
     )
     np.savetxt(

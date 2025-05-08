@@ -31,6 +31,11 @@ def main(argv=None):
     sys = mjcf.load(filepath)
     sys = sys.tree_replace({'opt.timestep': 0.004})
 
+    sys = sys.replace(
+        actuator_gaintype=np.array([1, 1, 1], dtype=np.int32),
+        actuator_biastype=np.array([1, 1, 1], dtype=np.int32),
+    )
+
     control_rate = 0.02
     control_steps = int(control_rate / sys.opt.timestep)
 
@@ -72,22 +77,22 @@ def main(argv=None):
     # Load Regression Data:
     regression_filepath = os.path.join(
         os.path.dirname(__file__),
-        'data/param_regression_history_kp.pkl',
+        'data/param_regression_history_motor.pkl',
     )
 
     with open(regression_filepath, 'rb') as file:
         regression_data = pickle.load(file)
 
-    # dof_damping = np.concatenate(regression_data['dof_damping'])[-1]
-    kp = np.concatenate(regression_data['kp'])[-1]
+    gainprm = np.concatenate(regression_data['gainprm'])[-1]
+    biasprm = np.concatenate(regression_data['biasprm'])[-1]
 
-    # dof_damping_history = np.concatenate(regression_data['dof_damping'])
-    kp_history = np.concatenate(regression_data['kp'])
+    gainprm_history = np.concatenate(regression_data['gainprm'])
+    biasprm_history = np.concatenate(regression_data['biasprm'])
 
     # Load Loss Data:
     loss_filepath = os.path.join(
         os.path.dirname(__file__),
-        'data/loss_history_kp.pkl',
+        'data/loss_history_motor.pkl',
     )
     
     with open(loss_filepath, 'rb') as file:
@@ -116,10 +121,9 @@ def main(argv=None):
 
 
     # Run random trial with regressed params:
-    gain = sys.actuator_gainprm.at[:, 0].set(kp)
-    bias = sys.actuator_biasprm.at[:, 1].set(-kp)
+    gain = sys.actuator_gainprm.at[:, :3].set(gainprm)
+    bias = sys.actuator_biasprm.at[:, :3].set(biasprm)
     sys = sys.replace(
-        # dof_damping=dof_damping,
         actuator_gainprm=gain,
         actuator_biasprm=bias,
     )
@@ -145,30 +149,6 @@ def main(argv=None):
     q_history_init = np.asarray(q_history_init)
     qd_history_init = np.asarray(qd_history_init)
     torque_history_init = np.asarray(torque_history_init)
-
-    fig, ax = plt.subplots(3, 1, constrained_layout=True, figsize=(10, 5))
-    # ax[0].plot(dof_damping_history[:, 0], color='orange', label='Abduction', linewidth=1.0)
-    # ax[0].plot(dof_damping_history[:, 1], color='cornflowerblue', label='Hip', linewidth=1.0)
-    # ax[0].plot(dof_damping_history[:, 2], color='lightcoral', label='Knee', linewidth=1.0)
-    ax[0].legend()
-    ax[0].set_title('Damping Regression')
-    ax[0].set_xlabel('Iterations')
-    ax[0].set_ylabel('Damping Parameter')
-
-    ax[1].plot(kp_history [:, 0], color='orange', label='Abduction', linewidth=1.0)
-    ax[1].plot(kp_history[:, 1], color='cornflowerblue', label='Hip', linewidth=1.0)
-    ax[1].plot(kp_history[:, 2], color='lightcoral', label='Knee', linewidth=1.0)
-    ax[1].legend()
-    ax[1].set_title('Motor Gain Regression')
-    ax[1].set_xlabel('Iterations')
-    ax[1].set_ylabel('Motor Gain Parameter')
-
-    ax[-1].plot(loss_data, linewidth=1.0)
-    ax[-1].set_title('Loss')
-    ax[-1].set_xlabel('Iterations')
-    ax[-1].set_ylabel('Loss')
-
-    plt.savefig('data/regress_params.pdf')
 
     fig, ax = plt.subplots(2, 1, constrained_layout=True, figsize=(10, 5))
     fig.suptitle('Regressed Comparison')

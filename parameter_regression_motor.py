@@ -25,6 +25,7 @@ jax.config.update('jax_enable_x64', True)
 class minibatch:
     q: jax.Array
     qd: jax.Array
+    torque: jax.Array
     ctrl: jax.Array
 
 
@@ -36,6 +37,11 @@ def main(argv=None):
     )
     sys = mjcf.load(filepath)
     sys = sys.tree_replace({'opt.timestep': 0.004})
+
+    sys = sys.replace(
+        actuator_gaintype=np.array([1, 1, 1], dtype=np.int32),
+        actuator_biastype=np.array([1, 1, 1], dtype=np.int32),
+    )
 
     control_rate = 0.02
     control_steps = int(control_rate / sys.opt.timestep)
@@ -115,12 +121,12 @@ def main(argv=None):
     solver = optax.adam(learning_rate=1e-2)
 
     # Parameters to Regress:
-    damping_params = sys.dof_damping
-    kp_params = sys.actuator_gainprm[:, 0]
+    gainprm = sys.actuator_gainprm[:, :3]
+    biasprm = sys.actuator_biasprm[:, :3]
 
     params = {
-        'dof_damping': damping_params,
-        'kp': kp_params,
+        'gainprm': gainprm,
+        'biasprm': biasprm,
     }
 
     opt_state = solver.init(params)
@@ -155,9 +161,9 @@ def main(argv=None):
             control = data
             state = unroll(system, state, control)
             
-            return state, (state.q, state.qd)
+            return state, (state.q, state.qd, state.actuator_force)
 
-        _, (q, qd) = jax.lax.scan(
+        _, (q, qd, torque) = jax.lax.scan(
             f=scan_fn,
             init=state,
             xs=batch.ctrl,
@@ -167,11 +173,27 @@ def main(argv=None):
         # Reshape the data: axis -> (trials, time, num_dof)
         q = jnp.swapaxes(q, 0, 1)
         qd = jnp.swapaxes(qd, 0, 1)
+        torque = jnp.swapaxes(torque, 0, 1)
 
-        loss = (
-            jnp.mean(jnp.square(q - batch.q))
-            + jnp.mean(jnp.square(qd - batch.qd))
-        )
+        rmse_fn = lambda x, y: jnp.sqrt(jnp.mean(jnp.square(x - y)))
+        
+        weights = {
+            'position': 1.0,
+            'velocity': 1.0,
+            'torque': 1.0,
+        }
+
+        losses = {
+            'position': rmse_fn(q, batch.q),
+            'velocity': rmse_fn(qd, batch.qd),
+            'torque': rmse_fn(torque, batch.torque),
+        }
+
+        losses = {
+            k: v * weights[k] for k, v in losses.items()
+        }
+
+        loss = sum(losses.values())
 
         return loss
 
@@ -206,8 +228,8 @@ def main(argv=None):
 
         # Extract the gradients:
         gradient = {
-            'dof_damping': grad.dof_damping,
-            'kp': grad.actuator_gainprm[:, 0]
+            'gainprm': grad.actuator_gainprm[:, :3],
+            'biasprm': grad.actuator_biasprm[:, :3],
         }
 
         # Update the parameters:
@@ -216,16 +238,11 @@ def main(argv=None):
         )
 
         # Update the system:
-        dof_damping = params['dof_damping']
-        kp = params['kp']
-
-        gain = sys.actuator_gainprm.at[:, 0].set(kp)
-        bias = sys.actuator_biasprm.at[:, 0].set(-kp)
-
+        gainprm = sys.actuator_gainprm.at[:, :3].set(params['gainprm'])
+        biasprm = sys.actuator_biasprm.at[:, :3].set(params['biasprm'])
         sys = sys.replace(
-            dof_damping=dof_damping,
-            actuator_gainprm=gain,
-            actuator_biasprm=bias,
+            actuator_gainprm=gainprm,
+            actuator_biasprm=biasprm,
         )
 
         return (sys, opt_state, params), (loss, params)
@@ -237,10 +254,12 @@ def main(argv=None):
         key, subkey = jax.random.split(key)
         q = jax.random.permutation(subkey, data.q, axis=0)
         qd = jax.random.permutation(subkey, data.qd, axis=0)
+        torque = jax.random.permutation(subkey, data.torque, axis=0)
         ctrl = jax.random.permutation(subkey, data.ctrl, axis=0)
         ctrl = jnp.swapaxes(ctrl, 1, 2)
         shuffled_data = jax.tree.map(
-            lambda x, y, z: minibatch(x, y, z), q, qd, ctrl,
+            lambda w, x, y, z: minibatch(w, x, y, z),
+            q, qd, torque, ctrl,
         )
 
         (sys, opt_state, params), (loss, param_history) = jax.lax.scan(
@@ -253,7 +272,7 @@ def main(argv=None):
         return (sys, opt_state, params, subkey), (loss, param_history)
 
     # Training Loop:
-    data = minibatch(q_batch, qd_batch, ctrl_batch)
+    data = minibatch(q_batch, qd_batch, torque_batch, ctrl_batch)
     start_time = time.time()
     (sys, opt_state, params, _), (loss_history, param_history) = jax.lax.scan(
         f=functools.partial(outer_loop, data=data),
@@ -272,11 +291,11 @@ def main(argv=None):
     os.makedirs(data_directory, exist_ok=True)
     param_file = os.path.join(
         data_directory,
-        'param_regression_history.pkl',
+        'param_regression_history_motor.pkl',
     )
     loss_file = os.path.join(
         data_directory,
-        'loss_history.pkl',
+        'loss_history_motor.pkl',
     )
 
     with open(param_file, 'wb') as f:

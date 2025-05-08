@@ -18,14 +18,36 @@ from brax.mjx import pipeline
 
 import time
 
+# Scipy Filter:
+from scipy import signal
+from scipy.signal import butter, sosfilt, convolve
+
+
+
+import matplotlib.pyplot as plt
+
+
 jax.config.update('jax_enable_x64', True)
+
+# jax.config.update('jax_disable_jit', True)
 
 
 @flax.struct.dataclass
 class minibatch:
     q: jax.Array
     qd: jax.Array
+    torque: jax.Array
     ctrl: jax.Array
+
+
+def butter_lowpass(cutoff, fs, order=5):
+    return butter(order, cutoff, btype='low', analog=False, output='sos', fs=fs)
+
+
+def butter_lowpass_filter(data, cutoff, fs, order=5):
+    sos = butter_lowpass(cutoff, fs, order=order)
+    y = sosfilt(sos, data)
+    return y
 
 
 def main(argv=None):
@@ -60,6 +82,18 @@ def main(argv=None):
     torque_measured = data[:, :, 24:36]
     setpoints = data[:, :, 36:]
 
+    # Filter Velocity Data: (Window of 25 Still captures the initial value)
+    qd_filtered = []
+    window = signal.windows.hann(25)
+    for data in qd_measured:
+        y = []
+        for i in range(num_motors):
+            y.append(convolve(data[:, i], window, mode='same') / sum(window)) 
+        y = np.asarray(y).swapaxes(0, 1)
+        qd_filtered.append(y)
+
+    qd_filtered = np.asarray(qd_filtered)
+
     # Concatenate Legs into different trials:
     process_fn = lambda x: np.concatenate(
             np.split(
@@ -72,6 +106,7 @@ def main(argv=None):
 
     q_measured = process_fn(q_measured)
     qd_measured = process_fn(qd_measured)
+    qd_filtered = process_fn(qd_filtered)
     torque_measured = process_fn(torque_measured)
     setpoints = process_fn(setpoints)
 
@@ -155,9 +190,9 @@ def main(argv=None):
             control = data
             state = unroll(system, state, control)
             
-            return state, (state.q, state.qd)
+            return state, (state.q, state.qd, state.actuator_force)
 
-        _, (q, qd) = jax.lax.scan(
+        _, (q, qd, torque) = jax.lax.scan(
             f=scan_fn,
             init=state,
             xs=batch.ctrl,
@@ -167,11 +202,27 @@ def main(argv=None):
         # Reshape the data: axis -> (trials, time, num_dof)
         q = jnp.swapaxes(q, 0, 1)
         qd = jnp.swapaxes(qd, 0, 1)
+        torque = jnp.swapaxes(torque, 0, 1)
 
-        loss = (
-            jnp.mean(jnp.square(q - batch.q))
-            + jnp.mean(jnp.square(qd - batch.qd))
-        )
+        rmse_fn = lambda x, y: jnp.sqrt(jnp.mean(jnp.square(x - y)))
+        
+        weights = {
+            'position': 1.0,
+            'velocity': 0.1,
+            'torque': 1.0,
+        }
+
+        losses = {
+            'position': rmse_fn(q, batch.q),
+            'velocity': rmse_fn(qd, batch.qd),
+            'torque': rmse_fn(torque, batch.torque),
+        }
+
+        losses = {
+            k: v * weights[k] for k, v in losses.items()
+        }
+
+        loss = sum(losses.values())
 
         return loss
 
@@ -200,6 +251,11 @@ def main(argv=None):
             batch.qd[:, 0],
         )
 
+        # # TODO(jeh15): Stabilize Simulation?
+        # num_stabilization_iterations = 5
+        # for _ in range(num_stabilization_iterations):
+        #     states = step_fn(sys, states, batch.q[:, 0])
+
         loss, grad = grad_fn(
             sys, states, batch,
         )
@@ -222,11 +278,18 @@ def main(argv=None):
         gain = sys.actuator_gainprm.at[:, 0].set(kp)
         bias = sys.actuator_biasprm.at[:, 0].set(-kp)
 
+        # Update Motor Stiffness:
         sys = sys.replace(
-            dof_damping=dof_damping,
             actuator_gainprm=gain,
             actuator_biasprm=bias,
         )
+
+        # Update Motor Stiffness and Damping:
+        # sys = sys.replace(
+        #     dof_damping=dof_damping,
+        #     actuator_gainprm=gain,
+        #     actuator_biasprm=bias,
+        # )
 
         return (sys, opt_state, params), (loss, params)
 
@@ -237,10 +300,12 @@ def main(argv=None):
         key, subkey = jax.random.split(key)
         q = jax.random.permutation(subkey, data.q, axis=0)
         qd = jax.random.permutation(subkey, data.qd, axis=0)
+        torque = jax.random.permutation(subkey, data.torque, axis=0)
         ctrl = jax.random.permutation(subkey, data.ctrl, axis=0)
         ctrl = jnp.swapaxes(ctrl, 1, 2)
         shuffled_data = jax.tree.map(
-            lambda x, y, z: minibatch(x, y, z), q, qd, ctrl,
+            lambda w, x, y, z: minibatch(w, x, y, z),
+            q, qd, torque, ctrl,
         )
 
         (sys, opt_state, params), (loss, param_history) = jax.lax.scan(
@@ -253,7 +318,7 @@ def main(argv=None):
         return (sys, opt_state, params, subkey), (loss, param_history)
 
     # Training Loop:
-    data = minibatch(q_batch, qd_batch, ctrl_batch)
+    data = minibatch(q_batch, qd_batch, torque_batch, ctrl_batch)
     start_time = time.time()
     (sys, opt_state, params, _), (loss_history, param_history) = jax.lax.scan(
         f=functools.partial(outer_loop, data=data),
@@ -272,11 +337,11 @@ def main(argv=None):
     os.makedirs(data_directory, exist_ok=True)
     param_file = os.path.join(
         data_directory,
-        'param_regression_history.pkl',
+        'param_regression_history_torque.pkl',
     )
     loss_file = os.path.join(
         data_directory,
-        'loss_history.pkl',
+        'loss_history_torque.pkl',
     )
 
     with open(param_file, 'wb') as f:

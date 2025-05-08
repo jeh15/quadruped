@@ -20,7 +20,7 @@ def main(argv=None):
     # Load Data:
     file_path = os.path.join(
         os.path.dirname(__file__),
-        'data/param_regression_history.pkl',
+        'data/param_regression_history_motor.pkl',
     )
     with open(file_path, 'rb') as file:
         data = pickle.load(file)

@@ -12,7 +12,7 @@ import numpy.typing as npt
 import mujoco
 import mujoco.viewer
 
-from src.envs import unitree_go2_v13 as unitree_go2
+from src.envs import sinusoid_test as unitree_go2
 from src.algorithms.ppo.load_utilities import load_policy
 
 
@@ -31,12 +31,9 @@ flags.DEFINE_integer(
 def controller(
     action: npt.ArrayLike,
     default_control: npt.ArrayLike,
-    ctrl_lb: npt.ArrayLike,
-    ctrl_ub: npt.ArrayLike,
     action_scale: float,
 ) -> np.ndarray:
     motor_targets = default_control + action * action_scale
-    motor_targets = np.clip(motor_targets, ctrl_lb, ctrl_ub)
     return motor_targets
 
 
@@ -51,13 +48,13 @@ def main(argv=None):
     logging.set_verbosity(logging.INFO)
 
     # Load from Env:
-    env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx.xml', action_scale=0.5)
+    env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx_regressed_fixed.xml')
     model_mjx = env.sys.mj_model
     
     # High Fidelity Model:
     model_path = os.path.join(
         os.path.dirname(__file__),
-        'models/unitree_go2/scene_mjx.xml',
+        'models/unitree_go2/scene_mjx_regressed_fixed.xml',
     )
 
     model = mujoco.MjModel.from_xml_path(
@@ -66,7 +63,7 @@ def main(argv=None):
     model.opt.timestep = 0.004
 
     data = mujoco.MjData(model)
-    mujoco.mj_resetData(model, data)
+    mujoco.mj_resetDataKeyframe(model, data, 0)
     control_rate = 0.02
     num_steps = int(control_rate / model.opt.timestep)
 
@@ -83,14 +80,11 @@ def main(argv=None):
     controller_fn = functools.partial(
         controller,
         default_control=env.default_ctrl,
-        ctrl_lb=env.ctrl_lb,
-        ctrl_ub=env.ctrl_ub,
-        action_scale=env._action_scale,
+        action_scale=env.action_scale,
     )
 
     # Test:
-    data.qpos = model_mjx.key_qpos.flatten()
-    command = np.array([0.0, 0.0, 0.0])
+    command = np.array([0.0])
     action = model_mjx.key_ctrl.flatten()
     observation = np.zeros(env.num_observations)
 
@@ -102,9 +96,6 @@ def main(argv=None):
 
     global_steps = 0
 
-    gyroscope_history = []
-    projected_gravity_history = []
-    quaternion_history = []
     joint_position_history = []
     joint_velocity_history = []
     action_history = []
@@ -129,24 +120,29 @@ def main(argv=None):
                 # If Switch Controller:
                 if joystick.get_button(11) == 1:
                     termination_flag = True
-                # In Logitech Controller:
-                # if joystick.get_button(7) == 1:
-                #     termination_flag = True
+                command = -1 * joystick.get_axis(1)
 
-                forward_command = -1 * joystick.get_axis(1)
-                lateral_command = -1 * joystick.get_axis(0)
-                # If Switch Controller:
-                rotation_command = -1 * joystick.get_axis(2)
-                # If Logitech Controller:
-                # rotation_command = -1 * joystick.get_axis(3)
 
 
             # Filter and Clip Command:
             command = np.array([
-                forward_command, lateral_command, rotation_command,
+                command
             ])
             command = np.where(np.abs(command) < 0.1, 0.0, command)
-            command = np.clip(command, -0.75, 0.75)
+            command = np.clip(command, -1.0, 1.0)
+            command = 0.1 * command
+            command = np.clip(command, -0.1, 0.1)
+
+            # Print Tracking Reward:
+            desired_foot_height = env.default_feet_position[:, -1] + command
+            foot_position = env.get_feet_pos(data)
+            error = np.sum(np.square(desired_foot_height - foot_position[:, -1]))
+            tracking_reward = np.exp(-error / 0.01)
+
+            print(f'Command: {command}')
+            print(f'Desired Height: {desired_foot_height}')
+            print(f'Actual Height: {foot_position[:, -1]}')
+            print(f'Tracking Reward: {tracking_reward}')
 
             step_time = time.time()
             action_rng, key = jax.random.split(key)
@@ -167,16 +163,10 @@ def main(argv=None):
             data.ctrl = ctrl
 
             # Log MuJoCo Data:
-            gyroscope = env.get_gyro(data)
-            projected_gravity = np.reshape(data.site_xmat[env.imu_site_idx], (3, 3)).T @ np.array([0, 0, -1])
-            quaternion = data.qpos[3:7]
-            joint_position = data.qpos[7:]
-            joint_velocity = data.qvel[6:]
+            joint_position = data.qpos
+            joint_velocity = data.qvel
 
             # Append Data:
-            gyroscope_history.append(gyroscope)
-            projected_gravity_history.append(projected_gravity)
-            quaternion_history.append(quaternion)
             joint_position_history.append(joint_position)
             joint_velocity_history.append(joint_velocity)
             action_history.append(action)
@@ -195,29 +185,11 @@ def main(argv=None):
 
 
     # Save Data:
-    gyroscope_data = np.asarray(gyroscope_history)
-    projected_gravity_data = np.asarray(projected_gravity_history)
-    quaternion_data = np.asarray(quaternion_history)
     joint_position_data = np.asarray(joint_position_history)
     joint_velocity_data = np.asarray(joint_velocity_history)
     action_data = np.asarray(action_history)
     ctrl_data = np.asarray(ctrl_history)
 
-    np.savetxt(
-        os.path.join(log_directory, 'simulation_gyroscope_data.txt'),
-        gyroscope_data,
-        delimiter=',',
-    )
-    np.savetxt(
-        os.path.join(log_directory, 'simulation_projected_gravity_data.txt'),
-        projected_gravity_data,
-        delimiter=',',
-    )
-    np.savetxt(
-        os.path.join(log_directory, 'simulation_quaternion_data.txt'),
-        quaternion_data,
-        delimiter=',',
-    )
     np.savetxt(
         os.path.join(log_directory, 'simulation_joint_position_data.txt'),
         joint_position_data,
