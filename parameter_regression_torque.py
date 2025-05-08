@@ -18,18 +18,8 @@ from brax.mjx import pipeline
 
 import time
 
-# Scipy Filter:
-from scipy import signal
-from scipy.signal import butter, sosfilt, convolve
-
-
-
-import matplotlib.pyplot as plt
-
 
 jax.config.update('jax_enable_x64', True)
-
-# jax.config.update('jax_disable_jit', True)
 
 
 @flax.struct.dataclass
@@ -40,16 +30,6 @@ class minibatch:
     ctrl: jax.Array
 
 
-def butter_lowpass(cutoff, fs, order=5):
-    return butter(order, cutoff, btype='low', analog=False, output='sos', fs=fs)
-
-
-def butter_lowpass_filter(data, cutoff, fs, order=5):
-    sos = butter_lowpass(cutoff, fs, order=order)
-    y = sosfilt(sos, data)
-    return y
-
-
 def main(argv=None):
     filename = 'models/unitree_go2/go2_regression_model.xml'
     filepath = os.path.join(
@@ -58,6 +38,13 @@ def main(argv=None):
     )
     sys = mjcf.load(filepath)
     sys = sys.tree_replace({'opt.timestep': 0.004})
+
+    # Override parameters:
+    kp_override = jnp.array([55, 55, 23])
+    sys = sys.replace(
+        actuator_gainprm=sys.actuator_gainprm.at[:, 0].set(kp_override),
+        actuator_biasprm=sys.actuator_biasprm.at[:, 1].set(-kp_override),
+    )
 
     control_rate = 0.02
     control_steps = int(control_rate / sys.opt.timestep)
@@ -82,18 +69,6 @@ def main(argv=None):
     torque_measured = data[:, :, 24:36]
     setpoints = data[:, :, 36:]
 
-    # Filter Velocity Data: (Window of 25 Still captures the initial value)
-    qd_filtered = []
-    window = signal.windows.hann(25)
-    for data in qd_measured:
-        y = []
-        for i in range(num_motors):
-            y.append(convolve(data[:, i], window, mode='same') / sum(window)) 
-        y = np.asarray(y).swapaxes(0, 1)
-        qd_filtered.append(y)
-
-    qd_filtered = np.asarray(qd_filtered)
-
     # Concatenate Legs into different trials:
     process_fn = lambda x: np.concatenate(
             np.split(
@@ -106,7 +81,6 @@ def main(argv=None):
 
     q_measured = process_fn(q_measured)
     qd_measured = process_fn(qd_measured)
-    qd_filtered = process_fn(qd_filtered)
     torque_measured = process_fn(torque_measured)
     setpoints = process_fn(setpoints)
 
@@ -208,7 +182,7 @@ def main(argv=None):
         
         weights = {
             'position': 1.0,
-            'velocity': 0.1,
+            'velocity': 1.0,
             'torque': 1.0,
         }
 
@@ -251,11 +225,6 @@ def main(argv=None):
             batch.qd[:, 0],
         )
 
-        # # TODO(jeh15): Stabilize Simulation?
-        # num_stabilization_iterations = 5
-        # for _ in range(num_stabilization_iterations):
-        #     states = step_fn(sys, states, batch.q[:, 0])
-
         loss, grad = grad_fn(
             sys, states, batch,
         )
@@ -276,13 +245,18 @@ def main(argv=None):
         kp = params['kp']
 
         gain = sys.actuator_gainprm.at[:, 0].set(kp)
-        bias = sys.actuator_biasprm.at[:, 0].set(-kp)
+        bias = sys.actuator_biasprm.at[:, 1].set(-kp)
 
         # Update Motor Stiffness:
-        sys = sys.replace(
-            actuator_gainprm=gain,
-            actuator_biasprm=bias,
-        )
+        # sys = sys.replace(
+        #     actuator_gainprm=gain,
+        #     actuator_biasprm=bias,
+        # )
+
+        # Update Motor Damping:
+        # sys = sys.replace(
+        #     dof_damping=dof_damping,
+        # )
 
         # Update Motor Stiffness and Damping:
         # sys = sys.replace(
@@ -337,11 +311,11 @@ def main(argv=None):
     os.makedirs(data_directory, exist_ok=True)
     param_file = os.path.join(
         data_directory,
-        'param_regression_history_torque.pkl',
+        'param_regression_kd.pkl',
     )
     loss_file = os.path.join(
         data_directory,
-        'loss_history_torque.pkl',
+        'loss_history_kd.pkl',
     )
 
     with open(param_file, 'wb') as f:
