@@ -46,6 +46,7 @@ class RewardConfig:
     torque: float = -2e-4
     action_rate: float = -0.01
     mechanical_power: float = -1e-3
+    acceleration: float = -1e-4
     # Auxilary Terms:
     stand_still: float = -1.0
     termination: float = -1.0
@@ -182,15 +183,6 @@ class UnitreeGo2Env(PipelineEnv):
         sys = mjcf.load(self.filepath)
         self.step_dt = 0.02
         sys = sys.tree_replace({'opt.timestep': 0.004})
-
-        # kp = 35.0 kd = 0.5: Common in the literature
-        kp = 35.0
-        kd = 0.5
-        sys = sys.replace(
-            dof_damping=sys.dof_damping.at[6:].set(kd),
-            actuator_gainprm=sys.actuator_gainprm.at[:, 0].set(kp),
-            actuator_biasprm=sys.actuator_biasprm.at[:, 1].set(-kp),
-        )
 
         n_frames = kwargs.pop('n_frames', int(self.step_dt / sys.opt.timestep))
         super().__init__(sys, backend='mjx', n_frames=n_frames)
@@ -481,6 +473,9 @@ class UnitreeGo2Env(PipelineEnv):
             'mechanical_power': self._reward_mechanical_power(
                 joint_velocities, pipeline_state.actuator_force,
             ),
+            'acceleration': self._reward_acceleration(
+                pipeline_state.qacc,
+            ),
             'stand_still': self._reward_stand_still(
                 state.info['command'], joint_angles,
             ),
@@ -680,6 +675,12 @@ class UnitreeGo2Env(PipelineEnv):
     ) -> jax.Array:
         # Penalize mechanical power
         return jnp.sum(jnp.abs(torques) * jnp.abs(qd))
+
+    def _reward_acceleration(
+        self, qacc: jax.Array,
+    ) -> jax.Array:
+        # Penalize Motor/Joint Acceleration
+        return jnp.sqrt(jnp.sum(jnp.square(qacc)))
 
     def _reward_tracking_velocity(
         self, commands: jax.Array, local_velocity: jax.Array
@@ -951,148 +952,6 @@ class UnitreeGo2Env(PipelineEnv):
             projected_gravity,
             joint_positions - self.default_ctrl,
             joint_velocities,
-            previous_action,
-            command,
-        ])
-
-        return {
-            'state': observation,
-            'privileged_state': np.zeros((self.num_privileged_observations,)),
-        }
-    
-    def observation_test(
-        self,
-        accelerometer: np.ndarray,
-        gyroscope: np.ndarray,
-        projected_gravity: np.ndarray,
-        joint_positions: np.ndarray,
-        joint_velocities: np.ndarray,
-        command: np.ndarray,
-        previous_action: np.ndarray,
-    ) -> np.ndarray:
-        observation = np.concatenate([
-            gyroscope,
-            projected_gravity,
-            joint_positions - self.default_ctrl,
-            joint_velocities,
-            previous_action,
-            command,
-        ])
-
-        return {
-            'state': observation,
-            'privileged_state': np.zeros((self.num_privileged_observations,)),
-        }
-
-    def get_noisy_sensor_data(
-        self,
-        mj_data: mujoco.MjData,
-    ) -> np.ndarray:
-        accelerometer = self.get_accelerometer(mj_data)
-        gyroscope = self.get_gyro(mj_data)
-        quaternion = mj_data.qpos[3:7]
-        joint_positions = mj_data.qpos[7:]
-        joint_velocities = mj_data.qvel[6:]
-
-        # Noise Plays a role in stability:
-        gyroscope = gyroscope + np.random.uniform(
-            low=-self.noise_config.gyroscope,
-            high=self.noise_config.gyroscope,
-            size=gyroscope.shape,
-        )
-        # Noise Plays a role in stability:
-        quaternion = quaternion + np.random.uniform(
-            low=-0.001,
-            high=0.001,
-            size=quaternion.shape,
-        )
-        quaternion = quaternion / np.linalg.norm(quaternion)
-        # Noise Plays a role but not that bad...
-        joint_positions = joint_positions + np.random.uniform(
-            low=-self.noise_config.joint_position,
-            high=self.noise_config.joint_position,
-            size=joint_positions.shape,
-        )
-        # Noise Plays a role but not that bad...
-        joint_velocities = joint_velocities + np.random.uniform(
-            low=-self.noise_config.joint_velocity,
-            high=self.noise_config.joint_velocity,
-            size=joint_velocities.shape,
-        )
-
-        return np.concatenate([
-            accelerometer,
-            gyroscope,
-            quaternion,
-            joint_positions,
-            joint_velocities,
-        ])
-
-    def smooth_observation(
-        self,
-        imu_state: Any,
-        motor_state: Any,
-        previous_imu_state: Any,
-        previous_motor_state: Any,
-        command: np.ndarray,
-        previous_action: np.ndarray,
-    ) -> np.ndarray:
-        # Numpy implementation of the observation function:
-        def rotate(vec: np.ndarray, quat: np.ndarray) -> np.ndarray:
-            if len(vec.shape) != 1:
-                raise ValueError('vec must have no batch dimensions.')
-            s, u = quat[0], quat[1:]
-            r = 2 * (np.dot(u, vec) * u) + (s * s - np.dot(u, u)) * vec
-            r = r + 2 * s * np.cross(u, vec)
-            return r
-
-        def quat_inv(q: np.ndarray) -> np.ndarray:
-            return q * np.array([1, -1, -1, -1])
-
-        # Set to Correct Data Type:
-        base_rotation = np.asarray(imu_state.quaternion, dtype=np.float32)
-        gyroscope = np.asarray(imu_state.gyroscope, dtype=np.float32)
-        joint_positions = np.asarray(motor_state.q, dtype=np.float32)
-        joint_velocities = np.asarray(motor_state.qd, dtype=np.float32)
-
-        previous_base_rotation = np.asarray(previous_imu_state.quaternion, dtype=np.float32)
-        previous_gyroscope = np.asarray(previous_imu_state.gyroscope, dtype=np.float32)
-        previous_joint_positions = np.asarray(previous_motor_state.q, dtype=np.float32)
-        previous_joint_velocities = np.asarray(previous_motor_state.qd, dtype=np.float32)
-
-        # Cast to float64:
-        base_rotation = base_rotation.astype(np.float64)
-        accelerometer = accelerometer.astype(np.float64)
-        gyroscope = gyroscope.astype(np.float64)
-        joint_positions = joint_positions.astype(np.float64)
-        joint_velocities = joint_velocities.astype(np.float64)
-
-        previous_base_rotation = previous_base_rotation.astype(np.float64)
-        previous_accelerometer = previous_accelerometer.astype(np.float64)
-        previous_gyroscope = previous_gyroscope.astype(np.float64)
-        previous_joint_positions = previous_joint_positions.astype(np.float64)
-        previous_joint_velocities = previous_joint_velocities.astype(np.float64)
-
-        # Smooth Readings:
-        alpha = 0.8
-        smooth_rotation = alpha * (base_rotation) + (1 - alpha) * (previous_base_rotation)
-        smooth_rotation = smooth_rotation / np.linalg.norm(smooth_rotation)
-        smooth_gyroscope = alpha * (gyroscope) + (1 - alpha) * (previous_gyroscope)
-        smooth_joint_positions = alpha * (joint_positions) + (1 - alpha) * (previous_joint_positions)
-        smooth_joint_velocities = alpha * (joint_velocities) + (1 - alpha) * (previous_joint_velocities)
-
-        # Calculate Body frame Yaw Rate and Projected Gravity:
-        inverse_base_rotation = quat_inv(smooth_rotation)
-        smooth_projected_gravity = rotate(
-            np.array([0.0, 0.0, -1.0]),
-            inverse_base_rotation,
-        )
-
-        observation = np.concatenate([
-            smooth_gyroscope,
-            smooth_projected_gravity,
-            smooth_joint_positions - self.default_ctrl,
-            smooth_joint_velocities,
             previous_action,
             command,
         ])

@@ -20,18 +20,16 @@ def main(argv=None):
     # Load Data:
     file_path = os.path.join(
         os.path.dirname(__file__),
-        'data/param_regression_kp.pkl',
+        'data/param_regression.pkl',
     )
     with open(file_path, 'rb') as file:
         data = pickle.load(file)
 
-    dof_damping = np.concatenate(data['dof_damping'])[-1]
-    kp = np.concatenate(data['kp'])[-1]
+    frictionloss = np.concatenate(data['frictionloss'])[-1]
+    armature = np.concatenate(data['armature'])[-1]
 
-    print(f'Damping: {dof_damping}')
-    print(f'Stiffness: {kp}')
-
-    pass
+    print(f'Friction Loss: {frictionloss}')
+    print(f'Armature: {armature}')
 
     
 if __name__ == "__main__":

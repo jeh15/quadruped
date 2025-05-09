@@ -8,24 +8,24 @@
   <default>
     <default class="go2">
       <geom friction="0.6" contype="0" conaffinity="0" type="mesh"/>
-      <joint axis="0 1 0" damping="0.5" armature="0.01"/>
+      <joint axis="0 1 0" damping="0.5" armature="0.005"/>
       <position forcerange="-23.7 23.7" kp="35.0"/>
       <default class="go2/abduction">
-        <joint axis="1 0 0" range="-1.0472 1.0472" frictionloss="0.2"/>
+        <joint axis="1 0 0" range="-1.0472 1.0472" frictionloss="0.01"/>
         <position ctrlrange="-0.9472 0.9472"/>
       </default>
       <default class="go2/hip">
         <default class="go2/front_hip">
-          <joint range="-1.5708 3.4907" frictionloss="0.35"/>
+          <joint range="-1.5708 3.4907" frictionloss="0.01"/>
           <position ctrlrange="-1.4 2.5"/>
         </default>
         <default class="go2/back_hip">
-          <joint range="-0.5236 4.5379" frictionloss="0.35"/>
+          <joint range="-0.5236 4.5379" frictionloss="0.01"/>
           <position ctrlrange="-0.4236 2.5"/>
         </default>
       </default>
       <default class="go2/knee">
-        <joint range="-2.7227 -0.83776" frictionloss="1.36"/>
+        <joint range="-2.7227 -0.83776" frictionloss="0.01"/>
         <position forcerange="-45.43 45.43" ctrlrange="-2.6227 -0.82776"/>
       </default>
       <default class="go2/foot">
@@ -65,6 +65,10 @@
 
    <worldbody>
         <body name="base_link" pos="0 0 0.445" childclass="go2">
+            <inertial pos="0.021112 0 -0.005366" quat="-0.000543471 0.713435 -0.00173769 0.700719"
+                mass="6.921"
+                diaginertia="0.107027 0.0980771 0.0244531"/>
+            <freejoint/>
             <geom mesh="base_0" material="black" class="go2"/>
             <geom mesh="base_1" material="black" class="go2"/>
             <geom mesh="base_2" material="black" class="go2"/>

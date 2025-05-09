@@ -18,7 +18,6 @@ from brax.mjx import pipeline
 
 import time
 
-
 jax.config.update('jax_enable_x64', True)
 
 
@@ -26,7 +25,6 @@ jax.config.update('jax_enable_x64', True)
 class minibatch:
     q: jax.Array
     qd: jax.Array
-    torque: jax.Array
     ctrl: jax.Array
 
 
@@ -38,13 +36,6 @@ def main(argv=None):
     )
     sys = mjcf.load(filepath)
     sys = sys.tree_replace({'opt.timestep': 0.004})
-
-    # Override parameters:
-    kp_override = jnp.array([55, 55, 23])
-    sys = sys.replace(
-        actuator_gainprm=sys.actuator_gainprm.at[:, 0].set(kp_override),
-        actuator_biasprm=sys.actuator_biasprm.at[:, 1].set(-kp_override),
-    )
 
     control_rate = 0.02
     control_steps = int(control_rate / sys.opt.timestep)
@@ -164,9 +155,9 @@ def main(argv=None):
             control = data
             state = unroll(system, state, control)
             
-            return state, (state.q, state.qd, state.actuator_force)
+            return state, (state.q, state.qd)
 
-        _, (q, qd, torque) = jax.lax.scan(
+        _, (q, qd) = jax.lax.scan(
             f=scan_fn,
             init=state,
             xs=batch.ctrl,
@@ -176,27 +167,11 @@ def main(argv=None):
         # Reshape the data: axis -> (trials, time, num_dof)
         q = jnp.swapaxes(q, 0, 1)
         qd = jnp.swapaxes(qd, 0, 1)
-        torque = jnp.swapaxes(torque, 0, 1)
 
-        rmse_fn = lambda x, y: jnp.sqrt(jnp.mean(jnp.square(x - y)))
-        
-        weights = {
-            'position': 1.0,
-            'velocity': 1.0,
-            'torque': 1.0,
-        }
-
-        losses = {
-            'position': rmse_fn(q, batch.q),
-            'velocity': rmse_fn(qd, batch.qd),
-            'torque': rmse_fn(torque, batch.torque),
-        }
-
-        losses = {
-            k: v * weights[k] for k, v in losses.items()
-        }
-
-        loss = sum(losses.values())
+        loss = (
+            jnp.mean(jnp.square(q - batch.q))
+            + jnp.mean(jnp.square(qd - batch.qd))
+        )
 
         return loss
 
@@ -245,25 +220,13 @@ def main(argv=None):
         kp = params['kp']
 
         gain = sys.actuator_gainprm.at[:, 0].set(kp)
-        bias = sys.actuator_biasprm.at[:, 1].set(-kp)
+        bias = sys.actuator_biasprm.at[:, 0].set(-kp)
 
-        # Update Motor Stiffness:
-        # sys = sys.replace(
-        #     actuator_gainprm=gain,
-        #     actuator_biasprm=bias,
-        # )
-
-        # Update Motor Damping:
-        # sys = sys.replace(
-        #     dof_damping=dof_damping,
-        # )
-
-        # Update Motor Stiffness and Damping:
-        # sys = sys.replace(
-        #     dof_damping=dof_damping,
-        #     actuator_gainprm=gain,
-        #     actuator_biasprm=bias,
-        # )
+        sys = sys.replace(
+            dof_damping=dof_damping,
+            actuator_gainprm=gain,
+            actuator_biasprm=bias,
+        )
 
         return (sys, opt_state, params), (loss, params)
 
@@ -274,12 +237,10 @@ def main(argv=None):
         key, subkey = jax.random.split(key)
         q = jax.random.permutation(subkey, data.q, axis=0)
         qd = jax.random.permutation(subkey, data.qd, axis=0)
-        torque = jax.random.permutation(subkey, data.torque, axis=0)
         ctrl = jax.random.permutation(subkey, data.ctrl, axis=0)
         ctrl = jnp.swapaxes(ctrl, 1, 2)
         shuffled_data = jax.tree.map(
-            lambda w, x, y, z: minibatch(w, x, y, z),
-            q, qd, torque, ctrl,
+            lambda x, y, z: minibatch(x, y, z), q, qd, ctrl,
         )
 
         (sys, opt_state, params), (loss, param_history) = jax.lax.scan(
@@ -292,7 +253,7 @@ def main(argv=None):
         return (sys, opt_state, params, subkey), (loss, param_history)
 
     # Training Loop:
-    data = minibatch(q_batch, qd_batch, torque_batch, ctrl_batch)
+    data = minibatch(q_batch, qd_batch, ctrl_batch)
     start_time = time.time()
     (sys, opt_state, params, _), (loss_history, param_history) = jax.lax.scan(
         f=functools.partial(outer_loop, data=data),
@@ -311,11 +272,11 @@ def main(argv=None):
     os.makedirs(data_directory, exist_ok=True)
     param_file = os.path.join(
         data_directory,
-        'param_regression_kd.pkl',
+        'param_regression_history.pkl',
     )
     loss_file = os.path.join(
         data_directory,
-        'loss_history_kd.pkl',
+        'loss_history.pkl',
     )
 
     with open(param_file, 'wb') as f:
