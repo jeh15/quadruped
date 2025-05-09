@@ -1,7 +1,7 @@
 <mujoco model="go2">
   <compiler angle="radian" meshdir="assets" autolimits="true"/>
 
-  <option iterations="1" ls_iterations="5" integrator="Euler">
+  <option iterations="1" ls_iterations="5" timestep="0.004" integrator="Euler">
     <flag eulerdamp="disable"/>
   </option>
 
@@ -9,24 +9,24 @@
     <default class="go2">
       <geom friction="0.6" contype="0" conaffinity="0" type="mesh"/>
       <joint axis="0 1 0" damping="0.5" armature="0.005"/>
-      <general forcerange="-23.7 23.7" biastype="affine" gainprm="35 0 0" biasprm="0 -35 -0.5"/>
+      <position forcerange="-23.7 23.7" kp="35.0"/>
       <default class="go2/abduction">
-        <joint axis="1 0 0" range="-1.0472 1.0472" frictionloss="0.3"/>
-        <general ctrlrange="-0.9472 0.9472"/>
+        <joint axis="1 0 0" range="-1.0472 1.0472" frictionloss="0.01"/>
+        <position ctrlrange="-0.9472 0.9472"/>
       </default>
       <default class="go2/hip">
         <default class="go2/front_hip">
-          <joint range="-1.5708 3.4907" frictionloss="0.3"/>
-          <general ctrlrange="-1.4 2.5"/>
+          <joint range="-1.5708 3.4907" frictionloss="0.01"/>
+          <position ctrlrange="-1.4 2.5"/>
         </default>
         <default class="go2/back_hip">
-          <joint range="-0.5236 4.5379" frictionloss="0.3"/>
-          <general ctrlrange="-1.4 2.5"/>
+          <joint range="-0.5236 4.5379" frictionloss="0.01"/>
+          <position ctrlrange="-0.4236 2.5"/>
         </default>
       </default>
       <default class="go2/knee">
-        <joint range="-2.7227 -0.83776" frictionloss="1.0"/>
-        <general ctrlrange="-2.6227 -0.84776"/>
+        <joint range="-2.7227 -0.83776" frictionloss="0.01"/>
+        <position forcerange="-45.43 45.43" ctrlrange="-2.6227 -0.82776"/>
       </default>
       <default class="go2/foot">
         <site pos="-0.002 0 -0.213"/>
@@ -188,7 +188,7 @@
         </body>
     </worldbody>
 
-  <actuator>
+  <!-- <actuator>
     <general class="go2/abduction" name="front_right_hip" joint="front_right_hip_joint"/>
     <general class="go2/hip" name="front_right_thigh" joint="front_right_thigh_joint"/>
     <general class="go2/knee" name="front_right_calf" joint="front_right_calf_joint"/>
@@ -201,6 +201,21 @@
     <general class="go2/abduction" name="hind_left_hip" joint="hind_left_hip_joint"/>
     <general class="go2/hip" name="hind_left_thigh" joint="hind_left_thigh_joint"/>
     <general class="go2/knee" name="hind_left_calf" joint="hind_left_calf_joint"/>
+  </actuator> -->
+
+  <actuator>
+    <position class="go2/abduction" name="front_right_hip" joint="front_right_hip_joint"/>
+    <position class="go2/hip" name="front_right_thigh" joint="front_right_thigh_joint"/>
+    <position class="go2/knee" name="front_right_calf" joint="front_right_calf_joint"/>
+    <position class="go2/abduction" name="front_left_hip" joint="front_left_hip_joint"/>
+    <position class="go2/hip" name="front_left_thigh" joint="front_left_thigh_joint"/>
+    <position class="go2/knee" name="front_left_calf" joint="front_left_calf_joint"/>
+    <position class="go2/abduction" name="hind_right_hip" joint="hind_right_hip_joint"/>
+    <position class="go2/hip" name="hind_right_thigh" joint="hind_right_thigh_joint"/>
+    <position class="go2/knee" name="hind_right_calf" joint="hind_right_calf_joint"/>
+    <position class="go2/abduction" name="hind_left_hip" joint="hind_left_hip_joint"/>
+    <position class="go2/hip" name="hind_left_thigh" joint="hind_left_thigh_joint"/>
+    <position class="go2/knee" name="hind_left_calf" joint="hind_left_calf_joint"/>
   </actuator>
 
   <sensor>

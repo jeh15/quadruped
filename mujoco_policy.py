@@ -12,7 +12,8 @@ import numpy.typing as npt
 import mujoco
 import mujoco.viewer
 
-from src.envs import sinusoid_test as unitree_go2
+# from src.envs import sinusoid_test as unitree_go2
+from src.envs import unitree_go2_v13 as unitree_go2
 from src.algorithms.ppo.load_utilities import load_policy
 
 
@@ -48,13 +49,13 @@ def main(argv=None):
     logging.set_verbosity(logging.INFO)
 
     # Load from Env:
-    env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx_regressed_fixed.xml')
+    env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx.xml')
     model_mjx = env.sys.mj_model
     
     # High Fidelity Model:
     model_path = os.path.join(
         os.path.dirname(__file__),
-        'models/unitree_go2/scene_mjx_regressed_fixed.xml',
+        'models/unitree_go2/scene_mjx.xml',
     )
 
     model = mujoco.MjModel.from_xml_path(
@@ -120,29 +121,41 @@ def main(argv=None):
                 # If Switch Controller:
                 if joystick.get_button(11) == 1:
                     termination_flag = True
-                command = -1 * joystick.get_axis(1)
+                
+                # Feet Tracking Policy:
+                # command = -1 * joystick.get_axis(1)
 
+                # Walking Policy:
+                forward_command = -1 * joystick.get_axis(1)
+                lateral_command = -1 * joystick.get_axis(0)
+                rotation_command = -1 * joystick.get_axis(2)
 
+            # Foot Tracking Policy:
+            # command = np.array([
+            #     command
+            # ])
+            # command = np.where(np.abs(command) < 0.1, 0.0, command)
+            # command = np.clip(command, -1.0, 1.0)
+            # command = 0.1 * command
+            # command = np.clip(command, -0.1, 0.1)
 
-            # Filter and Clip Command:
+            # Walking Policy:
             command = np.array([
-                command
+                forward_command, lateral_command, rotation_command,
             ])
             command = np.where(np.abs(command) < 0.1, 0.0, command)
-            command = np.clip(command, -1.0, 1.0)
-            command = 0.1 * command
-            command = np.clip(command, -0.1, 0.1)
+            command = np.clip(command, -0.75, 0.75)
 
-            # Print Tracking Reward:
-            desired_foot_height = env.default_feet_position[:, -1] + command
-            foot_position = env.get_feet_pos(data)
-            error = np.sum(np.square(desired_foot_height - foot_position[:, -1]))
-            tracking_reward = np.exp(-error / 0.01)
+            # # Print Tracking Reward:
+            # desired_foot_height = env.default_feet_position[:, -1] + command
+            # foot_position = env.get_feet_pos(data)
+            # error = np.sum(np.square(desired_foot_height - foot_position[:, -1]))
+            # tracking_reward = np.exp(-error / 0.01)
 
-            print(f'Command: {command}')
-            print(f'Desired Height: {desired_foot_height}')
-            print(f'Actual Height: {foot_position[:, -1]}')
-            print(f'Tracking Reward: {tracking_reward}')
+            # print(f'Command: {command}')
+            # print(f'Desired Height: {desired_foot_height}')
+            # print(f'Actual Height: {foot_position[:, -1]}')
+            # print(f'Tracking Reward: {tracking_reward}')
 
             step_time = time.time()
             action_rng, key = jax.random.split(key)

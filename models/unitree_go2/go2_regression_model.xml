@@ -5,10 +5,12 @@
     <flag eulerdamp="disable"/>
   </option>
 
+  <!-- frictionloss = [0.2, 0.2, 1.2] armature = [0.005, 0.005, 0.2] -->
+  <!-- Regressed: frictionloss = [0.2, 0.35, 1.36] armature = [0.01, 0.01, 0.01] -->
   <default>
     <default class="go2">
       <geom friction="0.6" contype="0" conaffinity="0" type="mesh"/>
-      <joint axis="0 1 0" damping="0.5" frictionloss="0.2" armature="0.005"/>
+      <joint axis="0 1 0" damping="0.5" frictionloss="0.35" armature="0.01"/>
       <position forcerange="-23.7 23.7" kp="35"/>
       <default class="go2/abduction">
         <joint axis="1 0 0" range="-1.0472 1.0472"/>
@@ -25,7 +27,7 @@
         </default>
       </default>
       <default class="go2/knee">
-        <joint range="-2.7227 -0.83776" frictionloss="1.2" armature="0.2"/>
+        <joint range="-2.7227 -0.83776" frictionloss="1.36" armature="0.01"/>
         <position forcerange="-45.43 45.43" ctrlrange="-2.6227 -0.82776"/>
       </default>
       <default class="go2/foot">

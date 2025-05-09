@@ -31,6 +31,11 @@ def main(argv=None):
     sys = mjcf.load(filepath)
     sys = sys.tree_replace({'opt.timestep': 0.004})
 
+    sys.replace(
+        dof_frictionloss=np.array([0.2, 0.35, 1.36]),
+        dof_armature=np.array([0.01, 0.01, 0.01]),
+    )
+
     control_rate = 0.02
     control_steps = int(control_rate / sys.opt.timestep)
 
@@ -94,7 +99,7 @@ def main(argv=None):
     #     loss_data = pickle.load(file)
 
     # Run initial comparison of random trial:
-    key = jax.random.key(0)
+    key = jax.random.key(42)
     key, subkey = jax.random.split(key)
 
     random_idx = jax.random.randint(subkey, (), minval=0, maxval=4 * num_trials-1)
