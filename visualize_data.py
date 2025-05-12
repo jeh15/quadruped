@@ -8,8 +8,6 @@ import numpy.typing as npt
 
 import matplotlib.pyplot as plt
 
-from unitree_api_bindings import unitree_api
-
 
 @dataclasses.dataclass
 class IMUState:
@@ -50,7 +48,85 @@ def main(argv=None):
     hardware_gyroscope_data = np.asarray(list(map(lambda x: x.gyroscope, hardware_data)))
     hardware_quaternion_data = np.asarray(list(map(lambda x: x.quaternion, hardware_data)))
 
-    # Plot Data:
+    # Plot and compare Accelerometer Data:
+    fig, axs = plt.subplots(3, 1, figsize=(10, 15))
+    axs[0].plot(simulation_accelerometer_data[:, 0], label='Simulation Accelerometer X')
+    axs[0].plot(hardware_accelerometer_data[:, 0], label='Hardware Accelerometer X')
+    axs[0].set_title('Accelerometer X Data')
+    axs[0].set_ylabel('Acceleration (m/s^2)')
+    axs[0].legend()
+
+    axs[1].plot(simulation_accelerometer_data[:, 1], label='Simulation Accelerometer Y')
+    axs[1].plot(hardware_accelerometer_data[:, 1], label='Hardware Accelerometer Y')
+    axs[1].set_title('Accelerometer Y Data')
+    axs[1].set_ylabel('Acceleration (m/s^2)')
+    axs[1].legend()
+
+    axs[2].plot(simulation_accelerometer_data[:, 2], label='Simulation Accelerometer Z')
+    axs[2].plot(hardware_accelerometer_data[:, 2], label='Hardware Accelerometer Z')
+    axs[2].set_title('Accelerometer Z Data')
+    axs[2].set_xlabel('Time')
+    axs[2].set_ylabel('Acceleration (m/s^2)')
+    axs[2].legend()
+
+    plt.tight_layout()
+    plt.savefig('data/accelerometer_comparison.pdf')
+
+    # Plot and compare Gyroscope Data:
+    fig, axs = plt.subplots(3, 1, figsize=(10, 15))
+    axs[0].plot(simulation_gyroscope_data[:, 0], label='Simulation Gyroscope X')
+    axs[0].plot(hardware_gyroscope_data[:, 0], label='Hardware Gyroscope X')
+    axs[0].set_title('Gyroscope X Data')
+    axs[0].set_ylabel('Angular Velocity (rad/s)')
+    axs[0].legend()
+
+    axs[1].plot(simulation_gyroscope_data[:, 1], label='Simulation Gyroscope Y')
+    axs[1].plot(hardware_gyroscope_data[:, 1], label='Hardware Gyroscope Y')
+    axs[1].set_title('Gyroscope Y Data')
+    axs[1].set_ylabel('Angular Velocity (rad/s)')
+    axs[1].legend()
+
+    axs[2].plot(simulation_gyroscope_data[:, 2], label='Simulation Gyroscope Z')
+    axs[2].plot(hardware_gyroscope_data[:, 2], label='Hardware Gyroscope Z')
+    axs[2].set_title('Gyroscope Z Data')
+    axs[2].set_xlabel('Time')
+    axs[2].set_ylabel('Angular Velocity (rad/s)')
+    axs[2].legend()
+
+    plt.tight_layout()
+    plt.savefig('data/gyroscope_comparison.pdf')
+
+    # Plot and compare Quaternion Data:
+    fig, axs = plt.subplots(4, 1, figsize=(10, 20))
+    axs[0].plot(simulation_quaternion_data[:, 0], label='Simulation Quaternion W')
+    axs[0].plot(hardware_quaternion_data[:, 0], label='Hardware Quaternion W')
+    axs[0].set_title('Quaternion W Data')
+    axs[0].set_ylabel('Quaternion')
+    axs[0].legend()
+
+    axs[1].plot(simulation_quaternion_data[:, 1], label='Simulation Quaternion X')
+    axs[1].plot(hardware_quaternion_data[:, 1], label='Hardware Quaternion X')
+    axs[1].set_title('Quaternion X Data')
+    axs[1].set_ylabel('Quaternion')
+    axs[1].legend()
+
+    axs[2].plot(simulation_quaternion_data[:, 2], label='Simulation Quaternion Y')
+    axs[2].plot(hardware_quaternion_data[:, 2], label='Hardware Quaternion Y')
+    axs[2].set_title('Quaternion Y Data')
+    axs[2].set_ylabel('Quaternion')
+    axs[2].legend()
+
+    axs[3].plot(simulation_quaternion_data[:, 3], label='Simulation Quaternion Z')
+    axs[3].plot(hardware_quaternion_data[:, 3], label='Hardware Quaternion Z')
+    axs[3].set_title('Quaternion Z Data')
+    axs[3].set_xlabel('Time')
+    axs[3].set_ylabel('Quaternion')
+    axs[3].legend()
+
+    plt.tight_layout()
+    plt.savefig('data/quaternion_comparison.pdf')
+
+    # Comparison Plot:
     fig, axs = plt.subplots(3, 1, figsize=(10, 15))
     axs[0].plot(simulation_accelerometer_data, label='Simulation Accelerometer')
     axs[0].plot(hardware_accelerometer_data, label='Hardware Accelerometer')
@@ -72,7 +148,6 @@ def main(argv=None):
     axs[2].legend()
     
     plt.tight_layout()
-    plt.show()
     plt.savefig('data/imu_comparison.pdf')
 
     # Plot Only Simulation Data:
@@ -89,7 +164,6 @@ def main(argv=None):
     axs[2].set_ylabel('Quaternion')
 
     plt.tight_layout()
-    plt.show()
     plt.savefig('data/simulation_imu_data.pdf')
 
     # Plot Only Hardware Data:
@@ -106,7 +180,6 @@ def main(argv=None):
     axs[2].set_ylabel('Quaternion')
 
     plt.tight_layout()
-    plt.show()
     plt.savefig('data/hardware_imu_data.pdf')
 
 
