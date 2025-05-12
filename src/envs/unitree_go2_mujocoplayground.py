@@ -3,7 +3,7 @@
         Playground formulation using single time step observation, privileged observations, pose regularization, and go2_mjx_v2, No acceleration Observation.
 """
 
-from typing import Any, Dict, Union
+from typing import Any, Dict
 from absl import app
 import os
 
@@ -12,7 +12,6 @@ import jax
 import jax.numpy as jnp
 
 import numpy as np
-from scipy.spatial.transform import Rotation as R
 
 import flax.struct
 import flax.serialization
@@ -297,34 +296,22 @@ class UnitreeGo2Env(PipelineEnv):
         self.num_observations = 45
         self.num_privileged_observations = 120
 
-    def sample_command(self, rng: jax.Array) -> jax.Array:
-        forward_velocity_range = [-0.6, 1.5]
-        lateral_velocity_range = [-0.8, 0.8]
-        yaw_rate_range = [-0.7, 0.7]
+    def sample_command(self, rng: jax.Array, previous_command: jax.Array) -> jax.Array:
+        command_range = [1.5, 0.8, 1.2]
+        command_mask_probability = [0.9, 0.25, 0.5]
 
-        _, forward_velocity_key, lateral_velocity_key, yaw_rate_key = jax.random.split(rng, 4)
-        forward_velocity = jax.random.uniform(
-            forward_velocity_key,
-            (1,),
-            minval=forward_velocity_range[0],
-            maxval=forward_velocity_range[1],
+        _, command_key, sample_key, zero_out_key = jax.random.split(rng, 4)
+        new_cmd = jax.random.uniform(
+            command_key, shape=(3,), minval=-command_range, maxval=command_range,
         )
-        lateral_velocity = jax.random.uniform(
-            lateral_velocity_key,
-            (1,),
-            minval=lateral_velocity_range[0],
-            maxval=lateral_velocity_range[1],
+        new_cmd_mask = jax.random.bernoulli(
+            sample_key, p=command_mask_probability, shape=(3,),
         )
-        yaw_rate = jax.random.uniform(
-            yaw_rate_key,
-            (1,),
-            minval=yaw_rate_range[0],
-            maxval=yaw_rate_range[1],
+        zero_out_mask = jax.random.bernoulli(
+            zero_out_key, p=0.5, shape=(3,),
         )
-        new_cmd = jnp.array([
-            forward_velocity[0], lateral_velocity[0], yaw_rate[0],
-        ])
-        return new_cmd
+        command = previous_command - zero_out_mask * (previous_command - new_cmd_mask * new_cmd)
+        return command
 
     def reset(self, rng: PRNGKey) -> State:  # pytype: disable=signature-mismatch
         # TODO(jeh15): Add Drop, add joint velocities...
@@ -415,7 +402,7 @@ class UnitreeGo2Env(PipelineEnv):
         return state
 
     def step(self, state: State, action: jax.Array) -> State:  # pytype: disable=signature-mismatch
-        rng, cmd_rng = jax.random.split(state.info['rng'], 2)
+        rng, cmd_key, sample_key = jax.random.split(state.info['rng'], 2)
 
         # Disturbance: (Force based)
         state = self.maybe_apply_perturbation(state)
@@ -507,17 +494,22 @@ class UnitreeGo2Env(PipelineEnv):
         state.info['previous_contact'] = contact
         state.info['rewards'] = rewards
         state.info['step'] += 1
+        state.info['steps_until_next_command'] -= 1
         state.info['rng'] = rng
 
-        # Sample new command if more than 500 timesteps achieved
         state.info['command'] = jnp.where(
-            state.info['step'] > 500,
-            self.sample_command(cmd_rng),
+            state.info['steps_until_next_command'] <= 0,
+            self.sample_command(cmd_key, state.info['command']),
             state.info['command'],
         )
-        # Reset the step counter when done
-        state.info['step'] = jnp.where(
-            done | (state.info['step'] > 500), 0, state.info['step']
+
+        # Randomize Command Interval:
+        state.info['steps_until_next_command'] = jnp.where(
+            done | (state.info['steps_until_next_command'] <= 0),
+            jnp.round(
+                jax.random.exponential(sample_key) * 5.0 / self.dt
+            ).astype(jnp.int32),
+            state.info['steps_until_next_command'],
         )
 
         # Proxy Metrics:
