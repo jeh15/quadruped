@@ -2,10 +2,26 @@ from absl import app
 import os
 import time
 import pickle
+import dataclasses
 
-import numpy as npnpt
+import numpy as np
+import numpy.typing as npt
 
 from unitree_api_bindings import unitree_api
+
+
+@dataclasses.dataclass
+class IMUState:
+    accelerometer: npt.NDArray[np.float64]
+    gyroscope: npt.NDArray[np.float64]
+    quaternion: npt.NDArray[np.float64]
+
+
+@dataclasses.dataclass
+class MotorState:
+    joint_positions: npt.NDArray[np.float64]
+    joint_velocities: npt.NDArray[np.float64]
+    joint_torques: npt.NDArray[np.float64]
 
 
 def main(argv=None):
@@ -42,6 +58,18 @@ def main(argv=None):
 
         imu_state = unitree_driver.get_imu_state()
         motor_state = unitree_driver.get_motor_state()
+
+        imu_state = IMUState(
+            accelerometer=imu_state.accelerometer,
+            gyroscope=imu_state.gyroscope,
+            quaternion=imu_state.quaternion,
+        )
+
+        motor_state = MotorState(
+            joint_positions=motor_state.q,
+            joint_velocities=motor_state.qd,
+            joint_torques=motor_state.torque_estimate,
+        )
 
         imu_history.append(imu_state)
         motor_history.append(motor_state)

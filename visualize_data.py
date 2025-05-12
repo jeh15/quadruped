@@ -43,11 +43,11 @@ def main(argv=None):
 
     # Extract the data
     simulation_accelerometer_data = np.asarray(list(map(lambda x: x.accelerometer, simulation_data)))
-    simulation_gyroscope_data = np.asarray(list(map(lambda x: x.groscope, simulation_data)))
+    simulation_gyroscope_data = np.asarray(list(map(lambda x: x.gyroscope, simulation_data)))
     simulation_quaternion_data = np.asarray(list(map(lambda x: x.quaternion, simulation_data)))
 
     hardware_accelerometer_data = np.asarray(list(map(lambda x: x.accelerometer, hardware_data)))
-    hardware_gyroscope_data = np.asarray(list(map(lambda x: x.groscope, hardware_data)))
+    hardware_gyroscope_data = np.asarray(list(map(lambda x: x.gyroscope, hardware_data)))
     hardware_quaternion_data = np.asarray(list(map(lambda x: x.quaternion, hardware_data)))
 
     # Plot Data:
