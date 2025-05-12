@@ -46,7 +46,7 @@ def main(argv=None):
     logging.set_verbosity(logging.INFO)
 
     # Load from Env:
-    env = unitree_go2.UnitreeGo2Env()
+    env = unitree_go2.UnitreeGo2Env(observation_model='gyroscope')
 
     control_rate = 0.02
     control_rate_ns = 2e7

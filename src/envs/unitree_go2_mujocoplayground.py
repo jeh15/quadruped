@@ -327,6 +327,8 @@ class UnitreeGo2Env(PipelineEnv):
         return new_cmd
 
     def reset(self, rng: PRNGKey) -> State:  # pytype: disable=signature-mismatch
+        # TODO(jeh15): Add Drop, add joint velocities...
+
         # Initial Position:
         rng, key = jax.random.split(rng)
         delta = jax.random.uniform(
@@ -340,7 +342,7 @@ class UnitreeGo2Env(PipelineEnv):
         quaternion = mjx_math.quat_mul(self.init_q[3:7], rotation)
         qpos = qpos.at[3:7].set(quaternion)
 
-        # Initial Velocity:
+        # Initial Velocity: Normal STD Deviation 0.2 m/s
         rng, key = jax.random.split(rng)
         qvel = self.init_qd.at[0:6].set(
             jax.random.uniform(key, (6,), minval=-0.5, maxval=0.5)

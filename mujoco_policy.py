@@ -50,7 +50,7 @@ def main(argv=None):
     logging.set_verbosity(logging.INFO)
 
     # Load from Env:
-    env = unitree_go2.UnitreeGo2Env()
+    env = unitree_go2.UnitreeGo2Env(observation_model='gravity')
     model_mjx = env.sys.mj_model
     
     # High Fidelity Model:

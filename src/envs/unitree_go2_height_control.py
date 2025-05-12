@@ -936,7 +936,7 @@ class UnitreeGo2Env(PipelineEnv):
         # Set to Correct Data Type:
         joint_positions = np.asarray(motor_state.q, dtype=np.float32)
         joint_velocities = np.asarray(motor_state.qd, dtype=np.float32)
-        gyroscope = np.asarray(imu_state.gyro, dtype=np.float32)
+        gyroscope = np.asarray(imu_state.gyroscope, dtype=np.float32)
         base_rotation = np.asarray(imu_state.quaternion, dtype=np.float32)
 
         inverse_base_rotation = quat_inv(base_rotation)
