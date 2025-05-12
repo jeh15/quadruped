@@ -48,6 +48,25 @@ def main(argv=None):
     hardware_gyroscope_data = np.asarray(list(map(lambda x: x.gyroscope, hardware_data)))
     hardware_quaternion_data = np.asarray(list(map(lambda x: x.quaternion, hardware_data)))
 
+    # Convert to RPY:
+    def quaternion_to_rpy(quaternion: np.array) -> np.array:
+        sinr_cosp = 2 * (quaternion[0] * quaternion[1] + quaternion[2] * quaternion[3])
+        cosr_cosp = 1 - 2 * (quaternion[1] ** 2 + quaternion[2] ** 2)
+        roll = np.arctan2(sinr_cosp, cosr_cosp)
+
+        sinp = np.sqrt(1 + 2 * (quaternion[0] * quaternion[2] - quaternion[3] * quaternion[1]))
+        cosp = np.sqrt(1 - sinp ** 2)
+        pitch = 2 * np.arctan2(sinp, cosp) - np.pi / 2
+
+        siny_cosp = 2 * (quaternion[0] * quaternion[3] + quaternion[1] * quaternion[2])
+        cosy_cosp = 1 - 2 * (quaternion[2] ** 2 + quaternion[3] ** 2)
+        yaw = np.arctan2(siny_cosp, cosy_cosp)
+
+        return np.array([roll, pitch, yaw])
+
+    simulation_rpy_data = np.asarray(list(map(quaternion_to_rpy, simulation_quaternion_data)))
+    hardware_rpy_data = np.asarray(list(map(quaternion_to_rpy, hardware_quaternion_data)))
+
     # Plot and compare Accelerometer Data:
     fig, axs = plt.subplots(3, 1, figsize=(10, 15))
     axs[0].plot(simulation_accelerometer_data[:, 0], label='Simulation Accelerometer X')
@@ -125,6 +144,30 @@ def main(argv=None):
 
     plt.tight_layout()
     plt.savefig('data/quaternion_comparison.pdf')
+
+    # Plot and compare RPY Data:
+    fig, axs = plt.subplots(3, 1, figsize=(10, 15))
+    axs[0].plot(simulation_rpy_data[:, 0], label='Simulation RPY Roll')
+    axs[0].plot(hardware_rpy_data[:, 0], label='Hardware RPY Roll')
+    axs[0].set_title('RPY Roll Data')
+    axs[0].set_ylabel('Roll (rad)')
+    axs[0].legend()
+    
+    axs[1].plot(simulation_rpy_data[:, 1], label='Simulation RPY Pitch')
+    axs[1].plot(hardware_rpy_data[:, 1], label='Hardware RPY Pitch')
+    axs[1].set_title('RPY Pitch Data')
+    axs[1].set_ylabel('Pitch (rad)')
+    axs[1].legend()
+
+    axs[2].plot(simulation_rpy_data[:, 2], label='Simulation RPY Yaw')
+    axs[2].plot(hardware_rpy_data[:, 2], label='Hardware RPY Yaw')
+    axs[2].set_title('RPY Yaw Data')
+    axs[2].set_xlabel('Time')
+    axs[2].set_ylabel('Yaw (rad)')
+    axs[2].legend()
+
+    plt.tight_layout()
+    plt.savefig('data/rpy_comparison.pdf')
 
     # Comparison Plot:
     fig, axs = plt.subplots(3, 1, figsize=(10, 15))
