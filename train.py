@@ -47,11 +47,11 @@ def main(argv=None):
     # Config:
     reward_config = unitree_go2.RewardConfig(
         # Rewards:
-        tracking_height=1.5,
+        tracking_height=1.0,
         # Orientation Regularization Terms:
         angular_xy_velocity=-0.05,
         orientation_regularization=-5.0,
-        pose_regularization=0.5,
+        pose_regularization=0.1,
         # Energy Regularization Terms:
         torque=-2e-4,
         action_rate=-0.1,
@@ -145,8 +145,8 @@ def main(argv=None):
         gae_lambda=loss_metadata.gae_lambda,
         normalize_advantages=loss_metadata.normalize_advantages,
     )
-    env = unitree_go2.UnitreeGo2Env(config=reward_config)
-    eval_env = unitree_go2.UnitreeGo2Env(config=reward_config)
+    env = unitree_go2.UnitreeGo2Env(config=reward_config, observation_model='gyroscope_gravity')
+    eval_env = unitree_go2.UnitreeGo2Env(config=reward_config, observation_model='gyroscope_gravity')
 
     def progress_fn(iteration, num_steps, metrics):
         print(

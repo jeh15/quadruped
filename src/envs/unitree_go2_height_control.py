@@ -56,6 +56,9 @@ class RewardConfig:
 class NoiseConfig:
     joint_position: float = 0.05
     joint_velocity: float = 1.5
+    gyroscope: float = 0.2
+    gravity_vector: float = 0.05
+    accelerometer: float = 0.5
 
 
 @flax.struct.dataclass
@@ -192,6 +195,8 @@ class UnitreeGo2Env(PipelineEnv):
 
         self.noise_config = NoiseConfig()
         self.disturbance_config = DisturbanceConfig()
+
+        self.observation_model = observation_model
 
         self.floor_geom_idx = self.sys.mj_model.geom('floor').id
         self.base_idx = mujoco.mj_name2id(
