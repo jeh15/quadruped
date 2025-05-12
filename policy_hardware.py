@@ -13,8 +13,9 @@ import numpy.typing as npt
 
 from unitree_api_bindings import unitree_api
 
-# from src.envs import sinusoid_test as unitree_go2
-from src.envs import unitree_go2_v13 as unitree_go2
+# from src.envs import feet_tracking as unitree_go2
+# from src.envs import unitree_go2_mujocoplayground as unitree_go2
+from src.envs import unitree_go2_height_control as unitree_go2
 from src.algorithms.ppo.load_utilities import load_policy
 
 jax.config.update("jax_enable_x64", True)
@@ -45,7 +46,7 @@ def main(argv=None):
     logging.set_verbosity(logging.INFO)
 
     # Load from Env:
-    env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx.xml')
+    env = unitree_go2.UnitreeGo2Env()
 
     control_rate = 0.02
     control_rate_ns = 2e7
@@ -188,13 +189,13 @@ def main(argv=None):
                 damping_control_mode = True
                 policy_control_mode = False
 
-            # Feet Tracking Policy:
-            # command = -1 * joystick.get_axis(1)
+            # Feet Tracking and Height Control Policy:
+            command = -1 * joystick.get_axis(1)
 
             # Walking Policy:
-            forward_command = -1 * joystick.get_axis(1)
-            lateral_command = -1 * joystick.get_axis(0)
-            rotation_command = -1 * joystick.get_axis(2)
+            # forward_command = -1 * joystick.get_axis(1)
+            # lateral_command = -1 * joystick.get_axis(0)
+            # rotation_command = -1 * joystick.get_axis(2)
 
         # Foot Tracking Policy:
         # command = np.array([
@@ -205,12 +206,21 @@ def main(argv=None):
         # command = 0.1 * command
         # command = np.clip(command, -0.1, 0.1)
 
-        # Walking Policy:
+        # Height Control Policy:
         command = np.array([
-            forward_command, lateral_command, rotation_command,
+            command
         ])
         command = np.where(np.abs(command) < 0.1, 0.0, command)
-        command = np.clip(command, -0.75, 0.75)
+        command = np.clip(command, -1.0, 1.0)
+        command = 0.07 + (command - -1) * (0.35 - 0.07) / (1 - -1)
+        command = np.clip(command, 0.07, 0.35)
+
+        # Walking Policy:
+        # command = np.array([
+        #     forward_command, lateral_command, rotation_command,
+        # ])
+        # command = np.where(np.abs(command) < 0.1, 0.0, command)
+        # command = np.clip(command, -0.75, 0.75)
 
         key, subkey = jax.random.split(subkey)
         imu_state = unitree_driver.get_imu_state()

@@ -783,6 +783,7 @@ class UnitreeGo2Env(PipelineEnv):
     
     def hardware_observation(
         self,
+        imu_state: Any,
         motor_state: Any,
         command: np.ndarray,
         previous_action: np.ndarray,
