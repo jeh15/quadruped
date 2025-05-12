@@ -825,12 +825,44 @@ class UnitreeGo2Env(PipelineEnv):
         command: np.ndarray,
         previous_action: np.ndarray,
         add_noise: bool = True,
-    ) -> np.ndarray:
+    ) -> Dict[str, np.ndarray]:
         # Numpy implementation of the observation function:
+        def rotate(vec: np.ndarray, quat: np.ndarray) -> np.ndarray:
+            if len(vec.shape) != 1:
+                raise ValueError('vec must have no batch dimensions.')
+            s, u = quat[0], quat[1:]
+            r = 2 * (np.dot(u, vec) * u) + (s * s - np.dot(u, u)) * vec
+            r = r + 2 * s * np.cross(u, vec)
+            return r
+
+        def quat_inv(q: np.ndarray) -> np.ndarray:
+            return q * np.array([1, -1, -1, -1])
+
+        base_w = mj_data.qpos[3:7]
+        q = mj_data.qpos[7:]
+        qd = mj_data.qvel[6:]
+
+        gyroscope = self.get_gyro(mj_data)
+
+        inverse_trunk_rotation = quat_inv(base_w)
+        projected_gravity = rotate(
+            jnp.array([0, 0, -1]), inverse_trunk_rotation,
+        )
+
         q = mj_data.qpos[7:]
         qd = mj_data.qvel[6:]
 
         if add_noise:
+            gyroscope = gyroscope + np.random.uniform(
+                low=-self.noise_config.gyroscope,
+                high=self.noise_config.gyroscope,
+                size=gyroscope.shape,
+            )
+            projected_gravity = projected_gravity + np.random.uniform(
+                low=-self.noise_config.gravity_vector,
+                high=self.noise_config.gravity_vector,
+                size=projected_gravity.shape,
+            )
             q = q + np.random.uniform(
                 low=-self.noise_config.joint_position,
                 high=self.noise_config.joint_position,
@@ -842,12 +874,42 @@ class UnitreeGo2Env(PipelineEnv):
                 size=qd.shape,
             )
 
-        observation = np.concatenate([
-            q - self.default_ctrl,
-            qd,
-            previous_action,
-            command,
-        ])
+        if self.observation_model == 'default':
+            observation = np.concatenate([
+                q - self.default_ctrl,
+                qd,
+                previous_action,
+                command,
+            ])
+        elif self.observation_model == 'gyroscope':
+            observation = np.concatenate([
+                gyroscope,
+                q - self.default_ctrl,
+                qd,
+                previous_action,
+                command,
+            ])
+        elif self.observation_model == 'gravity':
+            observation = np.concatenate([
+                gravity,
+                q - self.default_ctrl,
+                qd,
+                previous_action,
+                command,
+            ])
+        elif self.observation_model == 'gyroscope_gravity':
+            observation = np.concatenate([
+                gyroscope,
+                gravity,
+                q - self.default_ctrl,
+                qd,
+                previous_action,
+                command,
+            ])
+        else:
+            return NotImplementedError(
+                f"Observation model {self.observation_model} not implemented."
+            )
 
         return {
             'state': observation,
@@ -860,22 +922,50 @@ class UnitreeGo2Env(PipelineEnv):
         motor_state: Any,
         command: np.ndarray,
         previous_action: np.ndarray,
-    ) -> np.ndarray:
-        # Numpy implementation of the observation function:
+    ) -> Dict[str, np.ndarray]:
         # Set to Correct Data Type:
         joint_positions = np.asarray(motor_state.q, dtype=np.float32)
         joint_velocities = np.asarray(motor_state.qd, dtype=np.float32)
+        gyroscope = np.asarray(imu_state.gyro, dtype=np.float32)
+        gravity = np.asarray(imu_state.gravity, dtype=np.float32)
 
-        # Cast to float64:
-        joint_positions = joint_positions.astype(np.float64)
-        joint_velocities = joint_velocities.astype(np.float64)
 
-        observation = np.concatenate([
-            joint_positions - self.default_ctrl,
-            joint_velocities,
-            previous_action,
-            command,
-        ])
+        if self.observation_model == 'default':
+            observation = np.concatenate([
+                joint_positions - self.default_ctrl,
+                joint_velocities,
+                previous_action,
+                command,
+            ])
+        elif self.observation_model == 'gyroscope':
+            observation = np.concatenate([
+                gyroscope,
+                joint_positions - self.default_ctrl,
+                joint_velocities,
+                previous_action,
+                command,
+            ])
+        elif self.observation_model == 'gravity':
+            observation = np.concatenate([
+                gravity,
+                joint_positions - self.default_ctrl,
+                joint_velocities,
+                previous_action,
+                command,
+            ])
+        elif self.observation_model == 'gyroscope_gravity':
+            observation = np.concatenate([
+                gyroscope,
+                gravity,
+                joint_positions - self.default_ctrl,
+                joint_velocities,
+                previous_action,
+                command,
+            ])
+        else:
+            return NotImplementedError(
+                f"Observation model {self.observation_model} not implemented."
+            )
 
         return {
             'state': observation,
