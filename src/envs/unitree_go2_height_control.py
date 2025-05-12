@@ -34,11 +34,11 @@ PRNGKey = jax.Array
 @flax.struct.dataclass
 class RewardConfig:
     # Rewards:
-    tracking_height: float = 1.5
+    tracking_height: float = 1.0
     # Orientation Regularization Terms:
     angular_xy_velocity: float = -0.05
     orientation_regularization: float = -5.0
-    pose_regularization: float = 0.5
+    pose_regularization: float = 0.1
     # Energy Regularization Terms:
     torque: float = -2e-4
     action_rate: float = -0.01
