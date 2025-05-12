@@ -936,12 +936,6 @@ class UnitreeGo2Env(PipelineEnv):
         joint_positions = np.asarray(motor_state.q, dtype=np.float32)
         joint_velocities = np.asarray(motor_state.qd, dtype=np.float32)
 
-        # Cast to float64:
-        base_rotation = base_rotation.astype(np.float64)
-        gyroscope = gyroscope.astype(np.float64)
-        joint_positions = joint_positions.astype(np.float64)
-        joint_velocities = joint_velocities.astype(np.float64)
-
         # Calculate Body frame Yaw Rate and Projected Gravity:
         inverse_base_rotation = quat_inv(base_rotation)
         projected_gravity = rotate(
