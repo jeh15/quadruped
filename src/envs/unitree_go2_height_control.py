@@ -155,7 +155,7 @@ class UnitreeGo2Env(PipelineEnv):
 
     def __init__(
         self,
-        filename: str = 'unitree_go2/scene_mjx contact.xml',
+        filename: str = 'unitree_go2/scene_mjx_contact.xml',
         config: RewardConfig = RewardConfig(),
         action_scale: float = 0.3,
         kick_vel: float = 0.05,
@@ -203,24 +203,15 @@ class UnitreeGo2Env(PipelineEnv):
         self.init_qd = jnp.zeros(sys.nv)
         self.default_pose = jnp.array(sys.mj_model.keyframe('home').qpos[7:])
         self.default_ctrl = jnp.array(sys.mj_model.keyframe('home').ctrl)
-        self.initial_qpos = {
-            'home': jnp.array(sys.mj_model.keyframe('home').qpos),
-            'crouch': jnp.array(sys.mj_model.keyframe('crouch').qpos),
-            'prone_1': jnp.array(sys.mj_model.keyframe('prone_1').qpos),
-            'prone_2': jnp.array(sys.mj_model.keyframe('prone_2').qpos),
-            'prone_3': jnp.array(sys.mj_model.keyframe('prone_3').qpos),
-            'tall_1': jnp.array(sys.mj_model.keyframe('tall_1').qpos),
-            'tall_2': jnp.array(sys.mj_model.keyframe('tall_2').qpos),
-        }
-        self.initial_qpos_names = [
-            "home",
-            "crouch",
-            "prone_1",
-            "prone_2",
-            "prone_3",
-            "tall_1",
-            "tall_2",
-        ]
+        self.initial_qpos = jnp.array([
+            jnp.array(sys.mj_model.keyframe('home').qpos),
+            jnp.array(sys.mj_model.keyframe('crouch').qpos),
+            jnp.array(sys.mj_model.keyframe('prone_1').qpos),
+            jnp.array(sys.mj_model.keyframe('prone_2').qpos),
+            jnp.array(sys.mj_model.keyframe('prone_3').qpos),
+            jnp.array(sys.mj_model.keyframe('tall_1').qpos),
+            jnp.array(sys.mj_model.keyframe('tall_2').qpos),
+        ])
 
         self.joint_lb = jnp.array([
             -1.0472, -1.5708, -2.7227,
@@ -307,10 +298,9 @@ class UnitreeGo2Env(PipelineEnv):
     def reset(self, rng: PRNGKey) -> State:  # pytype: disable=signature-mismatch
         # Randomly sample the initial state:
         rng, key = jax.random.split(rng)
-        qpos_id = jax.random.randint(
-            key, shape=(), minval=0, maxval=len(self.initial_qpos),
+        qpos = jax.random.choice(
+            key, self.initial_qpos,
         )
-        qpos = self.initial_qpos[self.initial_qpos_names[qpos_id]]
 
         # Initial Position:
         rng, key = jax.random.split(rng)
