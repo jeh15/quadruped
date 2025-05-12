@@ -1,5 +1,6 @@
 import os
 from absl import app
+import pickle
 import dataclasses as dataclass
 
 import jax
@@ -34,19 +35,17 @@ def main(argv=None):
 
     # Load Model for Simulation:
     model = env.sys.mj_model
-    data = mujoco.mjData(model)
+    data = mujoco.MjData(model)
     mujoco.mj_resetDataKeyframe(model, data, 3)
     mujoco.mj_forward(model, data)
 
     mjx_model = mjx.put_model(model)
-    mjx_data = mjx.put_data(data)
+    mjx_data = mjx.put_data(model, data)
 
     step_fn = jax.jit(mjx.step)
 
     control_rate = 0.02
     num_steps = int(control_rate / model.opt.timestep)
-
-    key = jax.random.key(0)
 
     imu_history = []
     motor_history = []
@@ -58,7 +57,7 @@ def main(argv=None):
         # Get IMU Data:
         imu_data = IMUState(
             accelerometer=env.get_accelerometer(mjx_data),
-            gyroscope=env.get_gyroscope(mjx_data),
+            gyroscope=env.get_gyro(mjx_data),
             quaternion=mjx_data.qpos[3:7],
         )
         imu_history.append(imu_data)
@@ -71,26 +70,26 @@ def main(argv=None):
         )
         motor_history.append(motor_data)
 
-        # Pickle Data:
-        data_directory = os.path.join(
-            os.path.dirname(__file__),
-            'data',
-        )
-        os.makedirs(data_directory, exist_ok=True)
-        imu_data_file = os.path.join(
-            data_directory,
-            'simulation_imu_data.pkl',
-        )
-        motor_data_file = os.path.join(
-            data_directory,
-            'simulation_motor_data.pkl',
-        )
+    # Pickle Data:
+    data_directory = os.path.join(
+        os.path.dirname(__file__),
+        'data',
+    )
+    os.makedirs(data_directory, exist_ok=True)
+    imu_data_file = os.path.join(
+        data_directory,
+        'simulation_imu_data.pkl',
+    )
+    motor_data_file = os.path.join(
+        data_directory,
+        'simulation_motor_data.pkl',
+    )
 
-        with open(imu_data_file, 'wb') as f:
-            pickle.dump(imu_history, f)
+    with open(imu_data_file, 'wb') as f:
+        pickle.dump(imu_history, f)
 
-        with open(motor_data_file, 'wb') as f:
-            pickle.dump(motor_history, f)
+    with open(motor_data_file, 'wb') as f:
+        pickle.dump(motor_history, f)
 
 
 if __name__ == '__main__':
