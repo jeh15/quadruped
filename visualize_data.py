@@ -8,6 +8,9 @@ import numpy.typing as npt
 
 import matplotlib.pyplot as plt
 
+from unitree_api_bindings import unitree_api
+
+
 @dataclasses.dataclass
 class IMUState:
     accelerometer: npt.NDArray[np.float64]
@@ -46,6 +49,65 @@ def main(argv=None):
     hardware_accelerometer_data = np.asarray(list(map(lambda x: x.accelerometer, hardware_data)))
     hardware_gyroscope_data = np.asarray(list(map(lambda x: x.groscope, hardware_data)))
     hardware_quaternion_data = np.asarray(list(map(lambda x: x.quaternion, hardware_data)))
+
+    # Plot Data:
+    fig, axs = plt.subplots(3, 1, figsize=(10, 15))
+    axs[0].plot(simulation_accelerometer_data, label='Simulation Accelerometer')
+    axs[0].plot(hardware_accelerometer_data, label='Hardware Accelerometer')
+    axs[0].set_title('Accelerometer Data')
+    axs[0].set_ylabel('Acceleration (m/s^2)')
+    axs[0].legend()
+
+    axs[1].plot(simulation_gyroscope_data, label='Simulation Gyroscope')
+    axs[1].plot(hardware_gyroscope_data, label='Hardware Gyroscope')
+    axs[1].set_title('Gyroscope Data')
+    axs[1].set_ylabel('Angular Velocity (rad/s)')
+    axs[1].legend()
+
+    axs[2].plot(simulation_quaternion_data, label='Simulation Quaternion')
+    axs[2].plot(hardware_quaternion_data, label='Hardware Quaternion')
+    axs[2].set_title('Quaternion Data')
+    axs[2].set_xlabel('Time')
+    axs[2].set_ylabel('Quaternion')
+    axs[2].legend()
+    
+    plt.tight_layout()
+    plt.show()
+    plt.savefig('data/imu_comparison.pdf')
+
+    # Plot Only Simulation Data:
+    fig, axs = plt.subplots(3, 1, figsize=(10, 15))
+    axs[0].plot(simulation_accelerometer_data)
+    axs[0].set_title('Simulation Accelerometer Data')
+    axs[0].set_ylabel('Acceleration (m/s^2)')
+    axs[1].plot(simulation_gyroscope_data)
+    axs[1].set_title('Simulation Gyroscope Data')
+    axs[1].set_ylabel('Angular Velocity (rad/s)')
+    axs[2].plot(simulation_quaternion_data)
+    axs[2].set_title('Simulation Quaternion Data')
+    axs[2].set_xlabel('Time')
+    axs[2].set_ylabel('Quaternion')
+
+    plt.tight_layout()
+    plt.show()
+    plt.savefig('data/simulation_imu_data.pdf')
+
+    # Plot Only Hardware Data:
+    fig, axs = plt.subplots(3, 1, figsize=(10, 15))
+    axs[0].plot(hardware_accelerometer_data)
+    axs[0].set_title('Hardware Accelerometer Data')
+    axs[0].set_ylabel('Acceleration (m/s^2)')
+    axs[1].plot(hardware_gyroscope_data)
+    axs[1].set_title('Hardware Gyroscope Data')
+    axs[1].set_ylabel('Angular Velocity (rad/s)')
+    axs[2].plot(hardware_quaternion_data)
+    axs[2].set_title('Hardware Quaternion Data')
+    axs[2].set_xlabel('Time')
+    axs[2].set_ylabel('Quaternion')
+
+    plt.tight_layout()
+    plt.show()
+    plt.savefig('data/hardware_imu_data.pdf')
 
 
 if __name__ == "__main__":
