@@ -891,7 +891,7 @@ class UnitreeGo2Env(PipelineEnv):
             ])
         elif self.observation_model == 'gravity':
             observation = np.concatenate([
-                gravity,
+                projected_gravity,
                 q - self.default_ctrl,
                 qd,
                 previous_action,
@@ -900,7 +900,7 @@ class UnitreeGo2Env(PipelineEnv):
         elif self.observation_model == 'gyroscope_gravity':
             observation = np.concatenate([
                 gyroscope,
-                gravity,
+                projected_gravity,
                 q - self.default_ctrl,
                 qd,
                 previous_action,
@@ -923,12 +923,27 @@ class UnitreeGo2Env(PipelineEnv):
         command: np.ndarray,
         previous_action: np.ndarray,
     ) -> Dict[str, np.ndarray]:
+        def rotate(vec: np.ndarray, quat: np.ndarray) -> np.ndarray:
+            if len(vec.shape) != 1:
+                raise ValueError('vec must have no batch dimensions.')
+            s, u = quat[0], quat[1:]
+            r = 2 * (np.dot(u, vec) * u) + (s * s - np.dot(u, u)) * vec
+            r = r + 2 * s * np.cross(u, vec)
+            return r
+
+        def quat_inv(q: np.ndarray) -> np.ndarray:
+            return q * np.array([1, -1, -1, -1])
         # Set to Correct Data Type:
         joint_positions = np.asarray(motor_state.q, dtype=np.float32)
         joint_velocities = np.asarray(motor_state.qd, dtype=np.float32)
         gyroscope = np.asarray(imu_state.gyro, dtype=np.float32)
-        gravity = np.asarray(imu_state.gravity, dtype=np.float32)
+        base_rotation = np.asarray(imu_state.quaternion, dtype=np.float32)
 
+        inverse_base_rotation = quat_inv(base_rotation)
+        projected_gravity = rotate(
+            np.array([0.0, 0.0, -1.0]),
+            inverse_base_rotation,
+        )
 
         if self.observation_model == 'default':
             observation = np.concatenate([
@@ -947,7 +962,7 @@ class UnitreeGo2Env(PipelineEnv):
             ])
         elif self.observation_model == 'gravity':
             observation = np.concatenate([
-                gravity,
+                projected_gravity,
                 joint_positions - self.default_ctrl,
                 joint_velocities,
                 previous_action,
@@ -956,7 +971,7 @@ class UnitreeGo2Env(PipelineEnv):
         elif self.observation_model == 'gyroscope_gravity':
             observation = np.concatenate([
                 gyroscope,
-                gravity,
+                projected_gravity,
                 joint_positions - self.default_ctrl,
                 joint_velocities,
                 previous_action,
