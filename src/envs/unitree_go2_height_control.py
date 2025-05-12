@@ -159,6 +159,7 @@ class UnitreeGo2Env(PipelineEnv):
         config: RewardConfig = RewardConfig(),
         action_scale: float = 0.3,
         kick_vel: float = 0.05,
+        low_friction_model: bool = False,
         **kwargs,
     ):
         filename = f'models/{filename}'
@@ -173,6 +174,12 @@ class UnitreeGo2Env(PipelineEnv):
         sys = mjcf.load(self.filepath)
         self.step_dt = 0.02
         sys = sys.tree_replace({'opt.timestep': 0.004})
+
+        if low_friction_model:
+            sys = sys.tree_replace({
+                'dof_frictionloss': 0.01 * jnp.ones_like(sys.dof_frictionloss),
+                'dof_armature': 0.005 * jnp.ones_like(sys.dof_armature),
+            })
 
         n_frames = kwargs.pop('n_frames', int(self.step_dt / sys.opt.timestep))
         super().__init__(sys, backend='mjx', n_frames=n_frames)
