@@ -1,10 +1,26 @@
 from absl import app
 import os
+import dataclasses
 import pickle
 
 import numpy as np
+import numpy.typing as npt
 
 import matplotlib.pyplot as plt
+
+@dataclasses.dataclass
+class IMUState:
+    accelerometer: npt.NDArray[np.float64]
+    gyroscope: npt.NDArray[np.float64]
+    quaternion: npt.NDArray[np.float64]
+
+
+@dataclasses.dataclass
+class MotorState:
+    joint_positions: npt.NDArray[np.float64]
+    joint_velocities: npt.NDArray[np.float64]
+    joint_torques: npt.NDArray[np.float64]
+
 
 def main(argv=None):
     # Load the data
@@ -23,10 +39,14 @@ def main(argv=None):
         hardware_data = pickle.load(file)
 
     # Extract the data
-    simulation_accelerometer_data = simulation_data.accelerometer
-    simulation_gyroscope_data = simulation_data.gyroscope
-    simulation_quaternion_data = simulation_data.quaternion
+    simulation_accelerometer_data = np.asarray(list(map(lambda x: x.accelerometer, simulation_data)))
+    simulation_gyroscope_data = np.asarray(list(map(lambda x: x.groscope, simulation_data)))
+    simulation_quaternion_data = np.asarray(list(map(lambda x: x.quaternion, simulation_data)))
 
-    hardware_accelerometer_data = hardware_data.accelerometer
-    hardware_gyroscope_data = hardware_data.gyroscope
-    hardware_quaternion_data = hardware_data.quaternion
+    hardware_accelerometer_data = np.asarray(list(map(lambda x: x.accelerometer, hardware_data)))
+    hardware_gyroscope_data = np.asarray(list(map(lambda x: x.groscope, hardware_data)))
+    hardware_quaternion_data = np.asarray(list(map(lambda x: x.quaternion, hardware_data)))
+
+
+if __name__ == "__main__":
+    app.run(main)

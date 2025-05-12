@@ -1,7 +1,7 @@
 import os
 from absl import app
 import pickle
-import dataclasses as dataclass
+import dataclasses
 
 import jax
 import numpy as np
@@ -15,14 +15,14 @@ from src.envs import unitree_go2_height_control as unitree_go2
 jax.config.update("jax_enable_x64", True)
 
 
-@dataclass.dataclass
+@dataclasses.dataclass
 class IMUState:
     accelerometer: npt.NDArray[np.float64]
     gyroscope: npt.NDArray[np.float64]
     quaternion: npt.NDArray[np.float64]
 
 
-@dataclass.dataclass
+@dataclasses.dataclass
 class MotorState:
     joint_positions: npt.NDArray[np.float64]
     joint_velocities: npt.NDArray[np.float64]
