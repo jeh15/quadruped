@@ -160,6 +160,7 @@ class UnitreeGo2Env(PipelineEnv):
         action_scale: float = 0.3,
         kick_vel: float = 0.05,
         low_friction_model: bool = False,
+        observation_model: str = 'default',
         **kwargs,
     ):
         filename = f'models/{filename}'
@@ -284,8 +285,22 @@ class UnitreeGo2Env(PipelineEnv):
 
         # Constants:
         self.foot_radius = 0.022
-        self.num_observations = 37
-        self.num_privileged_observations = 104
+
+        # Observation Size:
+        if self.observation_model == 'default':
+            self.num_observations = 37
+        elif self.observation_model == 'gyroscope':
+            self.num_observations = 40
+        elif self.observation_model == 'gravity':
+            self.num_observations = 40
+        elif self.observation_model == 'gyroscope_gravity':
+            self.num_observations = 43
+        else:
+            return NotImplementedError(
+                f"Observation model {self.observation_model} not implemented."
+            )
+        
+        self.num_privileged_observations = self.num_observations + 67
 
     def sample_command(self, rng: jax.Array) -> jax.Array:
         command_range = [0.078, 0.35]
@@ -517,6 +532,28 @@ class UnitreeGo2Env(PipelineEnv):
         q = pipeline_state.q[7:]
         qd = pipeline_state.qd[6:]
 
+        # Gyroscope Noise:
+        gyroscope = self.get_gyro(pipeline_state)
+        state_info['rng'], noise_key = jax.random.split(state_info['rng'])
+        gyroscope_noise = jax.random.uniform(
+            noise_key,
+            shape=gyroscope.shape,
+            minval=-self.noise_config.gyroscope,
+            maxval=self.noise_config.gyroscope,
+        )
+        noisy_angular_rate = gyroscope + gyroscope_noise
+
+        # Gravity noise:
+        projected_gravity = self.get_gravity(pipeline_state)
+        state_info['rng'], noise_key = jax.random.split(state_info['rng'])
+        gravity_noise = jax.random.uniform(
+            noise_key,
+            shape=projected_gravity.shape,
+            minval=-self.noise_config.gravity_vector,
+            maxval=self.noise_config.gravity_vector,
+        )
+        noisy_projected_gravity = projected_gravity + gravity_noise
+
         # Joint position noise:
         state_info['rng'], noise_key = jax.random.split(state_info['rng'])
         joint_position_noise = jax.random.uniform(
@@ -537,16 +574,47 @@ class UnitreeGo2Env(PipelineEnv):
         )
         noisy_joint_velocities = qd + joint_velocity_noise
 
-        observation = jnp.concatenate([
-            noisy_joint_positions - self.default_pose,  # 12
-            noisy_joint_velocities,                     # 12
-            state_info['previous_action'],              # 12
-            state_info['command'],                      # 1
-        ])
-        # Size: 37
+        if self.observation_model == 'default':
+            observation = jnp.concatenate([
+                noisy_joint_positions - self.default_pose,  # 12
+                noisy_joint_velocities,                     # 12
+                state_info['previous_action'],              # 12
+                state_info['command'],                      # 1
+            ])
+            # Size: 37
+        elif self.observation_model == 'gyroscope':
+            observation = jnp.concatenate([
+                noisy_angular_rate,                         # 3
+                noisy_joint_positions - self.default_pose,  # 12
+                noisy_joint_velocities,                     # 12
+                state_info['previous_action'],              # 12
+                state_info['command'],                      # 1
+            ])
+            # Size: 40
+        elif self.observation_model == 'gravity':
+            observation = jnp.concatenate([
+                noisy_projected_gravity,                    # 3
+                noisy_joint_positions - self.default_pose,  # 12
+                noisy_joint_velocities,                     # 12
+                state_info['previous_action'],              # 12
+                state_info['command'],                      # 1
+            ])
+            # Size: 40
+        elif self.observation_model == 'gyroscope_gravity':
+            observation = jnp.concatenate([
+                noisy_angular_rate,                         # 3s
+                noisy_projected_gravity,                    # 3
+                noisy_joint_positions - self.default_pose,  # 12
+                noisy_joint_velocities,                     # 12
+                state_info['previous_action'],              # 12
+                state_info['command'],                      # 1
+            ])
+            # Size: 43
+        else:
+            return NotImplementedError(
+                f"Observation model {self.observation_model} not implemented."
+            )
 
-        gyroscope = self.get_gyro(pipeline_state)# Gravity noise:
-        projected_gravity = self.get_gravity(pipeline_state)
         accelerometer = self.get_accelerometer(pipeline_state)
         linear_velocity = self.get_local_linvel(pipeline_state)
         global_angular_velocity = self.get_global_angvel(pipeline_state)
@@ -554,7 +622,7 @@ class UnitreeGo2Env(PipelineEnv):
         feet_velocity = self.get_feet_velocity(pipeline_state).ravel()
 
         privileged_observation = jnp.concatenate([
-            observation,                                                                                # 37
+            observation,                                                                                # 37, 40, or 43
             accelerometer,                                                                              # 3
             gyroscope,                                                                                  # 3
             projected_gravity,                                                                          # 3
@@ -569,7 +637,7 @@ class UnitreeGo2Env(PipelineEnv):
                 state_info['steps_since_last_disturbance'] >= state_info['steps_until_next_disturbance']
             ]),                                                                                         # 1
         ])
-        # Size: 104
+        # Size (Privileged Observations - 67): 104, 107, or 110
 
         return {
             'state': observation,
