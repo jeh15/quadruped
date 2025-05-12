@@ -155,7 +155,7 @@ class UnitreeGo2Env(PipelineEnv):
 
     def __init__(
         self,
-        filename: str = 'unitree_go2/scene_mjx_contact.xml',
+        filename: str = 'unitree_go2/scene_mjx contact.xml',
         config: RewardConfig = RewardConfig(),
         action_scale: float = 0.3,
         kick_vel: float = 0.05,
@@ -212,6 +212,15 @@ class UnitreeGo2Env(PipelineEnv):
             'tall_1': jnp.array(sys.mj_model.keyframe('tall_1').qpos),
             'tall_2': jnp.array(sys.mj_model.keyframe('tall_2').qpos),
         }
+        self.initial_qpos_names = [
+            "home",
+            "crouch",
+            "prone_1",
+            "prone_2",
+            "prone_3",
+            "tall_1",
+            "tall_2",
+        ]
 
         self.joint_lb = jnp.array([
             -1.0472, -1.5708, -2.7227,
@@ -293,18 +302,15 @@ class UnitreeGo2Env(PipelineEnv):
         command = jax.random.uniform(
             subkey, shape=(1,), minval=command_range[0], maxval=command_range[1],
         )
-        new_cmd = jnp.array([
-            command,
-        ])
-        return new_cmd
+        return command
 
     def reset(self, rng: PRNGKey) -> State:  # pytype: disable=signature-mismatch
         # Randomly sample the initial state:
         rng, key = jax.random.split(rng)
         qpos_id = jax.random.randint(
-            key, shape=(1,), minval=0, maxval=len(self.initial_qpos),
+            key, shape=(), minval=0, maxval=len(self.initial_qpos),
         )
-        qpos = self.initial_qpos[qpos_id]
+        qpos = self.initial_qpos[self.initial_qpos_names[qpos_id]]
 
         # Initial Position:
         rng, key = jax.random.split(rng)
@@ -787,7 +793,6 @@ class UnitreeGo2Env(PipelineEnv):
     
     def hardware_observation(
         self,
-        imu_state: Any,
         motor_state: Any,
         command: np.ndarray,
         previous_action: np.ndarray,
@@ -830,6 +835,8 @@ def main(argv=None):
     for i in range(num_steps):
         print(f"Step: {i}")
         state = step_fn(state, jnp.zeros_like(env.default_ctrl))
+        print(state.obs['state'].shape)
+        print(state.obs['privileged_state'].shape)
         states.append(state.pipeline_state)
 
     html_string = html.render(
