@@ -98,7 +98,7 @@ def main(argv=None):
         normalize_advantages=True,
     )
     training_metadata = checkpoint_utilities.training_metadata(
-        num_epochs=35,
+        num_epochs=50,
         num_training_steps=20,
         episode_length=1000,
         num_policy_steps=40,
@@ -113,7 +113,7 @@ def main(argv=None):
         num_minibatches=32,
         num_ppo_iterations=4,
         normalize_observations=True,
-        optimizer='optax.chain(optax.adaptive_grad_clip(clipping=0.01), optax.adam(3e-4),)',
+        optimizer='optax.adam(3e-4)',
     )
 
     # Start Wandb and save metadata:

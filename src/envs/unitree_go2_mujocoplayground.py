@@ -300,6 +300,7 @@ class UnitreeGo2Env(PipelineEnv):
         previous_command: jax.Array
     ) -> jax.Array:
         _, command_key, sample_key, continuation_key = jax.random.split(rng, 4)
+        
         new_cmd = jax.random.uniform(
             command_key, shape=(3,), minval=-self.command_config.command_range, maxval=self.command_config.command_range,
         )
@@ -310,6 +311,11 @@ class UnitreeGo2Env(PipelineEnv):
             continuation_key, p=0.5, shape=(3,),
         )
         command = previous_command - continuation_mask * (previous_command - new_cmd_mask * new_cmd)
+
+        # command = jax.random.uniform(
+        #     command_key, shape=(3,), minval=-self.command_config.command_range, maxval=self.command_config.command_range,
+        # )
+
         return command
 
     def reset(self, rng: PRNGKey) -> State:  # pytype: disable=signature-mismatch
@@ -384,6 +390,16 @@ class UnitreeGo2Env(PipelineEnv):
         steps_until_next_command = jnp.round(
             time_until_next_command / self.dt
         ).astype(jnp.int32)
+
+        # time_until_next_command = jax.random.uniform(
+        #     command_interval_key,
+        #     minval=2.0,
+        #     maxval=10.0,
+        # )
+        # steps_until_next_command = jnp.round(
+        #     time_until_next_command / self.dt
+        # ).astype(jnp.int32)
+
         command = jax.random.uniform(
             command_sample_key,
             shape=(3,),
@@ -446,11 +462,6 @@ class UnitreeGo2Env(PipelineEnv):
             state.pipeline_state, motor_targets,
         )
 
-        # Observation data:
-        observation = self.get_observation(
-            pipeline_state,
-            state.info,
-        )
         joint_angles = pipeline_state.q[7:]
         joint_velocities = pipeline_state.qd[6:]
 
@@ -467,6 +478,12 @@ class UnitreeGo2Env(PipelineEnv):
         foot_position_z = foot_position[..., -1]
         state.info['swing_peak'] = jnp.maximum(
             state.info['swing_peak'], foot_position_z,
+        )
+
+        # Observation data:
+        observation = self.get_observation(
+            pipeline_state,
+            state.info,
         )
 
         # Done if joint limits are reached or robot is falling:
@@ -556,6 +573,18 @@ class UnitreeGo2Env(PipelineEnv):
             ).astype(jnp.int32),
             state.info['steps_until_next_command'],
         )
+
+        # state.info['steps_until_next_command'] = jnp.where(
+        #     done | (state.info['steps_until_next_command'] <= 0),
+        #     jnp.round(
+        #         jax.random.uniform(
+        #             sample_key,
+        #             minval=2.0,
+        #             maxval=10.0,
+        #         ) / self.dt
+        #     ).astype(jnp.int32),
+        #     state.info['steps_until_next_command'],
+        # )
 
         # Proxy Metrics:
         state.metrics['total_distance'] = math.normalize(
