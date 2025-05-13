@@ -123,7 +123,11 @@ def train(
     )
 
     # vmap for multiple devices:
-    reset_fn = jax.jit(jax.vmap(env.reset))
+    if local_devices_to_use > 1:
+        reset_fn = jax.pmap(env.reset, axis_name=_PMAP_AXIS_NAME)
+    else:
+        reset_fn = jax.jit(jax.vmap(env.reset))
+
     envs_key = jax.random.split(env_key, num_envs // process_count)
     envs_key = jnp.reshape(
         envs_key, (local_devices_to_use, -1) + envs_key.shape[1:],
