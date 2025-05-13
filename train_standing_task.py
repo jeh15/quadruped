@@ -50,8 +50,8 @@ def main(argv=None):
         tracking_height=1.0,
         # Orientation Regularization Terms:
         angular_xy_velocity=-0.05,
-        orientation_regularization=-2.0,
-        pose_regularization=0.1,
+        orientation_regularization=-0.0,
+        pose_regularization=0.0,
         # Energy Regularization Terms:
         torque=-2e-4,
         action_rate=-0.1,

@@ -466,8 +466,6 @@ class UnitreeGo2Env(PipelineEnv):
 
         # Done if joint limits are reached or robot is falling:
         done = self.get_upvector(pipeline_state)[-1] < 0.0
-        done |= jnp.any(joint_angles < self.joint_lb)
-        done |= jnp.any(joint_angles > self.joint_ub)
 
         # Rewards:
         rewards = {
