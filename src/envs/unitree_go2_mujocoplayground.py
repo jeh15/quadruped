@@ -135,12 +135,19 @@ def domain_randomize(sys: System, rng: PRNGKey) -> tuple[System, System]:
         )
         body_mass = sys.body_mass.at[TORSO_BODY_ID].set(sys.body_mass[TORSO_BODY_ID] + delta)
 
+        # Joint reference randomization:
+        rng, key = jax.random.split(rng)
+        qpos0 = sys.qpos0
+        delta = jax.random.uniform(key, shape=(12,), minval=-0.05, maxval=0.05)
+        qpos0 = qpos0.at[7:].set(qpos0[7:] + delta)
+
         return (
             friction,
             dof_frictionloss,
             dof_armature,
             body_ipos,
             body_mass,
+            qpos0,
         )
 
     (
@@ -149,6 +156,7 @@ def domain_randomize(sys: System, rng: PRNGKey) -> tuple[System, System]:
         dof_armature,
         body_ipos,
         body_mass,
+        qpos0,
     ) = randomize_parameters(rng)
 
     in_axes = jax.tree.map(lambda x: None, sys)
@@ -158,6 +166,7 @@ def domain_randomize(sys: System, rng: PRNGKey) -> tuple[System, System]:
         'dof_armature': 0,
         'body_ipos': 0,
         'body_mass': 0,
+        'qpos0': 0,
     })
 
     sys = sys.tree_replace({
@@ -166,6 +175,7 @@ def domain_randomize(sys: System, rng: PRNGKey) -> tuple[System, System]:
         'dof_armature': dof_armature,
         'body_ipos': body_ipos,
         'body_mass': body_mass,
+        'qpos0': qpos0,
     })  # type: ignore
 
     return sys, in_axes

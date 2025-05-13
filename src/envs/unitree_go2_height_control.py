@@ -37,7 +37,7 @@ class RewardConfig:
     tracking_height: float = 1.0
     # Orientation Regularization Terms:
     angular_xy_velocity: float = -0.05
-    orientation_regularization: float = -5.0
+    orientation_regularization: float = -2.0
     pose_regularization: float = 0.1
     # Energy Regularization Terms:
     torque: float = -2e-4
@@ -117,12 +117,19 @@ def domain_randomize(sys: System, rng: PRNGKey) -> tuple[System, System]:
         )
         body_mass = sys.body_mass.at[TORSO_BODY_ID].set(sys.body_mass[TORSO_BODY_ID] + delta)
 
+        # Joint reference randomization:
+        rng, key = jax.random.split(rng)
+        qpos0 = sys.qpos0
+        delta = jax.random.uniform(key, shape=(12,), minval=-0.05, maxval=0.05)
+        qpos0 = qpos0.at[7:].set(qpos0[7:] + delta)
+
         return (
             friction,
             dof_frictionloss,
             dof_armature,
             body_ipos,
             body_mass,
+            qpos0,
         )
 
     (
@@ -131,6 +138,7 @@ def domain_randomize(sys: System, rng: PRNGKey) -> tuple[System, System]:
         dof_armature,
         body_ipos,
         body_mass,
+        qpos0,
     ) = randomize_parameters(rng)
 
     in_axes = jax.tree.map(lambda x: None, sys)
@@ -140,6 +148,7 @@ def domain_randomize(sys: System, rng: PRNGKey) -> tuple[System, System]:
         'dof_armature': 0,
         'body_ipos': 0,
         'body_mass': 0,
+        'qpos0': 0,
     })
 
     sys = sys.tree_replace({
@@ -148,6 +157,7 @@ def domain_randomize(sys: System, rng: PRNGKey) -> tuple[System, System]:
         'dof_armature': dof_armature,
         'body_ipos': body_ipos,
         'body_mass': body_mass,
+        'qpos0': qpos0,
     })  # type: ignore
 
     return sys, in_axes
@@ -288,9 +298,6 @@ class UnitreeGo2Env(PipelineEnv):
             "hl_global_linvel",
         ]
 
-        # Constants:
-        self.foot_radius = 0.022
-
         # Observation Size:
         if self.observation_model == 'default':
             self.num_observations = 37
@@ -308,7 +315,7 @@ class UnitreeGo2Env(PipelineEnv):
         self.num_privileged_observations = self.num_observations + 67
 
     def sample_command(self, rng: jax.Array) -> jax.Array:
-        command_range = [0.078, 0.35]
+        command_range = [0.0, 0.35]
         key, subkey = jax.random.split(rng)
         command = jax.random.uniform(
             subkey, shape=(1,), minval=command_range[0], maxval=command_range[1],
@@ -381,11 +388,22 @@ class UnitreeGo2Env(PipelineEnv):
             maxval=self.disturbance_config.magnitudes[1],
         )
 
+        # Command Sampling:
+        rng, command_interval_key, command_sample_key = jax.random.split(rng, 3)
+        time_until_next_command = 5.0 * jax.random.exponential(
+            command_interval_key
+        )
+        steps_until_next_command = jnp.round(
+            time_until_next_command / self.dt
+        ).astype(jnp.int32)
+        command = self.sample_command(command_sample_key)
+
         state_info = {
             'rng': rng,
             'previous_action': jnp.zeros(12),
             'previous_velocity': jnp.zeros(12),
-            'command': self.sample_command(key),
+            'command': command,
+            'steps_until_next_command': steps_until_next_command,
             'previous_contact': jnp.zeros(4, dtype=bool),
             'rewards': {k: 0.0 for k in self.reward_config.keys()},
             'steps_until_next_disturbance': steps_until_next_disturbance,
@@ -395,7 +413,6 @@ class UnitreeGo2Env(PipelineEnv):
             'disturbance_step': 0,
             'disturbance_magnitude': disturbance_magnitude,
             'disturbance_direction': jnp.array([0.0, 0.0, 0.0]),
-            'step': 0,
         }
 
         # Observation Tests:
@@ -421,7 +438,7 @@ class UnitreeGo2Env(PipelineEnv):
         return state
 
     def step(self, state: State, action: jax.Array) -> State:  # pytype: disable=signature-mismatch
-        rng, cmd_rng = jax.random.split(state.info['rng'], 2)
+        rng, cmd_key, sample_key = jax.random.split(state.info['rng'], 3)
 
         # Disturbance: (Force based)
         state = self.maybe_apply_perturbation(state)
@@ -433,10 +450,6 @@ class UnitreeGo2Env(PipelineEnv):
         )
 
         # Observation data:
-        observation = self.get_observation(
-            pipeline_state,
-            state.info,
-        )
         joint_angles = pipeline_state.q[7:]
         joint_velocities = pipeline_state.qd[6:]
 
@@ -445,6 +458,11 @@ class UnitreeGo2Env(PipelineEnv):
             collisions.geoms_colliding(pipeline_state, geom_id, self.floor_geom_idx)
             for geom_id in self.feet_geom_idx
         ])
+
+        observation = self.get_observation(
+            pipeline_state,
+            state.info,
+        )
 
         # Done if joint limits are reached or robot is falling:
         done = self.get_upvector(pipeline_state)[-1] < 0.0
@@ -474,12 +492,12 @@ class UnitreeGo2Env(PipelineEnv):
                 pipeline_state.qacc,
             ),
             'foot_slip': self._reward_foot_slip(
-                pipeline_state, contact, state.info['command'],
+                pipeline_state, contact,
             ),
             'termination': jnp.float64(
-                self._reward_termination(done, state.info['step'])
+                self._reward_termination(done)
             ) if jax.config.x64_enabled else jnp.float32(
-                self._reward_termination(done, state.info['step'])
+                self._reward_termination(done)
             ),
         }
         rewards = {
@@ -492,18 +510,23 @@ class UnitreeGo2Env(PipelineEnv):
         state.info['previous_velocity'] = joint_velocities
         state.info['previous_contact'] = contact
         state.info['rewards'] = rewards
-        state.info['step'] += 1
+        state.info['steps_until_next_command'] -= 1
         state.info['rng'] = rng
 
-        # Sample new command if more than 150 timesteps achieved
+        # Command Sampling:
         state.info['command'] = jnp.where(
-            state.info['step'] > 150,
-            self.sample_command(cmd_rng),
+            state.info['steps_until_next_command'] <= 0,
+            self.sample_command(cmd_key),
             state.info['command'],
         )
-        # Reset the step counter when done
-        state.info['step'] = jnp.where(
-            done | (state.info['step'] > 150), 0, state.info['step']
+
+        # Randomize Command Interval:
+        state.info['steps_until_next_command'] = jnp.where(
+            done | (state.info['steps_until_next_command'] <= 0),
+            jnp.round(
+                jax.random.exponential(sample_key) * 5.0 / self.dt
+            ).astype(jnp.int32),
+            state.info['steps_until_next_command'],
         )
 
         # Proxy Metrics:
@@ -671,7 +694,7 @@ class UnitreeGo2Env(PipelineEnv):
     def _reward_pose_regularization(
         self, qpos: jax.Array,
     ) -> jax.Array:
-        weight = jnp.array([1.0, 0.5, 0.1] * 4)
+        weight = jnp.array([1.0, 0.1, 0.1] * 4) / 12.0
         error = jnp.sum(jnp.square(qpos - self.default_pose) * weight)
         return jnp.exp(-error)
 
@@ -701,15 +724,15 @@ class UnitreeGo2Env(PipelineEnv):
         self,
         pipeline_state: base.State,
         contact: jax.Array,
-        commands: jax.Array,
     ) -> jax.Array:
-        feet_vel = self.get_feet_velocity(pipeline_state)
-        vel_xy = feet_vel[..., :2]
-        vel_xy_sq = jnp.sum(jnp.square(vel_xy), axis=-1)
-        return jnp.sum(vel_xy_sq * contact)
+        # Penalize foot slip
+        foot_velocity = self.get_feet_velocity(pipeline_state)
+        foot_velocity_xy = foot_velocity[..., :2]
+        velocity_xy_sq = jnp.sum(jnp.square(foot_velocity_xy), axis=-1)
+        return jnp.sum(velocity_xy_sq * contact)
 
-    def _reward_termination(self, done: jax.Array, step: jax.Array) -> jax.Array:
-        return done & (step < 150)
+    def _reward_termination(self, done: jax.Array) -> jax.Array:
+        return done
 
     @staticmethod
     def get_sensor_data(
