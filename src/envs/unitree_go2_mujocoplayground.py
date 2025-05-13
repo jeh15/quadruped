@@ -318,11 +318,12 @@ class UnitreeGo2Env(PipelineEnv):
         qpos = self.init_q.at[0:2].set(self.init_q[0:2] + delta)
 
         # Drop Probability:
+        rng, drop_key, sample_key = jax.random.split(rng, 3)
         drop_mask = jax.random.bernoulli(
-            key, p=0.1, shape=(1,),
+            drop_key, p=0.1, shape=(),
         )
         delta = jax.random.uniform(
-            key, shape=(1,), minval=0.0, maxval=0.2,
+            sample_key, shape=(), minval=0.0, maxval=0.2,
         )
         qpos = qpos.at[2].set(qpos[2] + delta * drop_mask)
 
@@ -419,7 +420,7 @@ class UnitreeGo2Env(PipelineEnv):
         for k in state_info['rewards']:
             metrics[k] = state_info['rewards'][k]
         metrics['total_distance'] = 0.0
-        metrics['swing_peak'] = jnp.zeros(4)
+        metrics['swing_peak'] = jnp.zeros(())
 
         state = State(
             pipeline_state=pipeline_state,
@@ -432,7 +433,7 @@ class UnitreeGo2Env(PipelineEnv):
         return state
 
     def step(self, state: State, action: jax.Array) -> State:  # pytype: disable=signature-mismatch
-        rng, cmd_key, sample_key = jax.random.split(state.info['rng'], 2)
+        rng, cmd_key, sample_key = jax.random.split(state.info['rng'], 3)
 
         # Disturbance: (Force based)
         state = self.maybe_apply_perturbation(state)
@@ -558,6 +559,9 @@ class UnitreeGo2Env(PipelineEnv):
         # Proxy Metrics:
         state.metrics['total_distance'] = math.normalize(
             pipeline_state.x.pos[self.base_idx - 1])[1]
+        state.metrics['swing_peak'] = jnp.mean(
+            state.info['swing_peak']
+        )
         state.metrics.update(state.info['rewards'])
 
         done = jnp.float64(done) if jax.config.x64_enabled else jnp.float32(done)

@@ -154,8 +154,8 @@ def main(argv=None):
         gae_lambda=loss_metadata.gae_lambda,
         normalize_advantages=loss_metadata.normalize_advantages,
     )
-    env = unitree_go2.UnitreeGo2Env(config=reward_config, observation_model='gyroscope_gravity')
-    eval_env = unitree_go2.UnitreeGo2Env(config=reward_config, observation_model='gyroscope_gravity')
+    env = unitree_go2.UnitreeGo2Env(config=reward_config)
+    eval_env = unitree_go2.UnitreeGo2Env(config=reward_config)
 
     def progress_fn(iteration, num_steps, metrics):
         print(
