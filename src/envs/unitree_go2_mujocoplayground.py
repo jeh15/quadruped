@@ -214,7 +214,7 @@ class UnitreeGo2Env(PipelineEnv):
         )
         self.base_link_mass = self.sys.mj_model.body_subtreemass[self.base_idx]
 
-        self._action_scale = action_scale
+        self.action_scale = action_scale
         self._kick_vel = kick_vel
         self.init_q = jnp.array(sys.mj_model.keyframe('home').qpos)
         self.init_qd = jnp.zeros(sys.nv)
@@ -441,7 +441,7 @@ class UnitreeGo2Env(PipelineEnv):
         state = self.maybe_apply_perturbation(state)
 
         # Physics step:
-        motor_targets = self.default_ctrl + action * self._action_scale
+        motor_targets = self.default_ctrl + action * self.action_scale
         pipeline_state = self.pipeline_step(
             state.pipeline_state, motor_targets,
         )
