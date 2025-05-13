@@ -10,7 +10,7 @@ import optax
 import wandb
 import orbax.checkpoint as ocp
 
-from src.envs import unitree_go2_height_control as unitree_go2
+from src.envs import unitree_go2_mujocoplayground as unitree_go2
 from src.algorithms.ppo import network_utilities as ppo_networks
 from src.algorithms.ppo.loss_utilities import loss_function
 from src.distribution_utilities import ParametricDistribution
@@ -47,22 +47,31 @@ def main(argv=None):
     # Config:
     reward_config = unitree_go2.RewardConfig(
         # Rewards:
-        tracking_height=1.0,
+        tracking_linear_velocity=1.0,
+        tracking_angular_velocity=0.5,
         # Orientation Regularization Terms:
-        angular_xy_velocity=-0.05,
         orientation_regularization=-5.0,
-        pose_regularization=0.1,
+        linear_z_velocity=-0.5,
+        angular_xy_velocity=-0.05,
+        pose_regularization=0.5,
         # Energy Regularization Terms:
         torque=-2e-4,
         action_rate=-0.1,
         mechanical_power=-1e-3,
         acceleration=-1e-4,
         # Auxilary Terms:
+        stand_still=-1.0,
         termination=-1.0,
-        # Gait Terms:
+        # Gait Reward Terms:
         foot_slip=-0.1,
+        air_time=0.1,
+        foot_clearance=-2.0,
+        foot_height=-0.2,
+        # Gait Hyperparameters:
+        target_air_time=0.1,
+        foot_height_target=0.1,
         # Hyperparameter for exponential kernel:
-        kernel_sigma=0.05,
+        kernel_sigma=0.25,
     )
 
     # Metadata:
@@ -89,7 +98,7 @@ def main(argv=None):
         normalize_advantages=True,
     )
     training_metadata = checkpoint_utilities.training_metadata(
-        num_epochs=25,
+        num_epochs=35,
         num_training_steps=20,
         episode_length=1000,
         num_policy_steps=40,
