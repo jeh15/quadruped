@@ -301,20 +301,20 @@ class UnitreeGo2Env(PipelineEnv):
     ) -> jax.Array:
         _, command_key, sample_key, continuation_key = jax.random.split(rng, 4)
         
-        # new_cmd = jax.random.uniform(
-        #     command_key, shape=(3,), minval=-self.command_config.command_range, maxval=self.command_config.command_range,
-        # )
-        # new_cmd_mask = jax.random.bernoulli(
-        #     sample_key, p=self.command_config.command_mask_probability, shape=(3,),
-        # )
-        # continuation_mask = jax.random.bernoulli(
-        #     continuation_key, p=0.5, shape=(3,),
-        # )
-        # command = previous_command - continuation_mask * (previous_command - new_cmd_mask * new_cmd)
-
-        command = jax.random.uniform(
+        new_cmd = jax.random.uniform(
             command_key, shape=(3,), minval=-self.command_config.command_range, maxval=self.command_config.command_range,
         )
+        new_cmd_mask = jax.random.bernoulli(
+            sample_key, p=self.command_config.command_mask_probability, shape=(3,),
+        )
+        continuation_mask = jax.random.bernoulli(
+            continuation_key, p=0.5, shape=(3,),
+        )
+        command = previous_command - continuation_mask * (previous_command - new_cmd_mask * new_cmd)
+
+        # command = jax.random.uniform(
+        #     command_key, shape=(3,), minval=-self.command_config.command_range, maxval=self.command_config.command_range,
+        # )
 
         return command
 
@@ -385,21 +385,21 @@ class UnitreeGo2Env(PipelineEnv):
         # Command Sampling:
         rng, command_interval_key, command_sample_key = jax.random.split(rng, 3)
         
-        # time_until_next_command = 5.0 * jax.random.exponential(
-        #     command_interval_key
-        # )
-        # steps_until_next_command = jnp.round(
-        #     time_until_next_command / self.dt
-        # ).astype(jnp.int32)
-
-        time_until_next_command = jax.random.uniform(
-            command_interval_key,
-            minval=2.0,
-            maxval=10.0,
+        time_until_next_command = 5.0 * jax.random.exponential(
+            command_interval_key
         )
         steps_until_next_command = jnp.round(
             time_until_next_command / self.dt
         ).astype(jnp.int32)
+
+        # time_until_next_command = jax.random.uniform(
+        #     command_interval_key,
+        #     minval=2.0,
+        #     maxval=10.0,
+        # )
+        # steps_until_next_command = jnp.round(
+        #     time_until_next_command / self.dt
+        # ).astype(jnp.int32)
 
         command = jax.random.uniform(
             command_sample_key,
@@ -567,25 +567,25 @@ class UnitreeGo2Env(PipelineEnv):
         )
 
         # Randomize Command Interval:
-        # state.info['steps_until_next_command'] = jnp.where(
-        #     done | (state.info['steps_until_next_command'] <= 0),
-        #     jnp.round(
-        #         jax.random.exponential(sample_key) * 5.0 / self.dt
-        #     ).astype(jnp.int32),
-        #     state.info['steps_until_next_command'],
-        # )
-
         state.info['steps_until_next_command'] = jnp.where(
             done | (state.info['steps_until_next_command'] <= 0),
             jnp.round(
-                jax.random.uniform(
-                    sample_key,
-                    minval=2.0,
-                    maxval=10.0,
-                ) / self.dt
+                jax.random.exponential(sample_key) * 5.0 / self.dt
             ).astype(jnp.int32),
             state.info['steps_until_next_command'],
         )
+
+        # state.info['steps_until_next_command'] = jnp.where(
+        #     done | (state.info['steps_until_next_command'] <= 0),
+        #     jnp.round(
+        #         jax.random.uniform(
+        #             sample_key,
+        #             minval=2.0,
+        #             maxval=10.0,
+        #         ) / self.dt
+        #     ).astype(jnp.int32),
+        #     state.info['steps_until_next_command'],
+        # )
 
         # Proxy Metrics:
         state.metrics['total_distance'] = math.normalize(
@@ -664,6 +664,16 @@ class UnitreeGo2Env(PipelineEnv):
             maxval=self.noise_config.joint_velocity,
         )
         noisy_joint_velocities = qd + joint_velocity_noise
+
+        # linear_velocity = self.get_local_linvel(pipeline_state)
+        # state_info['rng'], noise_key = jax.random.split(state_info['rng'])
+        # linear_velocity_noise = jax.random.uniform(
+        #     noise_key,
+        #     shape=linear_velocity.shape,
+        #     minval=-0.1,
+        #     maxval=0.1,
+        # )
+        # noisy_linear_velocity = linear_velocity + linear_velocity_noise
 
         observation = jnp.concatenate([
             noisy_angular_rate,                         # 3

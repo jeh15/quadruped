@@ -183,6 +183,12 @@ def load_checkpoint(
         activation=eval(network_metadata['activation']),
         policy_kernel_init=eval(network_metadata['policy_kernel_init']),
         value_kernel_init=eval(network_metadata['value_kernel_init']),
+        policy_observation_key=network_metadata['policy_observation_key'],
+        value_observation_key=network_metadata['value_observation_key'],
+        action_distribution=ParametricDistribution(
+            distribution=distrax.Normal,
+            bijector=distrax.Tanh(),
+        ),
     )
     optimizer = eval(training_metadata['optimizer'])
 

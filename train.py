@@ -47,8 +47,8 @@ def main(argv=None):
     # Config:
     reward_config = unitree_go2.RewardConfig(
         # Rewards:
-        tracking_linear_velocity=1.0,
-        tracking_angular_velocity=0.5,
+        tracking_linear_velocity=1.5,
+        tracking_angular_velocity=0.8,
         # Orientation Regularization Terms:
         orientation_regularization=-5.0,
         linear_z_velocity=-0.5,
@@ -65,8 +65,8 @@ def main(argv=None):
         # Gait Reward Terms:
         foot_slip=-0.1,
         air_time=0.1,
-        foot_clearance=-2.0,
-        foot_height=-0.2,
+        foot_clearance=-1.0,
+        foot_height=-0.1,
         # Gait Hyperparameters:
         target_air_time=0.1,
         foot_height_target=0.1,
