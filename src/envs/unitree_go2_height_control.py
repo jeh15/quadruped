@@ -671,7 +671,7 @@ class UnitreeGo2Env(PipelineEnv):
     def _reward_pose_regularization(
         self, qpos: jax.Array,
     ) -> jax.Array:
-        weight = jnp.array([1.0, 1.0, 0.1] * 4)
+        weight = jnp.array([1.0, 0.5, 0.1] * 4)
         error = jnp.sum(jnp.square(qpos - self.default_pose) * weight)
         return jnp.exp(-error)
 

@@ -50,7 +50,7 @@ def main(argv=None):
         tracking_linear_velocity=1.5,
         tracking_angular_velocity=0.8,
         # Orientation Regularization Terms:
-        orientation_regularization=-5.0,
+        orientation_regularization=-2.0,
         linear_z_velocity=-0.5,
         angular_xy_velocity=-0.05,
         pose_regularization=0.5,
@@ -65,8 +65,8 @@ def main(argv=None):
         # Gait Reward Terms:
         foot_slip=-0.1,
         air_time=0.1,
-        foot_clearance=-1.0,
-        foot_height=-0.1,
+        foot_clearance=-0.0,
+        foot_height=-0.0,
         # Gait Hyperparameters:
         target_air_time=0.1,
         foot_height_target=0.1,
@@ -98,7 +98,7 @@ def main(argv=None):
         normalize_advantages=True,
     )
     training_metadata = checkpoint_utilities.training_metadata(
-        num_epochs=50,
+        num_epochs=85,
         num_training_steps=20,
         episode_length=1000,
         num_policy_steps=40,
@@ -154,8 +154,8 @@ def main(argv=None):
         gae_lambda=loss_metadata.gae_lambda,
         normalize_advantages=loss_metadata.normalize_advantages,
     )
-    env = unitree_go2.UnitreeGo2Env(config=reward_config)
-    eval_env = unitree_go2.UnitreeGo2Env(config=reward_config)
+    env = unitree_go2.UnitreeGo2Env(config=reward_config, low_friction_model=True)
+    eval_env = unitree_go2.UnitreeGo2Env(config=reward_config, low_friction_model=True)
 
     def progress_fn(iteration, num_steps, metrics):
         print(

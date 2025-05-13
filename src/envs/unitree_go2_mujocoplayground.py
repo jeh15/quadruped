@@ -31,6 +31,9 @@ from src.envs.utilities import collisions
 # Types:
 PRNGKey = jax.Array
 
+
+# Linear Sigma is 0.36 and Angular Sigma is 1.05
+
 @flax.struct.dataclass
 class RewardConfig:
     # Rewards:
@@ -177,6 +180,7 @@ class UnitreeGo2Env(PipelineEnv):
         config: RewardConfig = RewardConfig(),
         action_scale: float = 0.3,
         kick_vel: float = 0.05,
+        low_friction_model: bool = False,
         **kwargs,
     ):
         filename = f'models/{filename}'
@@ -191,6 +195,12 @@ class UnitreeGo2Env(PipelineEnv):
         sys = mjcf.load(self.filepath)
         self.step_dt = 0.02
         sys = sys.tree_replace({'opt.timestep': 0.004})
+
+        if low_friction_model:
+            sys = sys.tree_replace({
+                'dof_frictionloss': 0.01 * jnp.ones_like(sys.dof_frictionloss),
+                'dof_armature': 0.005 * jnp.ones_like(sys.dof_armature),
+            })
 
         n_frames = kwargs.pop('n_frames', int(self.step_dt / sys.opt.timestep))
         super().__init__(sys, backend='mjx', n_frames=n_frames)
@@ -737,7 +747,7 @@ class UnitreeGo2Env(PipelineEnv):
     def _reward_pose_regularization(
         self, qpos: jax.Array,
     ) -> jax.Array:
-        weight = jnp.array([1.0, 1.0, 0.1] * 4)
+        weight = jnp.array([1.0, 1.0, 0.1] * 4) / 12.0
         error = jnp.sum(jnp.square(qpos - self.default_pose) * weight)
         return jnp.exp(-error)
 
