@@ -77,6 +77,12 @@ class DisturbanceConfig:
     magnitudes: list[float] = flax.struct.field(default_factory=lambda: [0.0, 3.0])
 
 
+@flax.struct.dataclass
+class CommandConfig:
+    command_range: jax.Array = flax.struct.field(default_factory=lambda: jnp.array([1.5, 0.8, 1.2]))
+    command_mask_probability: jax.Array = flax.struct.field(default_factory=lambda: jnp.array([0.9, 0.25, 0.5]))
+
+
 def domain_randomize(sys: System, rng: PRNGKey) -> tuple[System, System]:
     @jax.vmap
     def randomize_parameters(rng):
@@ -200,6 +206,7 @@ class UnitreeGo2Env(PipelineEnv):
 
         self.noise_config = NoiseConfig()
         self.disturbance_config = DisturbanceConfig()
+        self.command_config = CommandConfig()
 
         self.floor_geom_idx = self.sys.mj_model.geom('floor').id
         self.base_idx = mujoco.mj_name2id(
@@ -287,10 +294,6 @@ class UnitreeGo2Env(PipelineEnv):
         self.num_observations = 45
         self.num_privileged_observations = 120
 
-        # Command:
-        self.command_range = jnp.array([1.5, 0.8, 1.2])
-        self.command_mask_probability = jnp.array([0.9, 0.25, 0.5])
-
     def sample_command(
         self,
         rng: jax.Array,
@@ -298,10 +301,10 @@ class UnitreeGo2Env(PipelineEnv):
     ) -> jax.Array:
         _, command_key, sample_key, continuation_key = jax.random.split(rng, 4)
         new_cmd = jax.random.uniform(
-            command_key, shape=(3,), minval=-self.command_range, maxval=self.command_range,
+            command_key, shape=(3,), minval=-self.command_config.command_range, maxval=self.command_config.command_range,
         )
         new_cmd_mask = jax.random.bernoulli(
-            sample_key, p=self.command_mask_probability, shape=(3,),
+            sample_key, p=self.command_config.command_mask_probability, shape=(3,),
         )
         continuation_mask = jax.random.bernoulli(
             continuation_key, p=0.5, shape=(3,),
@@ -317,15 +320,15 @@ class UnitreeGo2Env(PipelineEnv):
         )
         qpos = self.init_q.at[0:2].set(self.init_q[0:2] + delta)
 
-        # Drop Probability:
-        rng, drop_key, sample_key = jax.random.split(rng, 3)
-        drop_mask = jax.random.bernoulli(
-            drop_key, p=0.1, shape=(),
-        )
-        delta = jax.random.uniform(
-            sample_key, shape=(), minval=0.0, maxval=0.2,
-        )
-        qpos = qpos.at[2].set(qpos[2] + delta * drop_mask)
+        # # Drop Probability:
+        # rng, drop_key, sample_key = jax.random.split(rng, 3)
+        # drop_mask = jax.random.bernoulli(
+        #     drop_key, p=0.1, shape=(),
+        # )
+        # delta = jax.random.uniform(
+        #     sample_key, shape=(), minval=0.0, maxval=0.2,
+        # )
+        # qpos = qpos.at[2].set(qpos[2] + delta * drop_mask)
 
         # Yaw: Uniform [-pi, pi]
         rng, key = jax.random.split(rng)
@@ -343,7 +346,7 @@ class UnitreeGo2Env(PipelineEnv):
         # Initial Joint Velocities:
         rng, key = jax.random.split(rng)
         qvel = qvel.at[6:].set(
-            jax.random.uniform(key, shape=(12,), minval=-1.0, maxval=1.0)
+            jax.random.uniform(key, shape=(12,), minval=-0.5, maxval=0.5)
         )
 
         # Initialize State:
@@ -384,8 +387,8 @@ class UnitreeGo2Env(PipelineEnv):
         command = jax.random.uniform(
             command_sample_key,
             shape=(3,),
-            minval=-self.command_range,
-            maxval=self.command_range,
+            minval=-self.command_config.command_range,
+            maxval=self.command_config.command_range,
         )
 
         state_info = {
@@ -405,7 +408,6 @@ class UnitreeGo2Env(PipelineEnv):
             'disturbance_step': 0,
             'disturbance_magnitude': disturbance_magnitude,
             'disturbance_direction': jnp.array([0.0, 0.0, 0.0]),
-            'step': 0,
         }
 
         # Observation Tests:
@@ -461,7 +463,7 @@ class UnitreeGo2Env(PipelineEnv):
         first_contact = (state.info['feet_air_time'] > 0) * contact_filt
         state.info['feet_air_time'] += self.dt
 
-        foot_position = self.get_feet_pos(pipeline_state)
+        foot_position = pipeline_state.site_xpos[self.feet_site_idx]
         foot_position_z = foot_position[..., -1]
         state.info['swing_peak'] = jnp.maximum(
             state.info['swing_peak'], foot_position_z,
@@ -519,9 +521,9 @@ class UnitreeGo2Env(PipelineEnv):
                 state.info['swing_peak'], first_contact, state.info['command'],
             ),
             'termination': jnp.float64(
-                self._reward_termination(done, state.info['step'])
+                self._reward_termination(done)
             ) if jax.config.x64_enabled else jnp.float32(
-                self._reward_termination(done, state.info['step'])
+                self._reward_termination(done)
             ),
         }
         rewards = {
@@ -536,7 +538,6 @@ class UnitreeGo2Env(PipelineEnv):
         state.info['previous_contact'] = contact
         state.info['swing_peak'] *= ~contact
         state.info['rewards'] = rewards
-        state.info['step'] += 1
         state.info['steps_until_next_command'] -= 1
         state.info['rng'] = rng
 
@@ -649,7 +650,6 @@ class UnitreeGo2Env(PipelineEnv):
         global_angular_velocity = self.get_global_angvel(pipeline_state)
         actuator_force = pipeline_state.actuator_force
         feet_velocity = self.get_feet_velocity(pipeline_state).ravel()
-
 
         privileged_observation = jnp.concatenate([
             observation,                                                                                # 45
@@ -781,8 +781,8 @@ class UnitreeGo2Env(PipelineEnv):
         foot_velocity = self.get_feet_velocity(pipeline_state)
         foot_velocity_xy = foot_velocity[..., :2]
         velocity_norm = jnp.sqrt(jnp.linalg.norm(foot_velocity_xy, axis=-1))
-        foot_position = self.get_feet_pos(pipeline_state)
-        foot_position_z = foot_position[..., 2]
+        foot_position = pipeline_state.site_xpos[self.feet_site_idx]
+        foot_position_z = foot_position[..., -1]
         delta = jnp.abs(foot_position_z - self.foot_height_target)
         return jnp.sum(delta * velocity_norm)
 
@@ -797,8 +797,8 @@ class UnitreeGo2Env(PipelineEnv):
         error = swing_peak / self.foot_height_target - 1.0
         return jnp.sum(jnp.square(error) * first_contact) * (command_norm > 0.01)
 
-    def _reward_termination(self, done: jax.Array, step: jax.Array) -> jax.Array:
-        return done & (step < 500)
+    def _reward_termination(self, done: jax.Array) -> jax.Array:
+        return done
 
     @staticmethod
     def get_sensor_data(

@@ -56,9 +56,9 @@ def main(argv=None):
         pose_regularization=0.5,
         # Energy Regularization Terms:
         torque=-2e-4,
-        action_rate=-0.1,
+        action_rate=-0.01,
         mechanical_power=-1e-3,
-        acceleration=-1e-4,
+        acceleration=-0.0,
         # Auxilary Terms:
         stand_still=-1.0,
         termination=-1.0,
@@ -211,10 +211,12 @@ def main(argv=None):
         training_metadata=training_metadata,
     )
 
-    optimizer = optax.chain(
-        optax.adaptive_grad_clip(clipping=0.01),
-        optax.adam(learning_rate=3e-4),
-    )
+    # optimizer = optax.chain(
+    #     optax.adaptive_grad_clip(clipping=0.01),
+    #     optax.adam(learning_rate=3e-4),
+    # )
+
+    optimizer = optax.adam(learning_rate=3e-4)
 
     train_fn = functools.partial(
         train,
