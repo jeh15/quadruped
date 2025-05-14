@@ -43,30 +43,35 @@ flags.DEFINE_string(
 )
 
 
+"""
+    TODO(jeh15): Remove Control Range on Actuators. Change Knee Force Range and add transmission.
+"""
+
 def main(argv=None):
     # Config:
     reward_config = unitree_go2.RewardConfig(
         # Rewards:
-        tracking_height=1.0,
+        tracking_height=2.0,
+        tracking_height_error=-5.0,
         # Orientation Regularization Terms:
-        angular_xy_velocity=-0.05,
+        angular_xy_velocity=-0.0,
         orientation_regularization=-0.0,
         pose_regularization=0.0,
         # Energy Regularization Terms:
-        torque=-2e-4,
-        action_rate=-0.1,
-        mechanical_power=-1e-3,
-        acceleration=-1e-4,
+        torque=-0.0,
+        action_rate=-0.001,
+        mechanical_power=-0.0,
+        acceleration=-0.0,
         # Auxilary Terms:
-        termination=-1.0,
+        termination=-0.0,
         # Gait Terms:
-        foot_slip=-0.1,
+        foot_slip=-0.0,
         # Hyperparameter for exponential kernel:
-        kernel_sigma=0.05,
+        kernel_sigma=0.1,
     )
 
     # Metadata:
-    policy_layer_size = [512, 256, 128,]
+    policy_layer_size = [128, 128, 128,]
     value_layer_size = [512, 256, 128,]
     network_metadata = checkpoint_utilities.network_metadata(
         policy_layer_size=policy_layer_size,
@@ -145,8 +150,8 @@ def main(argv=None):
         gae_lambda=loss_metadata.gae_lambda,
         normalize_advantages=loss_metadata.normalize_advantages,
     )
-    env = unitree_go2.UnitreeGo2Env(config=reward_config, observation_model='gyroscope_gravity')
-    eval_env = unitree_go2.UnitreeGo2Env(config=reward_config, observation_model='gyroscope_gravity')
+    env = unitree_go2.UnitreeGo2Env(config=reward_config)
+    eval_env = unitree_go2.UnitreeGo2Env(config=reward_config)
 
     def progress_fn(iteration, num_steps, metrics):
         print(

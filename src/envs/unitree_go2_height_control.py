@@ -34,10 +34,11 @@ PRNGKey = jax.Array
 @flax.struct.dataclass
 class RewardConfig:
     # Rewards:
-    tracking_height: float = 1.0
+    tracking_height: float = 2.0
     # Orientation Regularization Terms:
+    tracking_height_error: float = -5.0
     angular_xy_velocity: float = -0.05
-    orientation_regularization: float = -2.0
+    orientation_regularization: float = -1.0
     pose_regularization: float = 0.1
     # Energy Regularization Terms:
     torque: float = -2e-4
@@ -77,7 +78,7 @@ def domain_randomize(sys: System, rng: PRNGKey) -> tuple[System, System]:
 
         # Floor Friction:
         rng, key = jax.random.split(rng)
-        geom_friction = jax.random.uniform(key, minval=0.4, maxval=1.0)
+        geom_friction = jax.random.uniform(key, minval=0.6, maxval=1.0)
         friction = sys.geom_friction.at[FLOOR_BODY_ID, 0].set(geom_friction)
 
         # Joint Friction:
@@ -170,8 +171,8 @@ class UnitreeGo2Env(PipelineEnv):
         self,
         filename: str = 'unitree_go2/scene_mjx_contact.xml',
         config: RewardConfig = RewardConfig(),
-        action_scale: float = 0.3,
-        kick_vel: float = 0.05,
+        action_scale: float = 0.5,
+        kick_vel: float = 0.0,
         low_friction_model: bool = False,
         observation_model: str = 'default',
         **kwargs,
@@ -315,7 +316,7 @@ class UnitreeGo2Env(PipelineEnv):
         self.num_privileged_observations = self.num_observations + 67
 
     def sample_command(self, rng: jax.Array) -> jax.Array:
-        command_range = [0.0, 0.35]
+        command_range = [0.1, 0.6]
         key, subkey = jax.random.split(rng)
         command = jax.random.uniform(
             subkey, shape=(1,), minval=command_range[0], maxval=command_range[1],
@@ -325,9 +326,10 @@ class UnitreeGo2Env(PipelineEnv):
     def reset(self, rng: PRNGKey) -> State:  # pytype: disable=signature-mismatch
         # Randomly sample the initial state:
         rng, key = jax.random.split(rng)
-        qpos = jax.random.choice(
-            key, self.initial_qpos,
-        )
+        # qpos = jax.random.choice(
+        #     key, self.initial_qpos,
+        # )
+        qpos = self.initial_qpos[0]
 
         # Initial Position:
         rng, key = jax.random.split(rng)
@@ -349,16 +351,16 @@ class UnitreeGo2Env(PipelineEnv):
         )
 
         # Small Angle Deviation:
-        rng, key = jax.random.split(rng)
-        delta = jax.random.uniform(
-            key, shape=(12,), minval=-0.05, maxval=0.05,
-        )
-        qpos = qpos.at[7:].set(qpos[7:] + delta)
+        # rng, key = jax.random.split(rng)
+        # delta = jax.random.uniform(
+        #     key, shape=(12,), minval=-0.05, maxval=0.05,
+        # )
+        # qpos = qpos.at[7:].set(qpos[7:] + delta)
 
         # Small Velocity Deviation:
         rng, key = jax.random.split(rng)
         delta = jax.random.uniform(
-            key, shape=(12,), minval=-0.2, maxval=0.2,
+            key, shape=(12,), minval=-0.1, maxval=0.1,
         )
         qvel = qvel.at[6:].set(qvel[6:] + delta)
 
@@ -390,12 +392,17 @@ class UnitreeGo2Env(PipelineEnv):
 
         # Command Sampling:
         rng, command_interval_key, command_sample_key = jax.random.split(rng, 3)
-        time_until_next_command = 5.0 * jax.random.exponential(
-            command_interval_key
-        )
+        
+        # time_until_next_command = 5.0 * jax.random.exponential(
+        #     command_interval_key
+        # )
+        
+        time_until_next_command = jax.random.uniform(command_interval_key, shape=(), minval=2.0, maxval=5.0)
+        
         steps_until_next_command = jnp.round(
             time_until_next_command / self.dt
         ).astype(jnp.int32)
+
         command = self.sample_command(command_sample_key)
 
         state_info = {
@@ -472,6 +479,9 @@ class UnitreeGo2Env(PipelineEnv):
             'tracking_height': (
                 self._reward_tracking_height(state.info['command'], pipeline_state.q[2])
             ),
+            'tracking_height_error': (
+                self._reward_tracking_height_error(state.info['command'], pipeline_state.q[2])
+            ),
             'angular_xy_velocity': self._reward_angular_velocity(
                 self.get_global_angvel(pipeline_state),
             ),
@@ -519,10 +529,18 @@ class UnitreeGo2Env(PipelineEnv):
         )
 
         # Randomize Command Interval:
+        # state.info['steps_until_next_command'] = jnp.where(
+        #     done | (state.info['steps_until_next_command'] <= 0),
+        #     jnp.round(
+        #         jax.random.exponential(sample_key) * 5.0 / self.dt
+        #     ).astype(jnp.int32),
+        #     state.info['steps_until_next_command'],
+        # )
+
         state.info['steps_until_next_command'] = jnp.where(
             done | (state.info['steps_until_next_command'] <= 0),
             jnp.round(
-                jax.random.exponential(sample_key) * 5.0 / self.dt
+                jax.random.uniform(sample_key, shape=(), minval=2.0, maxval=5.0) / self.dt
             ).astype(jnp.int32),
             state.info['steps_until_next_command'],
         )
@@ -677,6 +695,12 @@ class UnitreeGo2Env(PipelineEnv):
         error = jnp.sum(jnp.square(command - global_base_z))
         return jnp.exp(-error / self.kernel_sigma)
 
+    def _reward_tracking_height_error(
+        self, command: jax.Array, global_base_z: jax.Array
+    ) -> jax.Array:
+        # L1 Error for Tracking of height command (z axis)
+        return jnp.sum(jnp.abs(command - global_base_z))
+
     def _reward_angular_velocity(
         self, global_base_angvel: jax.Array,
     ) -> jax.Array:
@@ -692,7 +716,7 @@ class UnitreeGo2Env(PipelineEnv):
     def _reward_pose_regularization(
         self, qpos: jax.Array,
     ) -> jax.Array:
-        weight = jnp.array([1.0, 0.1, 0.1] * 4) / 12.0
+        weight = jnp.array([1.0, 0.0, 0.0] * 4) / 12.0
         error = jnp.sum(jnp.square(qpos - self.default_pose) * weight)
         return jnp.exp(-error)
 
