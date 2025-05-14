@@ -171,8 +171,8 @@ class UnitreeGo2Env(PipelineEnv):
         self,
         filename: str = 'unitree_go2/scene_mjx_contact.xml',
         config: RewardConfig = RewardConfig(),
-        action_scale: float = 0.5,
-        kick_vel: float = 0.0,
+        action_scale: float = 0.3,
+        kick_vel: float = 0.001,
         low_friction_model: bool = False,
         observation_model: str = 'default',
         **kwargs,
@@ -316,7 +316,7 @@ class UnitreeGo2Env(PipelineEnv):
         self.num_privileged_observations = self.num_observations + 67
 
     def sample_command(self, rng: jax.Array) -> jax.Array:
-        command_range = [0.1, 0.6]
+        command_range = [0.0, 0.4]
         key, subkey = jax.random.split(rng)
         command = jax.random.uniform(
             subkey, shape=(1,), minval=command_range[0], maxval=command_range[1],
@@ -326,10 +326,9 @@ class UnitreeGo2Env(PipelineEnv):
     def reset(self, rng: PRNGKey) -> State:  # pytype: disable=signature-mismatch
         # Randomly sample the initial state:
         rng, key = jax.random.split(rng)
-        # qpos = jax.random.choice(
-        #     key, self.initial_qpos,
-        # )
-        qpos = self.initial_qpos[0]
+        qpos = jax.random.choice(
+            key, self.initial_qpos,
+        )
 
         # Initial Position:
         rng, key = jax.random.split(rng)
@@ -451,7 +450,10 @@ class UnitreeGo2Env(PipelineEnv):
         state = self.maybe_apply_perturbation(state)
 
         # Physics step:
-        motor_targets = self.default_ctrl + action * self.action_scale
+        # motor_targets = self.default_ctrl + action * self.action_scale
+
+        motor_targets = state.pipeline_state.q[7:] + action * self.action_scale
+        
         pipeline_state = self.pipeline_step(
             state.pipeline_state, motor_targets,
         )

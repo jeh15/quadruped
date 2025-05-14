@@ -54,18 +54,18 @@ def main(argv=None):
         tracking_height=2.0,
         tracking_height_error=-5.0,
         # Orientation Regularization Terms:
-        angular_xy_velocity=-0.0,
-        orientation_regularization=-0.0,
+        angular_xy_velocity=-0.05,
+        orientation_regularization=-1.0,
         pose_regularization=0.0,
         # Energy Regularization Terms:
-        torque=-0.0,
-        action_rate=-0.001,
+        torque=-2.0e-4,
+        action_rate=-0.01,
         mechanical_power=-0.0,
-        acceleration=-0.0,
+        acceleration=-1.0e-4,
         # Auxilary Terms:
-        termination=-0.0,
+        termination=-1.0,
         # Gait Terms:
-        foot_slip=-0.0,
+        foot_slip=-0.1,
         # Hyperparameter for exponential kernel:
         kernel_sigma=0.1,
     )
@@ -150,8 +150,8 @@ def main(argv=None):
         gae_lambda=loss_metadata.gae_lambda,
         normalize_advantages=loss_metadata.normalize_advantages,
     )
-    env = unitree_go2.UnitreeGo2Env(config=reward_config)
-    eval_env = unitree_go2.UnitreeGo2Env(config=reward_config)
+    env = unitree_go2.UnitreeGo2Env(config=reward_config, observation_model='gyroscope_gravity')
+    eval_env = unitree_go2.UnitreeGo2Env(config=reward_config, observation_model='gyroscope_gravity')
 
     def progress_fn(iteration, num_steps, metrics):
         print(
