@@ -658,7 +658,7 @@ class UnitreeGo2Env(PipelineEnv):
     ) -> jax.Array:
         # Penalize non flat base orientation
         return jnp.sum(jnp.square(base_z_axis[:2]))
-    
+
     def _reward_pose_regularization(
         self, qpos: jax.Array,
     ) -> jax.Array:
@@ -906,7 +906,7 @@ class UnitreeGo2Env(PipelineEnv):
             'state': observation,
             'privileged_state': np.zeros((self.num_privileged_observations,)),
         }
-    
+
     def hardware_observation(
         self,
         imu_state: Any,
