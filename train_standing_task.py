@@ -3,6 +3,7 @@ import os
 import functools
 
 import jax
+import jax.numpy as jnp
 import flax.linen as nn
 import distrax
 import optax
@@ -94,7 +95,7 @@ def main(argv=None):
         normalize_advantages=True,
     )
     training_metadata = checkpoint_utilities.training_metadata(
-        num_epochs=20,
+        num_epochs=15,
         num_training_steps=20,
         episode_length=1000,
         num_policy_steps=40,
@@ -150,8 +151,8 @@ def main(argv=None):
         gae_lambda=loss_metadata.gae_lambda,
         normalize_advantages=loss_metadata.normalize_advantages,
     )
-    env = unitree_go2.UnitreeGo2Env(config=reward_config)
-    eval_env = unitree_go2.UnitreeGo2Env(config=reward_config)
+    env = unitree_go2.UnitreeGo2Env(config=reward_config, low_friction_model=True)
+    eval_env = unitree_go2.UnitreeGo2Env(config=reward_config, low_friction_model=True)
 
     def progress_fn(iteration, num_steps, metrics):
         print(
