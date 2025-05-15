@@ -262,7 +262,7 @@ class UnitreeGo2Env(PipelineEnv):
 
         # Observation Size:
         self.num_observations = 43
-        self.num_privileged_observations = self.num_observations + 52
+        self.num_privileged_observations = self.num_observations + 49
 
     def sample_command(self, rng: jax.Array) -> jax.Array:
         key, subkey = jax.random.split(rng)
@@ -530,7 +530,7 @@ class UnitreeGo2Env(PipelineEnv):
             actuator_force,                                                    # 12
             torso_height,                                                      # 1
         ])
-        # Size (Privileged Observations - 52): 95
+        # Size (Privileged Observations): 92
 
         return {
             'state': observation,
