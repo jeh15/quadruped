@@ -120,7 +120,6 @@ def main(argv=None):
 
     # Initialize Functions with Params:
     randomization_fn = unitree_go2.domain_randomize
-    randomization_fn = None
     make_networks_factory = functools.partial(
         ppo_networks.make_ppo_networks,
         policy_layer_sizes=network_metadata.policy_layer_size,
@@ -146,6 +145,7 @@ def main(argv=None):
     )
     env = unitree_go2.UnitreeGo2Env(config=reward_config)
     eval_env = unitree_go2.UnitreeGo2Env(config=reward_config)
+    render_env = unitree_go2.UnitreeGo2Env(config=reward_config)
 
     def progress_fn(iteration, num_steps, metrics):
         print(
@@ -228,6 +228,8 @@ def main(argv=None):
         checkpoint_fn=checkpoint_fn,
         restored_checkpoint=restored_checkpoint,
         wandb_run=run,
+        render_environment=render_env,
+        render_interval=1,
     )
 
     policy_generator, params, metrics = train_fn(

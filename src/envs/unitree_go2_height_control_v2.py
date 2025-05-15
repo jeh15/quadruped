@@ -112,7 +112,6 @@ def domain_randomize(sys: System, rng: PRNGKey) -> tuple[System, System]:
             dof_armature,
             body_ipos,
             body_mass,
-            qpos0,
         )
 
     (
@@ -121,7 +120,6 @@ def domain_randomize(sys: System, rng: PRNGKey) -> tuple[System, System]:
         dof_armature,
         body_ipos,
         body_mass,
-        qpos0,
     ) = randomize_parameters(rng)
 
     in_axes = jax.tree.map(lambda x: None, sys)
@@ -348,6 +346,7 @@ class UnitreeGo2Env(PipelineEnv):
         rng, cmd_key, sample_key = jax.random.split(state.info['rng'], 3)
 
         # Physics step:
+        # motor_targets = self.default_ctrl + action * self.action_scale
         motor_targets = state.pipeline_state.q[7:] + action * self.action_scale
         pipeline_state = self.pipeline_step(
             state.pipeline_state, motor_targets,

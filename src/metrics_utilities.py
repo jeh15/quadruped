@@ -11,7 +11,7 @@ import mujoco
 
 import brax
 from brax import envs, base
-from brax.io import image
+from brax.io import html
 
 import src.module_types as types
 from src.training_utilities import unroll_policy_steps, render_policy
@@ -121,7 +121,7 @@ class Renderer:
 
         env = envs.training.EvalWrapper(env)
         self.dt = env.dt
-        self.sys = env.sys
+        self.sys = env.sys.tree_replace({'opt.timestep': env.dt})
 
         def _render_loop(
             policy_params: types.PolicyParams,
@@ -155,13 +155,6 @@ class Renderer:
             width: int = 320,
             camera: Optional[str] = None,
         ) -> None:
-            # Setup Animation Writer:
-            FPS = int(1 / self.dt)
-
-            # Create and set context for mujoco rendering:
-            ctx = mujoco.GLContext(width, height)
-            ctx.make_current()
-
             # Create Dummy Data and Generate Frames:
             state_list = []
             data = mujoco.mjx.make_data(self.sys.mj_model)
@@ -182,28 +175,17 @@ class Renderer:
                         **data.__dict__,
                     ),
                 )
-            frames = image.render_array(
+
+            html_string = html.render(
                 sys=self.sys,
-                trajectory=state_list,
-                height=height,
-                width=width,
-                camera=camera,
+                states=state_list,
+                height="100vh",
+                colab=False,
             )
 
-            filename = os.path.join(filepath, f'{iteration}.mp4')
-            out = cv.VideoWriter(
-                filename=filename,
-                fourcc=cv.VideoWriter_fourcc(*'mp4v'),
-                fps=FPS,
-                frameSize=(width, height),
-                isColor=True,
-            )
-
-            num_frames = np.shape(frames)[0]
-            for i in range(num_frames):
-                out.write(frames[i])
-
-            out.release()
+            filename = os.path.join(filepath, f'{iteration}.html')
+            with open(filename, "w") as f:
+                f.writelines(html_string)
 
         self.key, subkey = jax.random.split(self.key)
 
