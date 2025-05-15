@@ -106,12 +106,6 @@ def domain_randomize(sys: System, rng: PRNGKey) -> tuple[System, System]:
         )
         body_mass = sys.body_mass.at[TORSO_BODY_ID].set(sys.body_mass[TORSO_BODY_ID] + delta)
 
-        # Joint reference randomization:
-        rng, key = jax.random.split(rng)
-        qpos0 = sys.qpos0
-        delta = jax.random.uniform(key, shape=(12,), minval=-0.05, maxval=0.05)
-        qpos0 = qpos0.at[7:].set(qpos0[7:] + delta)
-
         return (
             friction,
             dof_frictionloss,
@@ -137,7 +131,6 @@ def domain_randomize(sys: System, rng: PRNGKey) -> tuple[System, System]:
         'dof_armature': 0,
         'body_ipos': 0,
         'body_mass': 0,
-        'qpos0': 0,
     })
 
     sys = sys.tree_replace({
@@ -146,7 +139,6 @@ def domain_randomize(sys: System, rng: PRNGKey) -> tuple[System, System]:
         'dof_armature': dof_armature,
         'body_ipos': body_ipos,
         'body_mass': body_mass,
-        'qpos0': qpos0,
     })  # type: ignore
 
     return sys, in_axes
@@ -205,7 +197,12 @@ class UnitreeGo2Env(PipelineEnv):
         self.init_qd = jnp.zeros(sys.nv)
         self.default_pose = jnp.array(sys.mj_model.keyframe('home').qpos[7:])
         self.default_ctrl = jnp.array(sys.mj_model.keyframe('home').ctrl)
-        self.initial_qpos = jnp.array(sys.mj_model.keyframe('home').qpos)
+        self.initial_qpos = jnp.array([
+            jnp.array(sys.mj_model.keyframe('home').qpos),
+            jnp.array(sys.mj_model.keyframe('prone_1').qpos),
+            jnp.array(sys.mj_model.keyframe('prone_2').qpos),
+        ])
+
 
         # Sites and Bodies:
         feet_geom = [
@@ -282,7 +279,9 @@ class UnitreeGo2Env(PipelineEnv):
         rng, key = jax.random.split(rng)
 
         # Initial Position:
-        qpos = self.initial_qpos
+        qpos = jax.random.choice(
+            key, self.initial_qpos,
+        )
 
         # Initial Velocity:
         rng, key = jax.random.split(rng)
@@ -309,9 +308,7 @@ class UnitreeGo2Env(PipelineEnv):
         time_until_next_command = jax.random.uniform(
             command_interval_key, shape=(), minval=2.0, maxval=5.0,
         )
-        steps_until_next_command = jnp.round(
-            time_until_next_command / self.step_dt
-        ).astype(jnp.int32)
+        steps_until_next_command = 500
 
         command = self.sample_command(command_sample_key)
 
@@ -321,7 +318,6 @@ class UnitreeGo2Env(PipelineEnv):
             'previous_velocity': jnp.zeros(12),
             'command': command,
             'steps_until_next_command': steps_until_next_command,
-            'previous_contact': jnp.zeros(4, dtype=bool),
             'rewards': {k: 0.0 for k in self.reward_config.keys()},
             'initial_imu_pos': imu_qpos,
         }
@@ -352,7 +348,7 @@ class UnitreeGo2Env(PipelineEnv):
         rng, cmd_key, sample_key = jax.random.split(state.info['rng'], 3)
 
         # Physics step:
-        motor_targets = self.default_ctrl + action * self.action_scale
+        motor_targets = state.pipeline_state.q[7:] + action * self.action_scale
         pipeline_state = self.pipeline_step(
             state.pipeline_state, motor_targets,
         )
@@ -415,7 +411,6 @@ class UnitreeGo2Env(PipelineEnv):
         # State management
         state.info['previous_action'] = action
         state.info['previous_velocity'] = joint_velocities
-        state.info['previous_contact'] = contact
         state.info['rewards'] = rewards
         state.info['steps_until_next_command'] -= 1
         state.info['rng'] = rng
@@ -430,9 +425,7 @@ class UnitreeGo2Env(PipelineEnv):
         # Randomize Command Interval:
         state.info['steps_until_next_command'] = jnp.where(
             done | (state.info['steps_until_next_command'] <= 0),
-            jnp.round(
-                jax.random.uniform(sample_key, shape=(), minval=2.0, maxval=5.0) / self.step_dt
-            ).astype(jnp.int32),
+            500,
             state.info['steps_until_next_command'],
         )
 
