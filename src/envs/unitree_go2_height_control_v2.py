@@ -25,7 +25,6 @@ from brax.io import mjcf, html
 
 import mujoco
 
-from src.envs.utilities import collisions
 
 # Types:
 PRNGKey = jax.Array
