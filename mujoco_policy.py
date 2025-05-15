@@ -28,7 +28,7 @@ flags.DEFINE_string(
 flags.DEFINE_integer(
     'checkpoint_iteration', None, 'Desired checkpoint iteration.', short_name='i',
 )
-    
+
 
 def controller(
     action: npt.ArrayLike,
@@ -52,7 +52,7 @@ def main(argv=None):
     # Load from Env:
     env = unitree_go2.UnitreeGo2Env(observation_model='gravity')
     model_mjx = env.sys.mj_model
-    
+
     # High Fidelity Model:
     model_path = os.path.join(
         os.path.dirname(__file__),

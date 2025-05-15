@@ -66,7 +66,7 @@ class NoiseConfig:
 class DisturbanceConfig:
     wait_times: list[float] = flax.struct.field(default_factory=lambda: [1.0, 3.0])
     durations: list[float] = flax.struct.field(default_factory=lambda: [0.05, 0.2])
-    magnitudes: list[float] = flax.struct.field(default_factory=lambda: [0.0, 3.0])
+    magnitudes: list[float] = flax.struct.field(default_factory=lambda: [0.0, 0.5])
 
 
 def domain_randomize(sys: System, rng: PRNGKey) -> tuple[System, System]:
@@ -169,12 +169,11 @@ class UnitreeGo2Env(PipelineEnv):
 
     def __init__(
         self,
-        filename: str = 'unitree_go2/scene_mjx_contact.xml',
+        filename: str = 'unitree_go2/scene_mjx_collision.xml',
         config: RewardConfig = RewardConfig(),
         action_scale: float = 0.3,
-        kick_vel: float = 0.001,
         low_friction_model: bool = False,
-        observation_model: str = 'default',
+        observation_model: str = 'gyroscope_gravity',
         **kwargs,
     ):
         filename = f'models/{filename}'
@@ -216,7 +215,6 @@ class UnitreeGo2Env(PipelineEnv):
         self.base_link_mass = self.sys.mj_model.body_subtreemass[self.base_idx]
 
         self.action_scale = action_scale
-        self._kick_vel = kick_vel
         self.init_qd = jnp.zeros(sys.nv)
         self.default_pose = jnp.array(sys.mj_model.keyframe('home').qpos[7:])
         self.default_ctrl = jnp.array(sys.mj_model.keyframe('home').ctrl)
@@ -225,22 +223,6 @@ class UnitreeGo2Env(PipelineEnv):
             jnp.array(sys.mj_model.keyframe('crouch').qpos),
             jnp.array(sys.mj_model.keyframe('prone_1').qpos),
             jnp.array(sys.mj_model.keyframe('prone_2').qpos),
-            jnp.array(sys.mj_model.keyframe('prone_3').qpos),
-            jnp.array(sys.mj_model.keyframe('tall_1').qpos),
-            jnp.array(sys.mj_model.keyframe('tall_2').qpos),
-        ])
-
-        self.joint_lb = jnp.array([
-            -1.0472, -1.5708, -2.7227,
-            -1.0472, -1.5708, -2.7227,
-            -1.0472, -0.5236, -2.7227,
-            -1.0472, -0.5236, -2.7227,
-        ])
-        self.joint_ub = jnp.array([
-            1.0472, 3.4907, -0.83776,
-            1.0472, 3.4907, -0.83776,
-            1.0472, 4.5379, -0.83776,
-            1.0472, 4.5379, -0.83776,
         ])
 
         # Sites and Bodies:
@@ -312,14 +294,17 @@ class UnitreeGo2Env(PipelineEnv):
             return NotImplementedError(
                 f"Observation model {self.observation_model} not implemented."
             )
-        
-        self.num_privileged_observations = self.num_observations + 67
+
+        self.num_privileged_observations = self.num_observations + 52
 
     def sample_command(self, rng: jax.Array) -> jax.Array:
         command_range = [0.0, 0.4]
         key, subkey = jax.random.split(rng)
         command = jax.random.uniform(
-            subkey, shape=(1,), minval=command_range[0], maxval=command_range[1],
+            subkey,
+            shape=(1,),
+            minval=command_range[0],
+            maxval=command_range[1],
         )
         return command
 
@@ -330,31 +315,11 @@ class UnitreeGo2Env(PipelineEnv):
             key, self.initial_qpos,
         )
 
-        # Initial Position:
-        rng, key = jax.random.split(rng)
-        delta = jax.random.uniform(
-            key, shape=(2,), minval=-0.5, maxval=0.5,
-        )
-        qpos = qpos.at[0:2].set(qpos[0:2] + delta)
-
-        rng, key = jax.random.split(rng)
-        yaw = jax.random.uniform(key, (1,), minval=-jnp.pi, maxval=jnp.pi)
-        rotation = mjx_math.axis_angle_to_quat(jnp.array([0, 0, 1]), yaw)
-        quaternion = mjx_math.quat_mul(qpos[3:7], rotation)
-        qpos = qpos.at[3:7].set(quaternion)
-
         # Initial Velocity:
         rng, key = jax.random.split(rng)
         qvel = self.init_qd.at[0:6].set(
-            jax.random.uniform(key, (6,), minval=-0.5, maxval=0.5)
+            jax.random.uniform(key, (6,), minval=-0.1, maxval=0.1)
         )
-
-        # Small Angle Deviation:
-        # rng, key = jax.random.split(rng)
-        # delta = jax.random.uniform(
-        #     key, shape=(12,), minval=-0.05, maxval=0.05,
-        # )
-        # qpos = qpos.at[7:].set(qpos[7:] + delta)
 
         # Small Velocity Deviation:
         rng, key = jax.random.split(rng)
@@ -391,13 +356,7 @@ class UnitreeGo2Env(PipelineEnv):
 
         # Command Sampling:
         rng, command_interval_key, command_sample_key = jax.random.split(rng, 3)
-        
-        # time_until_next_command = 5.0 * jax.random.exponential(
-        #     command_interval_key
-        # )
-        
         time_until_next_command = jax.random.uniform(command_interval_key, shape=(), minval=2.0, maxval=5.0)
-        
         steps_until_next_command = jnp.round(
             time_until_next_command / self.dt
         ).astype(jnp.int32)
@@ -447,13 +406,10 @@ class UnitreeGo2Env(PipelineEnv):
         rng, cmd_key, sample_key = jax.random.split(state.info['rng'], 3)
 
         # Disturbance: (Force based)
-        state = self.maybe_apply_perturbation(state)
+        # state = self.maybe_apply_perturbation(state)
 
         # Physics step:
-        # motor_targets = self.default_ctrl + action * self.action_scale
-
-        motor_targets = state.pipeline_state.q[7:] + action * self.action_scale
-        
+        motor_targets = self.default_ctrl + action * self.action_scale
         pipeline_state = self.pipeline_step(
             state.pipeline_state, motor_targets,
         )
@@ -531,14 +487,6 @@ class UnitreeGo2Env(PipelineEnv):
         )
 
         # Randomize Command Interval:
-        # state.info['steps_until_next_command'] = jnp.where(
-        #     done | (state.info['steps_until_next_command'] <= 0),
-        #     jnp.round(
-        #         jax.random.exponential(sample_key) * 5.0 / self.dt
-        #     ).astype(jnp.int32),
-        #     state.info['steps_until_next_command'],
-        # )
-
         state.info['steps_until_next_command'] = jnp.where(
             done | (state.info['steps_until_next_command'] <= 0),
             jnp.round(
@@ -665,7 +613,7 @@ class UnitreeGo2Env(PipelineEnv):
         linear_velocity = self.get_local_linvel(pipeline_state)
         global_angular_velocity = self.get_global_angvel(pipeline_state)
         actuator_force = pipeline_state.actuator_force
-        feet_velocity = self.get_feet_velocity(pipeline_state).ravel()
+        torso_height = pipeline_state.site_xpos[self.imu_site_idx][2]
 
         privileged_observation = jnp.concatenate([
             observation,                                                                                # 37, 40, or 43
@@ -677,13 +625,9 @@ class UnitreeGo2Env(PipelineEnv):
             q - self.default_pose,                                                                      # 12
             qd,                                                                                         # 12
             actuator_force,                                                                             # 12
-            feet_velocity,                                                                              # 12
-            pipeline_state.xfrc_applied[self.base_idx, :3],                                             # 3
-            jnp.asarray([
-                state_info['steps_since_last_disturbance'] >= state_info['steps_until_next_disturbance']
-            ]),                                                                                         # 1
+            torso_height,                                                                               # 1
         ])
-        # Size (Privileged Observations - 67): 104, 107, or 110
+        # Size (Privileged Observations - 52): 89, 92, or 95
 
         return {
             'state': observation,
