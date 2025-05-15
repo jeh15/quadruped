@@ -90,7 +90,7 @@ def main(argv=None):
         clip_coef=0.3,
         value_coef=0.25,
         entropy_coef=0.01,
-        gamma=0.99,
+        gamma=0.97,
         gae_lambda=0.95,
         normalize_advantages=True,
     )
@@ -128,13 +128,14 @@ def main(argv=None):
 
     # Initialize Functions with Params:
     randomization_fn = unitree_go2.domain_randomize
+    randomization_fn = None
     make_networks_factory = functools.partial(
         ppo_networks.make_ppo_networks,
         policy_layer_sizes=network_metadata.policy_layer_size,
         value_layer_sizes=network_metadata.value_layer_size,
         activation=nn.swish,
         policy_kernel_init=jax.nn.initializers.lecun_uniform(),
-        value_kernel_init=jax.nn.initializers.variance_scaling(scale=0.01, mode="fan_in", distribution="uniform"),
+        value_kernel_init=jax.nn.initializers.lecun_uniform(),
         policy_observation_key='state',
         value_observation_key='privileged_state',
         action_distribution=ParametricDistribution(
@@ -151,8 +152,8 @@ def main(argv=None):
         gae_lambda=loss_metadata.gae_lambda,
         normalize_advantages=loss_metadata.normalize_advantages,
     )
-    env = unitree_go2.UnitreeGo2Env(config=reward_config, low_friction_model=True)
-    eval_env = unitree_go2.UnitreeGo2Env(config=reward_config, low_friction_model=True)
+    env = unitree_go2.UnitreeGo2Env(config=reward_config)
+    eval_env = unitree_go2.UnitreeGo2Env(config=reward_config)
 
     def progress_fn(iteration, num_steps, metrics):
         print(

@@ -50,7 +50,7 @@ def main(argv=None):
     logging.set_verbosity(logging.INFO)
 
     # Load from Env:
-    env = unitree_go2.UnitreeGo2Env(observation_model='gravity')
+    env = unitree_go2.UnitreeGo2Env(observation_model='gyroscope_gravity')
     model_mjx = env.sys.mj_model
 
     # High Fidelity Model:
@@ -86,9 +86,7 @@ def main(argv=None):
     )
 
     # Test:
-    command = np.array([0.0])
     action = np.zeros(12)
-    observation = np.zeros(env.num_observations)
 
     # Setup Joystick:
     joysticks = {}

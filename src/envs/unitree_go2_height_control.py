@@ -66,100 +66,100 @@ class NoiseConfig:
 class DisturbanceConfig:
     wait_times: list[float] = flax.struct.field(default_factory=lambda: [1.0, 3.0])
     durations: list[float] = flax.struct.field(default_factory=lambda: [0.05, 0.2])
-    magnitudes: list[float] = flax.struct.field(default_factory=lambda: [0.0, 0.5])
+    magnitudes: list[float] = flax.struct.field(default_factory=lambda: [0.0, 0.0])
 
 
 def domain_randomize(sys: System, rng: PRNGKey) -> tuple[System, System]:
     @jax.vmap
     def randomize_parameters(rng):
-        # # Body IDs:
-        # FLOOR_BODY_ID = 0
-        # TORSO_BODY_ID = 1
+        # Body IDs:
+        FLOOR_BODY_ID = 0
+        TORSO_BODY_ID = 1
 
-        # # Floor Friction:
-        # rng, key = jax.random.split(rng)
-        # geom_friction = jax.random.uniform(key, minval=0.6, maxval=1.0)
-        # friction = sys.geom_friction.at[FLOOR_BODY_ID, 0].set(geom_friction)
+        # Floor Friction:
+        rng, key = jax.random.split(rng)
+        geom_friction = jax.random.uniform(key, minval=0.6, maxval=1.0)
+        friction = sys.geom_friction.at[FLOOR_BODY_ID, 0].set(geom_friction)
 
-        # # Joint Friction:
-        # rng, key = jax.random.split(rng)
-        # frictionloss = sys.dof_frictionloss[6:] * jax.random.uniform(
-        #     key, shape=(12,), minval=0.9, maxval=1.1,
-        # )
-        # dof_frictionloss = sys.dof_frictionloss.at[6:].set(frictionloss)
+        # Joint Friction:
+        rng, key = jax.random.split(rng)
+        frictionloss = sys.dof_frictionloss[6:] * jax.random.uniform(
+            key, shape=(12,), minval=0.9, maxval=1.1,
+        )
+        dof_frictionloss = sys.dof_frictionloss.at[6:].set(frictionloss)
 
-        # # Armature:
-        # rng, key = jax.random.split(rng)
-        # armature = sys.dof_armature[6:] * jax.random.uniform(
-        #     key, shape=(12,), minval=1.0, maxval=1.05,
-        # )
-        # dof_armature = sys.dof_armature.at[6:].set(armature)
+        # Armature:
+        rng, key = jax.random.split(rng)
+        armature = sys.dof_armature[6:] * jax.random.uniform(
+            key, shape=(12,), minval=1.0, maxval=1.05,
+        )
+        dof_armature = sys.dof_armature.at[6:].set(armature)
 
-        # # Center of Mass offset:
-        # rng, key = jax.random.split(rng)
-        # inertia_offset = jax.random.uniform(
-        #     key, (3,), minval=-0.05, maxval=0.05,
-        # )
-        # body_ipos = sys.body_ipos.at[TORSO_BODY_ID].set(
-        #     sys.body_ipos[TORSO_BODY_ID] + inertia_offset,
-        # )
+        # Center of Mass offset:
+        rng, key = jax.random.split(rng)
+        inertia_offset = jax.random.uniform(
+            key, (3,), minval=-0.05, maxval=0.05,
+        )
+        body_ipos = sys.body_ipos.at[TORSO_BODY_ID].set(
+            sys.body_ipos[TORSO_BODY_ID] + inertia_offset,
+        )
 
-        # # Link mass randomization:
-        # rng, key = jax.random.split(rng)
-        # delta = jax.random.uniform(
-        #     key, (sys.nbody,), minval=0.9, maxval=1.1,
-        # )
-        # body_mass = sys.body_mass.at[:].set(sys.body_mass * delta)
+        # Link mass randomization:
+        rng, key = jax.random.split(rng)
+        delta = jax.random.uniform(
+            key, (sys.nbody,), minval=0.9, maxval=1.1,
+        )
+        body_mass = sys.body_mass.at[:].set(sys.body_mass * delta)
 
-        # # Torso mass randomization:
-        # rng, key = jax.random.split(rng)
-        # delta = jax.random.uniform(
-        #     key, minval=-1.0, maxval=1.0,
-        # )
-        # body_mass = sys.body_mass.at[TORSO_BODY_ID].set(sys.body_mass[TORSO_BODY_ID] + delta)
+        # Torso mass randomization:
+        rng, key = jax.random.split(rng)
+        delta = jax.random.uniform(
+            key, minval=-1.0, maxval=1.0,
+        )
+        body_mass = sys.body_mass.at[TORSO_BODY_ID].set(sys.body_mass[TORSO_BODY_ID] + delta)
 
-        # # Joint reference randomization:
-        # rng, key = jax.random.split(rng)
-        # qpos0 = sys.qpos0
-        # delta = jax.random.uniform(key, shape=(12,), minval=-0.05, maxval=0.05)
-        # qpos0 = qpos0.at[7:].set(qpos0[7:] + delta)
+        # Joint reference randomization:
+        rng, key = jax.random.split(rng)
+        qpos0 = sys.qpos0
+        delta = jax.random.uniform(key, shape=(12,), minval=-0.05, maxval=0.05)
+        qpos0 = qpos0.at[7:].set(qpos0[7:] + delta)
 
-        # return (
-        #     friction,
-        #     dof_frictionloss,
-        #     dof_armature,
-        #     body_ipos,
-        #     body_mass,
-        #     qpos0,
-        # )
+        return (
+            friction,
+            dof_frictionloss,
+            dof_armature,
+            body_ipos,
+            body_mass,
+            qpos0,
+        )
 
-    # (
-    #     friction,
-    #     dof_frictionloss,
-    #     dof_armature,
-    #     body_ipos,
-    #     body_mass,
-    #     qpos0,
-    # ) = randomize_parameters(rng)
+    (
+        friction,
+        dof_frictionloss,
+        dof_armature,
+        body_ipos,
+        body_mass,
+        qpos0,
+    ) = randomize_parameters(rng)
 
-    # in_axes = jax.tree.map(lambda x: None, sys)
-    # in_axes = in_axes.tree_replace({
-    #     'geom_friction': 0,
-    #     'dof_frictionloss': 0,
-    #     'dof_armature': 0,
-    #     'body_ipos': 0,
-    #     'body_mass': 0,
-    #     'qpos0': 0,
-    # })
+    in_axes = jax.tree.map(lambda x: None, sys)
+    in_axes = in_axes.tree_replace({
+        'geom_friction': 0,
+        'dof_frictionloss': 0,
+        'dof_armature': 0,
+        'body_ipos': 0,
+        'body_mass': 0,
+        'qpos0': 0,
+    })
 
-    # sys = sys.tree_replace({
-    #     'geom_friction': friction,
-    #     'dof_frictionloss': dof_frictionloss,
-    #     'dof_armature': dof_armature,
-    #     'body_ipos': body_ipos,
-    #     'body_mass': body_mass,
-    #     'qpos0': qpos0,
-    # })  # type: ignore
+    sys = sys.tree_replace({
+        'geom_friction': friction,
+        'dof_frictionloss': dof_frictionloss,
+        'dof_armature': dof_armature,
+        'body_ipos': body_ipos,
+        'body_mass': body_mass,
+        'qpos0': qpos0,
+    })  # type: ignore
 
     return sys, in_axes
 
@@ -315,20 +315,18 @@ class UnitreeGo2Env(PipelineEnv):
             key, self.initial_qpos,
         )
 
-        qvel = self.init_qd
-
         # Initial Velocity:
-        # rng, key = jax.random.split(rng)
-        # qvel = self.init_qd.at[0:6].set(
-        #     jax.random.uniform(key, (6,), minval=-0.1, maxval=0.1)
-        # )
+        rng, key = jax.random.split(rng)
+        qvel = self.init_qd.at[0:6].set(
+            jax.random.uniform(key, (6,), minval=-0.1, maxval=0.1)
+        )
 
         # # Small Velocity Deviation:
-        # rng, key = jax.random.split(rng)
-        # delta = jax.random.uniform(
-        #     key, shape=(12,), minval=-0.1, maxval=0.1,
-        # )
-        # qvel = qvel.at[6:].set(qvel[6:] + delta)
+        rng, key = jax.random.split(rng)
+        delta = jax.random.uniform(
+            key, shape=(12,), minval=-0.1, maxval=0.1,
+        )
+        qvel = qvel.at[6:].set(qvel[6:] + delta)
 
         pipeline_state = self.pipeline_init(qpos, qvel)
 
@@ -339,7 +337,7 @@ class UnitreeGo2Env(PipelineEnv):
             minval=self.disturbance_config.wait_times[0],
             maxval=self.disturbance_config.wait_times[1],
         )
-        steps_until_next_disturbance = jnp.round(time_until_next_disturbance / self.dt).astype(
+        steps_until_next_disturbance = jnp.round(time_until_next_disturbance / self.step_dt).astype(
             jnp.int32
         )
         disturbance_duration = jax.random.uniform(
@@ -347,7 +345,7 @@ class UnitreeGo2Env(PipelineEnv):
             minval=self.disturbance_config.durations[0],
             maxval=self.disturbance_config.durations[1],
         )
-        disturbance_duration_steps = jnp.round(disturbance_duration / self.dt).astype(
+        disturbance_duration_steps = jnp.round(disturbance_duration / self.step_dt).astype(
             jnp.int32
         )
         disturbance_magnitude = jax.random.uniform(
@@ -360,7 +358,7 @@ class UnitreeGo2Env(PipelineEnv):
         rng, command_interval_key, command_sample_key = jax.random.split(rng, 3)
         time_until_next_command = jax.random.uniform(command_interval_key, shape=(), minval=2.0, maxval=5.0)
         steps_until_next_command = jnp.round(
-            time_until_next_command / self.dt
+            time_until_next_command / self.step_dt
         ).astype(jnp.int32)
 
         command = self.sample_command(command_sample_key)
@@ -472,7 +470,7 @@ class UnitreeGo2Env(PipelineEnv):
         rewards = {
             k: v * self.reward_config[k] for k, v in rewards.items()
         }
-        reward = jnp.clip(sum(rewards.values()) * self.dt, 0.0, 10000.0)
+        reward = jnp.clip(sum(rewards.values()) * self.step_dt, 0.0, 10000.0)
 
         # State management
         state.info['previous_action'] = action
@@ -493,7 +491,7 @@ class UnitreeGo2Env(PipelineEnv):
         state.info['steps_until_next_command'] = jnp.where(
             done | (state.info['steps_until_next_command'] <= 0),
             jnp.round(
-                jax.random.uniform(sample_key, shape=(), minval=2.0, maxval=5.0) / self.dt
+                jax.random.uniform(sample_key, shape=(), minval=2.0, maxval=5.0) / self.step_dt
             ).astype(jnp.int32),
             state.info['steps_until_next_command'],
         )
@@ -763,7 +761,7 @@ class UnitreeGo2Env(PipelineEnv):
             return jnp.array([jnp.cos(angle), jnp.sin(angle), 0.0])
 
         def apply_perturbation(state: State) -> State:
-            t = state.info["disturbance_step"] * self.dt
+            t = state.info["disturbance_step"] * self.step_dt
             u_t = 0.5 * jnp.sin(jnp.pi * t / state.info["disturbance_duration"])
             # kg * m/s * 1/s = m/s^2 = kg * m/s^2 (N).
             force = (
