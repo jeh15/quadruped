@@ -50,17 +50,21 @@ def main(argv=None):
         tracking_height=2.0,
         tracking_height_error=-5.0,
         # Orientation Regularization Terms:
+        linear_xy_velocity=-1.0,
         angular_xy_velocity=-0.05,
         orientation_regularization=-2.0,
-        pose_regularization=-0.5,
+        pose_regularization=-0.1,
         # Energy Regularization Terms:
         torque=-2.0e-4,
-        action_rate=-0.01,
-        acceleration=-1.0e-4,
+        action_rate=-0.1,
+        acceleration=-1.0e-2,
+        # Foot Contact Terms:
+        foot_contact=-0.1,
+        foot_slip=-0.1,
         # Auxilary Terms:
         termination=-1.0,
         # Hyperparameter for exponential kernel:
-        kernel_sigma=0.1,
+        kernel_sigma=0.05,
     )
 
     # Metadata:

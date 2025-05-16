@@ -25,6 +25,8 @@ from brax.io import mjcf, html
 
 import mujoco
 
+from src.envs.utilities import collisions
+
 
 # Types:
 PRNGKey = jax.Array
@@ -36,13 +38,17 @@ class RewardConfig:
     tracking_height: float = 2.0
     # Orientation Regularization Terms:
     tracking_height_error: float = -5.0
+    linear_xy_velocity: float = -1.0
     angular_xy_velocity: float = -0.05
     orientation_regularization: float = -1.0
-    pose_regularization: float = -1.0
+    pose_regularization: float = -0.1
     # Energy Regularization Terms:
     torque: float = -2e-4
     action_rate: float = -0.01
     acceleration: float = -1e-4
+    # Foot Contact Terms:
+    foot_contact: float = -0.1
+    foot_slip: float = -0.1
     # Auxilary Terms:
     termination: float = -1.0
     # Hyperparameter for exponential kernel:
@@ -264,7 +270,7 @@ class UnitreeGo2Env(PipelineEnv):
 
     def sample_command(self, rng: jax.Array) -> jax.Array:
         key, subkey = jax.random.split(rng)
-        command_range = [0.0, 0.4]
+        command_range = [0.1, 0.35]
         command = jax.random.uniform(
             subkey,
             shape=(1,),
@@ -314,6 +320,7 @@ class UnitreeGo2Env(PipelineEnv):
             'rng': rng,
             'previous_action': jnp.zeros(12),
             'previous_velocity': jnp.zeros(12),
+            'previous_contact': jnp.zeros(4, dtype=bool),
             'command': command,
             'steps_until_next_command': steps_until_next_command,
             'rewards': {k: 0.0 for k in self.reward_config.keys()},
@@ -346,8 +353,8 @@ class UnitreeGo2Env(PipelineEnv):
         rng, cmd_key, sample_key = jax.random.split(state.info['rng'], 3)
 
         # Physics step:
-        # motor_targets = self.default_ctrl + action * self.action_scale
-        motor_targets = state.pipeline_state.q[7:] + action * self.action_scale
+        motor_targets = self.default_ctrl + action * self.action_scale
+        # motor_targets = state.pipeline_state.q[7:] + action * self.action_scale
         pipeline_state = self.pipeline_step(
             state.pipeline_state, motor_targets,
         )
@@ -357,6 +364,12 @@ class UnitreeGo2Env(PipelineEnv):
         joint_velocities = pipeline_state.qd[6:]
         torso_height = jnp.array([
             pipeline_state.site_xpos[self.imu_site_idx][2]
+        ])
+
+        # Foot Contact:
+        contact = jnp.array([
+            collisions.geoms_colliding(pipeline_state, geom_id, self.floor_geom_idx)
+            for geom_id in self.feet_geom_idx
         ])
 
         observation = self.get_observation(
@@ -379,6 +392,9 @@ class UnitreeGo2Env(PipelineEnv):
                     state.info['command'], torso_height,
                 )
             ),
+            'linear_xy_velocity': self._reward_linear_velocity(
+                self.get_global_linvel(pipeline_state),
+            ),
             'angular_xy_velocity': self._reward_angular_velocity(
                 self.get_global_angvel(pipeline_state),
             ),
@@ -387,14 +403,19 @@ class UnitreeGo2Env(PipelineEnv):
             ),
             'pose_regularization': (
                 self._reward_pose_regularization(
-                    state.info['initial_imu_pos'],
-                    pipeline_state.site_xpos[self.imu_site_idx],
+                    joint_angles,
                 )
             ),
             'torque': self._reward_torques(pipeline_state.actuator_force),
             'action_rate': self._reward_action_rate(action, state.info['previous_action']),
             'acceleration': self._reward_acceleration(
                 pipeline_state.qacc,
+            ),
+            'foot_contact': self._reward_foot_contact(
+                pipeline_state, contact,
+            ),
+            'foot_slip': self._reward_foot_slip(
+                pipeline_state, contact,
             ),
             'termination': jnp.float64(
                 self._reward_termination(done)
@@ -410,6 +431,7 @@ class UnitreeGo2Env(PipelineEnv):
         # State management
         state.info['previous_action'] = action
         state.info['previous_velocity'] = joint_velocities
+        state.info['previous_contact'] = contact
         state.info['rewards'] = rewards
         state.info['steps_until_next_command'] -= 1
         state.info['rng'] = rng
@@ -549,6 +571,12 @@ class UnitreeGo2Env(PipelineEnv):
         # L1 Error for Tracking of height command (z axis)
         return jnp.sum(jnp.abs(command - global_base_z))
 
+    def _reward_linear_velocity(
+        self, global_base_vel: jax.Array,
+    ) -> jax.Array:
+        # Penalize xy axes base linear velocity
+        return jnp.sum(jnp.square(global_base_vel[:2]))
+
     def _reward_angular_velocity(
         self, global_base_angvel: jax.Array,
     ) -> jax.Array:
@@ -562,10 +590,11 @@ class UnitreeGo2Env(PipelineEnv):
         return jnp.sum(jnp.square(base_z_axis[:2]))
 
     def _reward_pose_regularization(
-        self, initial_base_position: jax.Array, base_qpos: jax.Array,
+        self, qpos: jax.Array,
     ) -> jax.Array:
-        # Penalize movement in the xy plane
-        return jnp.sum(jnp.square(base_qpos[:2] - initial_base_position[:2]))
+        # Penalize large deviations from the default pose
+        weight = jnp.array([1.0, 0.0, 0.0] * 4) / 12.0
+        return jnp.sum(jnp.square(qpos - self.default_pose) * weight)
 
     def _reward_torques(self, torques: jax.Array) -> jax.Array:
         # Penalize torques
@@ -582,6 +611,25 @@ class UnitreeGo2Env(PipelineEnv):
     ) -> jax.Array:
         # Penalize Motor/Joint Acceleration
         return jnp.sqrt(jnp.sum(jnp.square(qacc)))
+
+    def _reward_foot_slip(
+        self,
+        pipeline_state: base.State,
+        contact: jax.Array,
+    ) -> jax.Array:
+        # Penalize foot slip
+        foot_velocity = self.get_feet_velocity(pipeline_state)
+        foot_velocity_xy = foot_velocity[..., :2]
+        velocity_xy_sq = jnp.sum(jnp.square(foot_velocity_xy), axis=-1)
+        return jnp.sum(velocity_xy_sq * contact)
+
+    def _reward_foot_contact(
+        self,
+        pipeline_state: base.State,
+        contact: jax.Array,
+    ) -> jax.Array:
+        # Penalize non contact
+        return jnp.sum(~contact)
 
     def _reward_termination(self, done: jax.Array) -> jax.Array:
         return done
