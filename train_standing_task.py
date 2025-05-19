@@ -48,27 +48,27 @@ def main(argv=None):
     # Config:
     # reward_config = unitree_go2.RewardConfig(
     #     # Rewards:
-    #     tracking_height=5.0,
+    #     tracking_height=2.0,
     #     tracking_height_error=-5.0,
     #     # Orientation Regularization Terms:
-    #     linear_z_velocity=-2.0,
+    #     linear_z_velocity=-0.0,
     #     linear_xy_velocity=-1.0,
-    #     angular_z_velocity=-5.0,
+    #     angular_z_velocity=-0.0,
     #     angular_xy_velocity=-0.05,
     #     orientation_regularization=-2.0,
     #     pose_regularization=-0.1,
     #     # Energy Regularization Terms:
-    #     torque=-0.0,
+    #     torque=-2.0e-4,
     #     action_rate=-0.1,
     #     acceleration=-1.0e-3,
     #     # Foot Contact Terms:
     #     foot_contact=-0.1,
     #     foot_slip=-0.1,
     #     # Auxilary Terms:
-    #     knee_height=-1.0,
+    #     knee_height=-0.0,
     #     termination=-1.0,
     #     # Hyperparameter for exponential kernel:
-    #     kernel_sigma=0.1,
+    #     kernel_sigma=0.05,
     # )
 
     reward_config = unitree_go2.RewardConfig(
