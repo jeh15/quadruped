@@ -12,9 +12,7 @@ import numpy.typing as npt
 import mujoco
 import mujoco.viewer
 
-# from src.envs import sinusoid_test as unitree_go2
-# from src.envs import unitree_go2_v13 as unitree_go2
-from src.envs import unitree_go2_height_control_v2 as unitree_go2
+from src.envs import unitree_go2_height_control_v3 as unitree_go2
 from src.algorithms.ppo.load_utilities import load_policy
 
 
@@ -85,8 +83,12 @@ def main(argv=None):
         action_scale=env.action_scale,
     )
 
-    # Test:
+    # Initialize:
     action = np.zeros(12)
+    observation = {
+        'state': np.zeros((env.num_observations,)),
+        'privileged_state': np.zeros((env.num_privileged_observations,)),
+    }
 
     # Setup Joystick:
     joysticks = {}
@@ -94,12 +96,6 @@ def main(argv=None):
     key = jax.random.key(0)
     termination_flag = False
 
-    global_steps = 0
-
-    joint_position_history = []
-    joint_velocity_history = []
-    action_history = []
-    ctrl_history = []
 
     with mujoco.viewer.launch_passive(model, data) as viewer:
         viewer.cam.trackbodyid = 1
@@ -124,46 +120,15 @@ def main(argv=None):
                 # Feet Tracking and Height Control Policy:
                 command = -1 * joystick.get_axis(1)
 
-                # Walking Policy:
-                # forward_command = -1 * joystick.get_axis(1)
-                # lateral_command = -1 * joystick.get_axis(0)
-                # rotation_command = -1 * joystick.get_axis(2)
-
-            # Foot Tracking Policy:
-            # command = np.array([
-            #     command
-            # ])
-            # command = np.where(np.abs(command) < 0.1, 0.0, command)
-            # command = np.clip(command, -1.0, 1.0)
-            # command = 0.1 * command
-            # command = np.clip(command, -0.1, 0.1)
-
             # Height Control Policy:
             command = np.array([
                 command
             ])
+            lb, ub = 0.0, 0.4
             command = np.where(np.abs(command) < 0.1, 0.0, command)
             command = np.clip(command, -1.0, 1.0)
-            command = 0.1 + (command - -1) * (0.35 - 0.1) / (1 - -1)
-            command = np.clip(command, 0.1, 0.35)
-
-            # Walking Policy:
-            # command = np.array([
-            #     forward_command, lateral_command, rotation_command,
-            # ])
-            # command = np.where(np.abs(command) < 0.1, 0.0, command)
-            # command = np.clip(command, -0.75, 0.75)
-
-            # # Print Tracking Reward:
-            # desired_foot_height = env.default_feet_position[:, -1] + command
-            # foot_position = env.get_feet_pos(data)
-            # error = np.sum(np.square(desired_foot_height - foot_position[:, -1]))
-            # tracking_reward = np.exp(-error / 0.01)
-
-            # print(f'Command: {command}')
-            # print(f'Desired Height: {desired_foot_height}')
-            # print(f'Actual Height: {foot_position[:, -1]}')
-            # print(f'Tracking Reward: {tracking_reward}')
+            command = lb + (command - -1) * (ub - lb) / (1 - -1)
+            command = np.clip(command, lb, ub)
 
             step_time = time.time()
             action_rng, key = jax.random.split(key)
@@ -171,6 +136,7 @@ def main(argv=None):
             # Get Observation:
             observation = env.np_observation(
                 mj_data=data,
+                observation_history=observation['state'],
                 command=command,
                 previous_action=action,
                 add_noise=False,
@@ -183,16 +149,6 @@ def main(argv=None):
             # data.ctrl = ctrl
             data.ctrl = ctrl
 
-            # Log MuJoCo Data:
-            joint_position = data.qpos
-            joint_velocity = data.qvel
-
-            # Append Data:
-            joint_position_history.append(joint_position)
-            joint_velocity_history.append(joint_velocity)
-            action_history.append(action)
-            ctrl_history.append(ctrl)
-
             for _ in range(num_steps):
                 mujoco.mj_step(model, data)  # type: ignore
 
@@ -201,36 +157,7 @@ def main(argv=None):
             sleep_time = control_rate - (time.time() - step_time)
             if sleep_time > 0:
                 time.sleep(sleep_time)
-            
-            global_steps += 1
 
-
-    # Save Data:
-    joint_position_data = np.asarray(joint_position_history)
-    joint_velocity_data = np.asarray(joint_velocity_history)
-    action_data = np.asarray(action_history)
-    ctrl_data = np.asarray(ctrl_history)
-
-    np.savetxt(
-        os.path.join(log_directory, 'simulation_joint_position_data.txt'),
-        joint_position_data,
-        delimiter=',',
-    )
-    np.savetxt(
-        os.path.join(log_directory, 'simulation_joint_velocity_data.txt'),
-        joint_velocity_data,
-        delimiter=',',
-    )
-    np.savetxt(
-        os.path.join(log_directory, 'simulation_action_data.txt'),
-        action_data,
-        delimiter=',',
-    )
-    np.savetxt(
-        os.path.join(log_directory, 'simulation_ctrl_data.txt'),
-        ctrl_data,
-        delimiter=',',
-    )
 
 
 if __name__ == '__main__':

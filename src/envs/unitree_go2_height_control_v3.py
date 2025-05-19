@@ -695,6 +695,7 @@ class UnitreeGo2Env(PipelineEnv):
     def np_observation(
         self,
         mj_data: mujoco.MjData,
+        observation_history: np.ndarray,
         command: np.ndarray,
         previous_action: np.ndarray,
         add_noise: bool = True,
@@ -747,7 +748,7 @@ class UnitreeGo2Env(PipelineEnv):
                 size=qd.shape,
             )
 
-        observation = np.concatenate([
+        new_observation = np.concatenate([
             gyroscope,
             projected_gravity,
             q - self.default_ctrl,
@@ -755,6 +756,13 @@ class UnitreeGo2Env(PipelineEnv):
             previous_action,
             command,
         ])
+
+        observation = np.roll(
+            observation_history,
+            new_observation.size
+        )
+        observation[:new_observation.size] = new_observation
+        # Size: 43 * time_window
 
         return {
             'state': observation,
@@ -765,6 +773,7 @@ class UnitreeGo2Env(PipelineEnv):
         self,
         imu_state: Any,
         motor_state: Any,
+        observation_history: np.ndarray,
         command: np.ndarray,
         previous_action: np.ndarray,
     ) -> Dict[str, np.ndarray]:
@@ -790,7 +799,7 @@ class UnitreeGo2Env(PipelineEnv):
             inverse_base_rotation,
         )
 
-        observation = np.concatenate([
+        new_observation = np.concatenate([
             gyroscope,
             projected_gravity,
             joint_positions - self.default_ctrl,
@@ -798,6 +807,12 @@ class UnitreeGo2Env(PipelineEnv):
             previous_action,
             command,
         ])
+
+        observation = np.roll(
+            observation_history,
+            new_observation.size
+        )
+        observation[:new_observation.size] = new_observation
 
         return {
             'state': observation,
