@@ -14,7 +14,7 @@
     <default class="go2">
       <geom condim="1"/>
       <joint axis="0 1 0" damping="0.5" armature="0.01"/>
-      <position forcerange="-23.7 23.7" inheritrange="1" kp="35.0"/>
+      <position forcerange="-23.7 23.7" inheritrange="1" kp="25.0"/>
       <default class="go2/abduction">
         <joint axis="1 0 0" range="-1.0472 1.0472" frictionloss="0.35"/>
       </default>

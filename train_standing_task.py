@@ -10,7 +10,8 @@ import optax
 import wandb
 import orbax.checkpoint as ocp
 
-from src.envs import unitree_go2_height_control_v3 as unitree_go2
+# from src.envs import unitree_go2_height_control_v3 as unitree_go2
+from src.envs import unitree_go2_height_control_v4 as unitree_go2
 from src.algorithms.ppo import network_utilities as ppo_networks
 from src.algorithms.ppo.loss_utilities import loss_function
 from src.distribution_utilities import ParametricDistribution
@@ -45,27 +46,47 @@ flags.DEFINE_string(
 
 def main(argv=None):
     # Config:
+    # reward_config = unitree_go2.RewardConfig(
+    #     # Rewards:
+    #     tracking_height=5.0,
+    #     tracking_height_error=-5.0,
+    #     # Orientation Regularization Terms:
+    #     linear_z_velocity=-2.0,
+    #     linear_xy_velocity=-1.0,
+    #     angular_z_velocity=-5.0,
+    #     angular_xy_velocity=-0.05,
+    #     orientation_regularization=-2.0,
+    #     pose_regularization=-0.1,
+    #     # Energy Regularization Terms:
+    #     torque=-0.0,
+    #     action_rate=-0.1,
+    #     acceleration=-1.0e-3,
+    #     # Foot Contact Terms:
+    #     foot_contact=-0.1,
+    #     foot_slip=-0.1,
+    #     # Auxilary Terms:
+    #     knee_height=-1.0,
+    #     termination=-1.0,
+    #     # Hyperparameter for exponential kernel:
+    #     kernel_sigma=0.1,
+    # )
+
     reward_config = unitree_go2.RewardConfig(
         # Rewards:
+        tracking_linear_velocity=1.5,
+        tracking_angular_velocity=0.75,
         tracking_height=5.0,
-        tracking_height_error=-5.0,
         # Orientation Regularization Terms:
-        linear_z_velocity=-2.0,
-        linear_xy_velocity=-1.0,
+        linear_z_velocity=-1.0,
         angular_xy_velocity=-0.05,
-        orientation_regularization=-2.0,
-        pose_regularization=-0.1,
         # Energy Regularization Terms:
         torque=-2.0e-4,
-        action_rate=-0.1,
-        acceleration=-1.0e-3,
-        # Foot Contact Terms:
-        foot_contact=-0.1,
-        foot_slip=-0.1,
+        action_rate=-0.01,
+        acceleration=-2.5e-7,
         # Auxilary Terms:
-        termination=-1.0,
+        termination=-0.0,
         # Hyperparameter for exponential kernel:
-        kernel_sigma=0.05,
+        kernel_sigma=0.15,
     )
 
     # Metadata:
@@ -78,7 +99,7 @@ def main(argv=None):
         value_depth=len(value_layer_size),
         activation='nn.swish',
         policy_kernel_init='jax.nn.initializers.lecun_uniform()',
-        value_kernel_init='jax.nn.initializers.variance_scaling(scale=0.01, mode="fan_in", distribution="uniform")',
+        value_kernel_init='jax.nn.initializers.lecun_uniform()',
         policy_observation_key='state',
         value_observation_key='privileged_state',
         action_distribution='ParametricDistribution(distribution=distrax.Normal, bijector=distrax.Tanh())',
