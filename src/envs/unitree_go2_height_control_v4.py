@@ -41,6 +41,7 @@ class RewardConfig:
     # Orientation Regularization Terms:
     linear_z_velocity: float = -1.0
     angular_xy_velocity: float = -0.05
+    orientation_regularization: float = -2.5
     # Energy Regularization Terms:
     torque: float = -2e-4
     action_rate: float = -0.01
@@ -399,6 +400,9 @@ class UnitreeGo2Env(PipelineEnv):
             'angular_xy_velocity': self._reward_angular_velocity(
                 self.get_global_angvel(pipeline_state),
             ),
+            'orientation_regularization': self._reward_orientation_regularization(
+                self.get_upvector(pipeline_state),
+            ),
             'torque': self._reward_torques(pipeline_state.actuator_force),
             'action_rate': self._reward_action_rate(action, state.info['previous_action']),
             'acceleration': self._reward_acceleration(
@@ -582,6 +586,12 @@ class UnitreeGo2Env(PipelineEnv):
     ) -> jax.Array:
         # Penalize xy axes base angular velocity
         return jnp.sum(jnp.square(global_base_angvel[:2]))
+
+    def _reward_orientation_regularization(
+        self, base_z_axis: jax.Array,
+    ) -> jax.Array:
+        # Penalize non flat base orientation
+        return jnp.sum(jnp.square(base_z_axis[:2]))
 
     def _reward_torques(self, torques: jax.Array) -> jax.Array:
         # Penalize torques
