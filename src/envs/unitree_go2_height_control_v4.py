@@ -275,7 +275,7 @@ class UnitreeGo2Env(PipelineEnv):
 
     def sample_command(self, rng: jax.Array) -> jax.Array:
         key, subkey = jax.random.split(rng)
-        command_range = [0.0, 0.40]
+        command_range = [0.0, 0.5]
         command = jax.random.uniform(
             subkey,
             shape=(1,),

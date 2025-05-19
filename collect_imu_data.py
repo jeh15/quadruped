@@ -100,9 +100,6 @@ def main(argv=None):
             print('Warning: Control rate exceeded.')
             next_time_ns = now_ns
 
-        
-
-
     # Save Data:
     data = np.asarray(imu_states)
 
