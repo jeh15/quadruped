@@ -10,8 +10,8 @@ import optax
 import wandb
 import orbax.checkpoint as ocp
 
-# from src.envs import unitree_go2_height_control_v3 as unitree_go2
-from src.envs import unitree_go2_height_control_v4 as unitree_go2
+from src.envs import unitree_go2_height_control_v3 as unitree_go2
+# from src.envs import unitree_go2_height_control_v4 as unitree_go2
 from src.algorithms.ppo import network_utilities as ppo_networks
 from src.algorithms.ppo.loss_utilities import loss_function
 from src.distribution_utilities import ParametricDistribution
@@ -46,49 +46,49 @@ flags.DEFINE_string(
 
 def main(argv=None):
     # Config:
-    # reward_config = unitree_go2.RewardConfig(
-    #     # Rewards:
-    #     tracking_height=2.0,
-    #     tracking_height_error=-5.0,
-    #     # Orientation Regularization Terms:
-    #     linear_z_velocity=-0.0,
-    #     linear_xy_velocity=-1.0,
-    #     angular_z_velocity=-0.0,
-    #     angular_xy_velocity=-0.05,
-    #     orientation_regularization=-2.0,
-    #     pose_regularization=-0.1,
-    #     # Energy Regularization Terms:
-    #     torque=-2.0e-4,
-    #     action_rate=-0.1,
-    #     acceleration=-1.0e-3,
-    #     # Foot Contact Terms:
-    #     foot_contact=-0.1,
-    #     foot_slip=-0.1,
-    #     # Auxilary Terms:
-    #     knee_height=-0.0,
-    #     termination=-1.0,
-    #     # Hyperparameter for exponential kernel:
-    #     kernel_sigma=0.05,
-    # )
-
     reward_config = unitree_go2.RewardConfig(
         # Rewards:
-        tracking_linear_velocity=1.5,
-        tracking_angular_velocity=0.75,
-        tracking_height=5.0,
+        tracking_height=2.0,
+        tracking_height_error=-5.0,
         # Orientation Regularization Terms:
-        linear_z_velocity=-1.0,
+        linear_z_velocity=-0.0,
+        linear_xy_velocity=-1.0,
+        angular_z_velocity=-0.0,
         angular_xy_velocity=-0.05,
         orientation_regularization=-2.5,
+        pose_regularization=-0.0,
         # Energy Regularization Terms:
         torque=-2.0e-4,
-        action_rate=-0.01,
-        acceleration=-2.5e-7,
+        action_rate=-0.1,
+        acceleration=-1.0e-3,
+        # Foot Contact Terms:
+        foot_contact=-0.1,
+        foot_slip=-0.1,
         # Auxilary Terms:
-        termination=-0.0,
+        knee_height=-0.0,
+        termination=-1.0,
         # Hyperparameter for exponential kernel:
-        kernel_sigma=0.15,
+        kernel_sigma=0.05,
     )
+
+    # reward_config = unitree_go2.RewardConfig(
+    #     # Rewards:
+    #     tracking_linear_velocity=1.5,
+    #     tracking_angular_velocity=0.75,
+    #     tracking_height=5.0,
+    #     # Orientation Regularization Terms:
+    #     linear_z_velocity=-1.0,
+    #     angular_xy_velocity=-0.05,
+    #     orientation_regularization=-2.5,
+    #     # Energy Regularization Terms:
+    #     torque=-2.0e-4,
+    #     action_rate=-0.01,
+    #     acceleration=-2.5e-7,
+    #     # Auxilary Terms:
+    #     termination=-0.0,
+    #     # Hyperparameter for exponential kernel:
+    #     kernel_sigma=0.15,
+    # )
 
     # Metadata:
     policy_layer_size = [512, 256, 128,]
@@ -170,9 +170,9 @@ def main(argv=None):
         gae_lambda=loss_metadata.gae_lambda,
         normalize_advantages=loss_metadata.normalize_advantages,
     )
-    env = unitree_go2.UnitreeGo2Env(config=reward_config)
-    eval_env = unitree_go2.UnitreeGo2Env(config=reward_config)
-    render_env = unitree_go2.UnitreeGo2Env(config=reward_config)
+    env = unitree_go2.UnitreeGo2Env(config=reward_confi, filename='unitree_go2/scene_mjx_rsl_rl.xml')
+    eval_env = unitree_go2.UnitreeGo2Env(config=reward_config, filename='unitree_go2/scene_mjx_rsl_rl.xml')
+    render_env = unitree_go2.UnitreeGo2Env(config=reward_config, filename='unitree_go2/scene_mjx_rsl_rl.xml')
 
     def progress_fn(iteration, num_steps, metrics):
         print(
