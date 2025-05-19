@@ -15,7 +15,7 @@ from unitree_api_bindings import unitree_api
 
 # from src.envs import feet_tracking as unitree_go2
 # from src.envs import unitree_go2_mujocoplayground as unitree_go2
-from src.envs import unitree_go2_height_control as unitree_go2
+from src.envs import unitree_go2_height_control_v2 as unitree_go2
 from src.algorithms.ppo.load_utilities import load_policy
 
 jax.config.update("jax_enable_x64", True)
@@ -157,6 +157,8 @@ def main(argv=None):
     next_time_ns = time.clock_gettime_ns(time.CLOCK_MONOTONIC)
     while is_running:
         next_time_ns += control_rate_ns
+        start_time = time.clock_gettime_ns(time.CLOCK_MONOTONIC)
+
         for event in pygame.event.get():
             if event.type == pygame.JOYDEVICEADDED:
                 joy = pygame.joystick.Joystick(event.device_index)
@@ -212,8 +214,9 @@ def main(argv=None):
         ])
         command = np.where(np.abs(command) < 0.1, 0.0, command)
         command = np.clip(command, -1.0, 1.0)
-        command = 0.07 + (command - -1) * (0.35 - 0.07) / (1 - -1)
-        command = np.clip(command, 0.07, 0.35)
+        command = 0.1 + (command - -1) * (0.35 - 0.1) / (1 - -1)
+        command = np.clip(command, 0.1, 0.35)
+
 
         # Walking Policy:
         # command = np.array([
@@ -286,6 +289,9 @@ def main(argv=None):
         else:
             print('Warning: Control rate exceeded.')
             next_time_ns = now_ns
+
+        end_time = time.clock_gettime_ns(time.CLOCK_MONOTONIC)
+        print(f'Elapsed Time: {(end_time - start_time) / 1e6}')
 
     # Save Data:
     joint_position_data = np.asarray(joint_position_history)
