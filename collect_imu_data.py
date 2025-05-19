@@ -53,6 +53,10 @@ def main(argv=None):
     imu_states = []
     joysticks = {}
     is_running = True
+    next_time_ns = time.clock_gettime_ns(time.CLOCK_MONOTONIC)
+
+    print('Collecting Data...')
+
     while is_running:
         next_time_ns += control_rate_ns
 

@@ -12,7 +12,8 @@ import numpy.typing as npt
 import mujoco
 import mujoco.viewer
 
-from src.envs import unitree_go2_height_control_v3 as unitree_go2
+# from src.envs import unitree_go2_height_control_v3 as unitree_go2
+from src.envs import unitree_go2_height_control_v4 as unitree_go2
 from src.algorithms.ppo.load_utilities import load_policy
 
 
@@ -52,9 +53,15 @@ def main(argv=None):
     model_mjx = env.sys.mj_model
 
     # High Fidelity Model:
+    # model_path = os.path.join(
+    #     os.path.dirname(__file__),
+    #     'models/unitree_go2/scene_mjx_collision.xml',
+    # )
+
+    # High Fidelity Model:
     model_path = os.path.join(
         os.path.dirname(__file__),
-        'models/unitree_go2/scene_mjx_collision.xml',
+        'models/unitree_go2/scene_mjx_rsl_rl.xml',
     )
 
     model = mujoco.MjModel.from_xml_path(
