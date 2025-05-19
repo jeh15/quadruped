@@ -10,7 +10,7 @@ import optax
 import wandb
 import orbax.checkpoint as ocp
 
-from src.envs import unitree_go2_height_control_v2 as unitree_go2
+from src.envs import unitree_go2_height_control_v3 as unitree_go2
 from src.algorithms.ppo import network_utilities as ppo_networks
 from src.algorithms.ppo.loss_utilities import loss_function
 from src.distribution_utilities import ParametricDistribution
@@ -57,7 +57,7 @@ def main(argv=None):
         # Energy Regularization Terms:
         torque=-2.0e-4,
         action_rate=-0.1,
-        acceleration=-1.0e-2,
+        acceleration=-1.0e-3,
         # Foot Contact Terms:
         foot_contact=-0.1,
         foot_slip=-0.1,
@@ -68,7 +68,7 @@ def main(argv=None):
     )
 
     # Metadata:
-    policy_layer_size = [128, 128, 128,]
+    policy_layer_size = [512, 256, 128,]
     value_layer_size = [512, 256, 128,]
     network_metadata = checkpoint_utilities.network_metadata(
         policy_layer_size=policy_layer_size,
@@ -83,10 +83,10 @@ def main(argv=None):
         action_distribution='ParametricDistribution(distribution=distrax.Normal, bijector=distrax.Tanh())',
     )
     loss_metadata = checkpoint_utilities.loss_metadata(
-        clip_coef=0.3,
-        value_coef=0.25,
+        clip_coef=0.2,
+        value_coef=1.0,
         entropy_coef=0.01,
-        gamma=0.97,
+        gamma=0.99,
         gae_lambda=0.95,
         normalize_advantages=True,
     )
@@ -105,7 +105,7 @@ def main(argv=None):
         batch_size=256,
         num_minibatches=32,
         num_ppo_iterations=4,
-        normalize_observations=True,
+        normalize_observations=False,
         optimizer='optax.adam(3e-4)',
     )
 
