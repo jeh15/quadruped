@@ -29,6 +29,7 @@
       <default class="go2/knee">
         <joint range="-2.7227 -0.83776" frictionloss="1.35"/>
         <position forcerange="-45.43 45.43"/>
+        <site pos="0 0 0"/>
       </default>
       <default class="go2/foot">
         <site pos="-0.002 0 -0.213"/>
@@ -138,6 +139,7 @@
                         <geom name="front_right_calf_collision1" class="calf1"/>
                         <geom name="front_right_calf_collision2" class="calf2"/>
                         <!-- Collision/ -->
+                        <site name="front_right_knee" class="go2/knee"/>
                         <geom pos="0 0 -0.213" mesh="foot" class="go2/visual" material="black"/>
                         <geom name="front_right" class="go2/collision/foot"/>
                         <site name="front_right_foot" class="go2/foot"/>

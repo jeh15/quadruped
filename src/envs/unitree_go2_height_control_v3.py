@@ -38,6 +38,7 @@ class RewardConfig:
     tracking_height: float = 2.0
     # Orientation Regularization Terms:
     tracking_height_error: float = -5.0
+    linear_z_velocity: float = -2.0
     linear_xy_velocity: float = -1.0
     angular_xy_velocity: float = -0.05
     orientation_regularization: float = -1.0
@@ -271,7 +272,7 @@ class UnitreeGo2Env(PipelineEnv):
 
     def sample_command(self, rng: jax.Array) -> jax.Array:
         key, subkey = jax.random.split(rng)
-        command_range = [0.1, 0.35]
+        command_range = [0.0, 0.40]
         command = jax.random.uniform(
             subkey,
             shape=(1,),
@@ -394,7 +395,10 @@ class UnitreeGo2Env(PipelineEnv):
                     state.info['command'], torso_height,
                 )
             ),
-            'linear_xy_velocity': self._reward_linear_velocity(
+            'linear_z_velocity': self._reward_linear_z_velocity(
+                self.get_global_linvel(pipeline_state),
+            ),
+            'linear_xy_velocity': self._reward_linear_xy_velocity(
                 self.get_global_linvel(pipeline_state),
             ),
             'angular_xy_velocity': self._reward_angular_velocity(
@@ -578,7 +582,13 @@ class UnitreeGo2Env(PipelineEnv):
         # L1 Error for Tracking of height command (z axis)
         return jnp.sum(jnp.abs(command - global_base_z))
 
-    def _reward_linear_velocity(
+    def _reward_linear_z_velocity(
+        self, global_base_vel: jax.Array,
+    ) -> jax.Array:
+        # Penalize z axes base linear velocity
+        return jnp.sum(jnp.square(global_base_vel[2]))
+
+    def _reward_linear_xy_velocity(
         self, global_base_vel: jax.Array,
     ) -> jax.Array:
         # Penalize xy axes base linear velocity

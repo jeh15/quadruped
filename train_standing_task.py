@@ -47,9 +47,10 @@ def main(argv=None):
     # Config:
     reward_config = unitree_go2.RewardConfig(
         # Rewards:
-        tracking_height=2.0,
+        tracking_height=5.0,
         tracking_height_error=-5.0,
         # Orientation Regularization Terms:
+        linear_z_velocity=-2.0,
         linear_xy_velocity=-1.0,
         angular_xy_velocity=-0.05,
         orientation_regularization=-2.0,
