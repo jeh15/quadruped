@@ -626,6 +626,9 @@ class UnitreeGo2Env(PipelineEnv):
         return self.get_sensor_data(self.sys.mj_model, pipeline_state, "upvector")
 
     def get_gravity(self, pipeline_state: base.State) -> jax.Array:
+        return jnp.reshape(pipeline_state.site_xmat[self.imu_site_idx], (3, 3)).T @ jnp.array([0, 0, -1])
+    
+    def get_gravity_mujoco(self, pipeline_state: base.State) -> jax.Array:
         return pipeline_state.site_xmat[self.imu_site_idx].T @ jnp.array([0, 0, -1])
 
     def get_global_linvel(self, pipeline_state: base.State) -> jax.Array:

@@ -131,8 +131,7 @@ def main(argv=None):
             command = np.array([
                 command
             ])
-            lb, ub = 0.0, 0.4
-            command = np.where(np.abs(command) < 0.1, 0.0, command)
+            lb, ub = 0.0, 0.5
             command = np.clip(command, -1.0, 1.0)
             command = lb + (command - -1) * (ub - lb) / (1 - -1)
             command = np.clip(command, lb, ub)
