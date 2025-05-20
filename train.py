@@ -10,7 +10,8 @@ import optax
 import wandb
 import orbax.checkpoint as ocp
 
-from src.envs import unitree_go2_mujocoplayground as unitree_go2
+# from src.envs import unitree_go2_mujocoplayground as unitree_go2
+from src.envs import unitree_go2_joystick as unitree_go2
 from src.algorithms.ppo import network_utilities as ppo_networks
 from src.algorithms.ppo.loss_utilities import loss_function
 from src.distribution_utilities import ParametricDistribution
@@ -45,34 +46,7 @@ flags.DEFINE_string(
 
 def main(argv=None):
     # Config:
-    reward_config = unitree_go2.RewardConfig(
-        # Rewards:
-        tracking_linear_velocity=1.5,
-        tracking_angular_velocity=0.8,
-        # Orientation Regularization Terms:
-        orientation_regularization=-2.0,
-        linear_z_velocity=-0.5,
-        angular_xy_velocity=-0.05,
-        pose_regularization=0.5,
-        # Energy Regularization Terms:
-        torque=-2e-4,
-        action_rate=-0.01,
-        mechanical_power=-1e-3,
-        acceleration=-0.0,
-        # Auxilary Terms:
-        stand_still=-1.0,
-        termination=-1.0,
-        # Gait Reward Terms:
-        foot_slip=-0.1,
-        air_time=0.1,
-        foot_clearance=-0.0,
-        foot_height=-0.0,
-        # Gait Hyperparameters:
-        target_air_time=0.1,
-        foot_height_target=0.1,
-        # Hyperparameter for exponential kernel:
-        kernel_sigma=0.25,
-    )
+    reward_config = unitree_go2.RewardConfig()
 
     # Metadata:
     policy_layer_size = [512, 256, 128,]
@@ -90,15 +64,15 @@ def main(argv=None):
         action_distribution='ParametricDistribution(distribution=distrax.Normal, bijector=distrax.Tanh())',
     )
     loss_metadata = checkpoint_utilities.loss_metadata(
-        clip_coef=0.3,
-        value_coef=0.25,
+        clip_coef=0.2,
+        value_coef=1.0,
         entropy_coef=0.01,
         gamma=0.99,
         gae_lambda=0.95,
         normalize_advantages=True,
     )
     training_metadata = checkpoint_utilities.training_metadata(
-        num_epochs=85,
+        num_epochs=50,
         num_training_steps=20,
         episode_length=1000,
         num_policy_steps=40,
@@ -112,8 +86,8 @@ def main(argv=None):
         batch_size=256,
         num_minibatches=32,
         num_ppo_iterations=4,
-        normalize_observations=True,
-        optimizer='optax.adam(3e-4)',
+        normalize_observations=False,
+        optimizer='optax.chain(optax.clip_by_global_norm(max_norm=1.0),optax.adam(3e-4))',
     )
 
     # Start Wandb and save metadata:
@@ -154,8 +128,9 @@ def main(argv=None):
         gae_lambda=loss_metadata.gae_lambda,
         normalize_advantages=loss_metadata.normalize_advantages,
     )
-    env = unitree_go2.UnitreeGo2Env(config=reward_config, low_friction_model=True)
-    eval_env = unitree_go2.UnitreeGo2Env(config=reward_config, low_friction_model=True)
+    env = unitree_go2.UnitreeGo2Env(config=reward_config)
+    eval_env = unitree_go2.UnitreeGo2Env(config=reward_config)
+    render_env = unitree_go2.UnitreeGo2Env(config=reward_config)
 
     def progress_fn(iteration, num_steps, metrics):
         print(
@@ -216,7 +191,12 @@ def main(argv=None):
     #     optax.adam(learning_rate=3e-4),
     # )
 
-    optimizer = optax.adam(learning_rate=3e-4)
+    optimizer = optax.chain(
+        optax.clip_by_global_norm(max_norm=1.0),
+        optax.adam(learning_rate=3e-4),
+    )
+
+    # optimizer = optax.adam(learning_rate=3e-4)
 
     train_fn = functools.partial(
         train,
@@ -243,6 +223,8 @@ def main(argv=None):
         checkpoint_fn=checkpoint_fn,
         restored_checkpoint=restored_checkpoint,
         wandb_run=run,
+        render_environment=render_env,
+        render_interval=1,
     )
 
     policy_generator, params, metrics = train_fn(
