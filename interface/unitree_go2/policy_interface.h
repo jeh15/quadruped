@@ -217,16 +217,16 @@ class PolicyInterface {
         /* Default Command Values */
         MotorVector<float> initial_position;
         MotorVector<float> default_position = {
-            0.0f, 0.9f, -1.8f,
-            0.0f, 0.9f, -1.8f,
-            0.0f, 0.9f, -1.8f,
-            0.0f, 0.9f, -1.8f
+            -0.1f, 0.8f, -1.5f,
+            0.1f, 0.8f, -1.5f,
+            -0.1f, 1.0f, -1.5f,
+            0.1f, 1.0f, -1.5f
         };
         std::array<float, unitree::containers::num_motors> q_setpoint = {
-            0.0f, 0.9f, -1.8f,
-            0.0f, 0.9f, -1.8f,
-            0.0f, 0.9f, -1.8f,
-            0.0f, 0.9f, -1.8f
+            -0.1f, 0.8f, -1.5f,
+            0.1f, 0.8f, -1.5f,
+            -0.1f, 1.0f, -1.5f,
+            0.1f, 1.0f, -1.5f
         };
         std::array<float, unitree::containers::num_motors> qd_setpoint = {
             0.0f, 0.0f, 0.0f,
@@ -241,10 +241,10 @@ class PolicyInterface {
             0.0f, 0.0f, 0.0f
         };
         std::array<float, unitree::containers::num_motors> stiffness = {
-            35.0f, 35.0f, 35.0f,
-            35.0f, 35.0f, 35.0f,
-            35.0f, 35.0f, 35.0f,
-            35.0f, 35.0f, 35.0f
+            25.0f, 25.0f, 25.0f,
+            25.0f, 25.0f, 25.0f,
+            25.0f, 25.0f, 25.0f,
+            25.0f, 25.0f, 25.0f
         };
         std::array<float, unitree::containers::num_motors> damping = {
             0.5f, 0.5f, 0.5f,
@@ -254,7 +254,8 @@ class PolicyInterface {
         };
         ControlMode control_mode = ControlMode::Damping;
         const int control_rate_us = 20000;  // 50Hz
-        const float action_scale = 0.5f;
+        const float action_scale = 0.25f;
+        std::vector<int> joint_map = {3, 0, 9, 6, 4, 1, 10, 7, 5, 2, 11, 8}; // For Isaac Sim Model
 
         absl::Status inference_policy() {
             // Initialize Input and Output Tensors:
@@ -304,8 +305,9 @@ class PolicyInterface {
             Vector3<float> accelerometer_measurement = Eigen::Map<Vector3<float>>(imu_state.accelerometer.data());
             Vector3<float> gyroscope_measurement = Eigen::Map<Vector3<float>>(imu_state.gyroscope.data());
             Vector4<float> quaternion_measurement = Eigen::Map<Vector4<float>>(imu_state.quaternion.data());
-            MotorVector<float> joint_positions = Eigen::Map<MotorVector<float>>(motor_state.q.data());
-            MotorVector<float> joint_velocities = Eigen::Map<MotorVector<float>>(motor_state.qd.data());
+            MotorVector<float> joint_positions = Eigen::Map<MotorVector<float>>(motor_state.q.data())(joint_map);
+            MotorVector<float> joint_velocities = Eigen::Map<MotorVector<float>>(motor_state.qd.data())(joint_map);
+            MotorVector<float> torque_estimate = Eigen::Map<MotorVector<float>>(motor_state.torque_estimate.data())(joint_map);
             
             // Projected Gravity:
             Eigen::Quaternion<float> quaternion(
@@ -316,18 +318,19 @@ class PolicyInterface {
             Vector3<float> projected_gravity = rotation.transpose() * Vector3<float>(0.0f, 0.0f, -1.0f);
             
             // Set Last Actions from Policy Output:
-            MotorVector<float> previous_actions = Eigen::Map<MotorVector<float>>(policy_output.data());
+            MotorVector<float> previous_actions = Eigen::Map<MotorVector<float>>(policy_output.data())(joint_map);
             
             // Velocity Commands:
-            Vector3<float> commands = command;
+            // Vector3<float> commands = command;
+            Vector4<float> commands = Vector4<float>(0.0, 0.0, 0.0, command(0));
             
             // Set Observation:
             observation << gyroscope_measurement,
                            projected_gravity,
-                           joint_positions - default_position,
+                           commands,
+                           joint_positions - default_position(joint_map),
                            joint_velocities,
-                           previous_actions,
-                           commands;
+                           torque_estimate;
 
             // Set Input Tensor:
             for(size_t i = 0; i < input_tensor_size; ++i) {
@@ -338,7 +341,8 @@ class PolicyInterface {
         }
 
         unitree::containers::MotorCommand get_motor_command() {
-            MotorVector<float> actions = Eigen::Map<MotorVector<float>>(policy_output.data());
+            // Transform Policy Output to Unitree Order:
+            MotorVector<float> actions = Eigen::Map<MotorVector<float>>(policy_output.data())(joint_map);
             MotorVector<float> position_setpoints = default_position + actions * action_scale;
             Eigen::Map<MotorVector<float>>(q_setpoint.data()) = position_setpoints;
 
