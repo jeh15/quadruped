@@ -22,14 +22,14 @@ using rules_cc::cc::runfiles::Runfiles;
 std::string getButtonName(int buttonIndex) {
     // These names are approximate and may vary by controller
     static const std::vector<std::string> buttonNames = {
-        "A", "B", "X", "Y", 
-        "Left Bumper", "Right Bumper",
-        "Back/Select", "Start", 
-        "Guide/Home", 
-        "Left Stick Press", "Right Stick Press",
-        "D-pad Up", "D-pad Right", "D-pad Down", "D-pad Left"
+        "B", "A", "X", "Y", 
+        "Extra Button", 
+        "Left Bumper", "Right Bumper", "Left Trigger", "Right Trigger", 
+        "Select", "Start", "Home",
+        "Left Stick", "Right Stick",
+        "DPad Up", "DPad Right", "DPad Down", "DPad Left"
     };
-    
+
     if (buttonIndex >= 0 && buttonIndex < static_cast<int>(buttonNames.size())) {
         return buttonNames[buttonIndex];
     }
@@ -40,10 +40,8 @@ std::string getButtonName(int buttonIndex) {
 // Helper function to convert joystick axis index to string
 std::string getAxisName(int axisIndex) {
     static const std::vector<std::string> axisNames = {
-        "DPad X", "DPad Y",
-        "Left Trigger",
-        "Right Axis X", "Right Axis Y",
-        "Right Trigger",
+        "Left Axis X", "Left Axis Y",
+        "Right Axis X", "Right Axis Y"
     };
     
     if (axisIndex >= 0 && axisIndex < static_cast<int>(axisNames.size())) {
@@ -71,12 +69,12 @@ int main(int argc, char** argv) {
     );
 
     std::filesystem::path onnx_model_path = 
-        runfiles->Rlocation("unitree-interface/onnx_models/genial-breeze-150.onnx");
+        runfiles->Rlocation("unitree-interface/onnx_models/policy.onnx");
 
     absl::Status result;
 
     // Initialize Unitree Driver:
-    std::string network_name = "eno2";
+    std::string network_name = "enx7cc2c647de4f";
     int control_rate = 2000;
     std::shared_ptr<UnitreeDriver> unitree_driver = 
         std::make_shared<UnitreeDriver>(network_name, control_rate);
@@ -153,13 +151,13 @@ int main(int argc, char** argv) {
                     if(name == "Start") {
                         std::ignore = policy_interface.set_control_mode(ControlMode::GetUp);
                     }
-                    else if(name == "A") {
+                    else if(name == "B") {
                         std::ignore = policy_interface.set_control_mode(ControlMode::Policy);
                     }
-                    else if(name == "B") {
+                    else if(name == "A") {
                         std::ignore = policy_interface.set_control_mode(ControlMode::Damping);
                     }
-                    else if(name == "Back/Select") {
+                    else if(name == "Select") {
                         std::ignore = policy_interface.set_control_mode(ControlMode::Damping);
                         terminate = true;
                     }
@@ -176,10 +174,10 @@ int main(int argc, char** argv) {
             for (int i = 0; i < axisCount; i++) {
                 std::string name = getAxisName(i);
                 if (std::abs(axes[i]) > deadzone) {
-                    if(name == "DPad X") {
+                    if(name == "Left Axis X") {
                         lateral_command = -1 * axes[i];
                     }
-                    else if(name == "DPad Y"){
+                    else if(name == "Left Axis Y"){
                         forward_command = -1 * axes[i];
                     }
                     else if(name == "Right Axis X"){

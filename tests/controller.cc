@@ -175,6 +175,7 @@ int main(int argc, char** argv) {
             for (int i = 0; i < buttonCount; i++) {
                 if (buttons[i] == GLFW_PRESS && prevButtonStates[i] == GLFW_RELEASE) {
                     std::string name = getButtonName(i);
+                    std::cout << name << std::endl;
                     if(name == "Start") {
                         std::ignore = policy_interface.set_control_mode(ControlMode::GetUp);
                     }
