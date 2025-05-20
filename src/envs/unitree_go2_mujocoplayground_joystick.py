@@ -1,6 +1,6 @@
 """
     Unitree Go2 Environment:
-        RSL RL inspired formulation.
+        Mujoco Playground formulation.
 """
 
 from typing import Any, Dict
@@ -36,23 +36,28 @@ PRNGKey = jax.Array
 class RewardConfig:
     # Rewards:
     tracking_linear_velocity: float = 1.5
-    tracking_angular_velocity: float = 0.75
+    tracking_angular_velocity: float = 0.8
     # Orientation Regularization Terms:
-    orientation_regularization: float = -2.5
+    orientation_regularization: float = -5.0
     linear_z_velocity: float = -2.0
     angular_xy_velocity: float = -0.05
+    pose_regularization: float = 0.5
     # Energy Regularization Terms:
     torque: float = -2e-4
     action_rate: float = -0.01
-    acceleration: float = -2.5e-7
+    mechanical_power: float = -1e-3
+    acceleration: float = -1e-4
     # Auxilary Terms:
     stand_still: float = -1.0
     termination: float = -1.0
     # Gait Reward Terms:
     foot_slip: float = -0.1
-    air_time: float = 0.25
+    air_time: float = 0.2
+    foot_clearance: float = -2.0
+    foot_height: float = -0.2
     # Gait Hyperparameters:
-    target_air_time: float = 0.5
+    target_air_time: float = 0.1
+    foot_height_target: float = 0.1
     # Hyperparameter for exponential kernel:
     kernel_sigma: float = 0.25
 
@@ -63,6 +68,7 @@ class NoiseConfig:
     joint_velocity: float = 1.5
     gyroscope: float = 0.2
     gravity_vector: float = 0.05
+    accelerometer: float = 0.5
 
 
 @flax.struct.dataclass
@@ -208,9 +214,11 @@ class UnitreeGo2Env(PipelineEnv):
 
         self.kernel_sigma = config.kernel_sigma
         self.target_air_time = config.target_air_time
+        self.foot_height_target = config.foot_height_target
         config_dict = flax.serialization.to_state_dict(config)
         del config_dict['kernel_sigma']
         del config_dict['target_air_time']
+        del config_dict['foot_height_target']
         self.reward_config = config_dict
 
         self.noise_config = NoiseConfig()
@@ -305,21 +313,9 @@ class UnitreeGo2Env(PipelineEnv):
     def sample_command(
         self,
         rng: jax.Array,
-        previous_command: jax.Array
     ) -> jax.Array:
-        _, command_key, sample_key, continuation_key = jax.random.split(rng, 4)
+        _, command_key = jax.random.split(rng, 2)
         
-        # new_cmd = jax.random.uniform(
-        #     command_key, shape=(3,), minval=-self.command_config.command_range, maxval=self.command_config.command_range,
-        # )
-        # new_cmd_mask = jax.random.bernoulli(
-        #     sample_key, p=self.command_config.command_mask_probability, shape=(3,),
-        # )
-        # continuation_mask = jax.random.bernoulli(
-        #     continuation_key, p=0.5, shape=(3,),
-        # )
-        # command = previous_command - continuation_mask * (previous_command - new_cmd_mask * new_cmd)
-
         command = jax.random.uniform(
             command_key, shape=(3,), minval=-self.command_config.command_range, maxval=self.command_config.command_range,
         )
@@ -346,9 +342,6 @@ class UnitreeGo2Env(PipelineEnv):
         qvel = self.init_qd.at[0:6].set(
             jax.random.uniform(key, (6,), minval=-0.5, maxval=0.5)
         )
-
-        qpos = self.init_q
-        qvel = self.init_qd
 
         # Initialize State:
         pipeline_state = self.pipeline_init(qpos, qvel)
@@ -379,21 +372,8 @@ class UnitreeGo2Env(PipelineEnv):
 
         # Command Sampling:
         rng, command_interval_key, command_sample_key = jax.random.split(rng, 3)
-        
-        # time_until_next_command = 5.0 * jax.random.exponential(
-        #     command_interval_key
-        # )
-        # steps_until_next_command = jnp.round(
-        #     time_until_next_command / self.dt
-        # ).astype(jnp.int32)
-
-        time_until_next_command = jax.random.uniform(
-            command_interval_key,
-            minval=10.0,
-            maxval=10.0,
-        )
         steps_until_next_command = jnp.round(
-            time_until_next_command / self.dt
+            10.0 / self.dt
         ).astype(jnp.int32)
 
         command = jax.random.uniform(
@@ -459,7 +439,6 @@ class UnitreeGo2Env(PipelineEnv):
             state.pipeline_state, motor_targets,
         )
 
-        imu_height = pipeline_state.site_xpos[self.imu_site_idx][2]
         joint_angles = pipeline_state.q[7:]
         joint_velocities = pipeline_state.qd[6:]
 
@@ -487,7 +466,6 @@ class UnitreeGo2Env(PipelineEnv):
 
         # Done if joint limits are reached or robot is falling:
         done = self.get_upvector(pipeline_state)[-1] < 0.0
-        done |= imu_height < 0.05
         # These can become rewards:
         done |= jnp.any(joint_angles < self.joint_lb)
         done |= jnp.any(joint_angles > self.joint_ub)
@@ -509,8 +487,14 @@ class UnitreeGo2Env(PipelineEnv):
             'orientation_regularization': self._reward_orientation_regularization(
                 self.get_upvector(pipeline_state),
             ),
+            'pose_regularization': self._reward_pose_regularization(
+                joint_angles,
+            ),
             'torque': self._reward_torques(pipeline_state.actuator_force),
             'action_rate': self._reward_action_rate(action, state.info['previous_action']),
+            'mechanical_power': self._reward_mechanical_power(
+                joint_velocities, pipeline_state.actuator_force,
+            ),
             'acceleration': self._reward_acceleration(
                 pipeline_state.qacc,
             ),
@@ -524,6 +508,12 @@ class UnitreeGo2Env(PipelineEnv):
                 state.info['feet_air_time'],
                 first_contact,
                 state.info['command'],
+            ),
+            'foot_clearance': self._reward_foot_clearance(
+                pipeline_state,
+            ),
+            'foot_height': self._reward_foot_height(
+                state.info['swing_peak'], first_contact, state.info['command'],
             ),
             'termination': jnp.float64(
                 self._reward_termination(done)
@@ -549,28 +539,15 @@ class UnitreeGo2Env(PipelineEnv):
         # Command Sampling:
         state.info['command'] = jnp.where(
             state.info['steps_until_next_command'] <= 0,
-            self.sample_command(cmd_key, state.info['command']),
+            self.sample_command(cmd_key),
             state.info['command'],
         )
-
-        # Randomize Command Interval:
-        # state.info['steps_until_next_command'] = jnp.where(
-        #     done | (state.info['steps_until_next_command'] <= 0),
-        #     jnp.round(
-        #         jax.random.exponential(sample_key) * 5.0 / self.dt
-        #     ).astype(jnp.int32),
-        #     state.info['steps_until_next_command'],
-        # )
 
         # Randomize Command Interval:
         state.info['steps_until_next_command'] = jnp.where(
             done | (state.info['steps_until_next_command'] <= 0),
             jnp.round(
-                jax.random.uniform(
-                    sample_key,
-                    minval=10.0,
-                    maxval=10.0,
-                ) / self.dt
+                10.0 / self.dt
             ).astype(jnp.int32),
             state.info['steps_until_next_command'],
         )
@@ -676,7 +653,7 @@ class UnitreeGo2Env(PipelineEnv):
         feet_velocity = self.get_feet_velocity(pipeline_state).ravel()
 
         privileged_observation = jnp.concatenate([
-            observation,                                                                                # 45 * self.time_window
+            observation,                                                                                # 45
             accelerometer,                                                                              # 3
             gyroscope,                                                                                  # 3
             projected_gravity,                                                                          # 3
@@ -1044,8 +1021,8 @@ class UnitreeGo2Env(PipelineEnv):
         new_observation = np.concatenate([
             gyroscope,
             projected_gravity,
-            joint_positions - self.default_ctrl,
-            joint_velocities,
+            q - self.default_ctrl,
+            qd,
             previous_action,
             command,
         ])
