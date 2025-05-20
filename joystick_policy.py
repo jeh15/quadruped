@@ -45,8 +45,15 @@ def main(argv=None):
     logging.set_verbosity(logging.INFO)
 
     # Load from Env:
-    env = unitree_go2.UnitreeGo2Env()
+    filename = 'unitree_go2/scene_mjx_joystick.xml'
+    action_scale = 0.25
     kp = 25.0
+
+    # filename = 'unitree_go2/scene_mjx.xml'
+    # action_scale = 0.3
+    # kp = 35.0
+
+    env = unitree_go2.UnitreeGo2Env(filename=filename, action_scale=action_scale)
 
     control_rate = 0.02
     control_rate_ns = 2e7
@@ -232,9 +239,6 @@ def main(argv=None):
         else:
             print('Warning: Control rate exceeded.')
             next_time_ns = now_ns
-
-        end_time = time.clock_gettime_ns(time.CLOCK_MONOTONIC)
-        print(f'Elapsed Time: {(end_time - start_time) / 1e6}')
 
     # Stop Thread:
     unitree_driver.stop_thread()
