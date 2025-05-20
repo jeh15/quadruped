@@ -48,19 +48,36 @@ def main(argv=None):
             data = np.asarray(data)
             hardware_data.append(data)
 
-    simulation_data = os.path.join(
+    upright_data = os.path.join(
         directory,
-        'simulation_imu_data.pkl',
+        'simulation_upright.pkl',
     )
-    with open(filepath, 'rb') as file:
-        simulation_data = pickle.load(file)
+    down_data = os.path.join(
+        directory,
+        'simulation_down.pkl',
+    )
+    left_data = os.path.join(
+        directory,
+        'simulation_left.pkl',
+    )
+    flipped_data = os.path.join(
+        directory,
+        'simulation_flipped.pkl',
+    )
+    filepaths = [upright_data, down_data, left_data, flipped_data]
+    simulation_data = []
+    for filepath in filepaths:
+        with open(filepath, 'rb') as file:
+            data = pickle.load(file)
+            data = np.asarray(data)
+            simulation_data.append(data)
 
     names = ['upright', 'down', 'left', 'flipped']
 
     for hardware, simulation, name in zip(hardware_data, simulation_data, names):
-        accelerometer_hardware_hardware = hardware[:, 0]
-        gyroscope_hardware_hardware = hardware[:, 1]
-        quaternion_hardware = hardware[:, 2]
+        accelerometer_hardware = hardware[:, :3]
+        gyroscope_hardware = hardware[:, 3:6]
+        quaternion_hardware = hardware[:, 6:10]
         projected_gravity_hardware = []
         for quaternion in quaternion_hardware:
             inverse_base_rotation = quat_inv(quaternion)
@@ -71,9 +88,9 @@ def main(argv=None):
             )
         projected_gravity_hardware = np.array(projected_gravity_hardware)
 
-        accelerometer_simulation = simulation[:, 0]
-        gyroscope_simulation = simulation[:, 1]
-        projected_gravity_simulation = simulation[:, 2]
+        accelerometer_simulation = simulation[:, :3]
+        gyroscope_simulation = simulation[:, 3:6]
+        projected_gravity_simulation = simulation[:, 6:]
 
         # Plot and compare Accelerometer Data:
         fig, axs = plt.subplots(3, 1, figsize=(10, 15))
@@ -84,13 +101,13 @@ def main(argv=None):
         axs[0].legend()
 
         axs[1].plot(accelerometer_hardware[:, 1], label='Accelerometer Y')
-        axs[0].plot(accelerometer_simulation[:, 1], label='Simulation Accelerometer Y')
+        axs[1].plot(accelerometer_simulation[:, 1], label='Simulation Accelerometer Y')
         axs[1].set_title('Accelerometer Y Data')
         axs[1].set_ylabel('Acceleration (m/s^2)')
         axs[1].legend()
 
         axs[2].plot(accelerometer_hardware[:, 2], label='Accelerometer Z')
-        axs[0].plot(accelerometer_simulation[:, 1], label='Simulation Accelerometer Z')
+        axs[2].plot(accelerometer_simulation[:, 2], label='Simulation Accelerometer Z')
         axs[2].set_title('Accelerometer Z Data')
         axs[2].set_xlabel('Time')
         axs[2].set_ylabel('Acceleration (m/s^2)')

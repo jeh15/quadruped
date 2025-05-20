@@ -46,70 +46,72 @@ def main(argv=None):
     imu_history = []
     termination_flag = False
     rotations = np.array([
-        [1, 0, 1, 0],
         [1, 0, -1, 0],
+        [1, 0, 1, 0],
         [1, -1, 0, 0],
-        [0, 0.7071, 0.7071, 0],
+        [0, 1, 0, 0],
     ])
     i = 0
 
-    with mujoco.viewer.launch_passive(model, data) as viewer:
-            viewer.cam.trackbodyid = 1
-            viewer.cam.distance = 5
-            while viewer.is_running() and not termination_flag:
-                if i > 3:
-                     termination_flag = True
+    names = ['upright', 'down', 'left', 'flipped']
 
-                # Iterate Through Rotations:
-                imu_states = []
-                rotation = rotations[i]
+    with mujoco.viewer.launch_passive(model, data) as viewer:
+        viewer.cam.trackbodyid = 1
+        viewer.cam.distance = 5
+        while viewer.is_running() and not termination_flag:
+            if i > 3:
+                termination_flag = True
+                break
+
+            # Iterate Through Rotations:
+            imu_states = []
+            rotation = rotations[i]
+            data.qpos[2] = 0.5
+            data.qpos[3:7] = rotation
+
+            # Forward Kinematics:
+            mujoco.mj_forward(model, data)
+
+            is_running = True
+            while is_running:
+                
+                accelerometer = env.get_accelerometer(data)
+                gyroscope = env.get_gyro(data)
+                gravity = env.get_gravity(data)
+
+                imu_state = np.concatenate(
+                    [accelerometer, gyroscope, gravity],
+                    axis=0,
+                )
+                imu_states.append(imu_state)
+
                 data.qpos[2] = 0.5
                 data.qpos[3:7] = rotation
 
-                # Forward Kinematics:
-                mujoco.mj_forward(model, data)
+                mujoco.mj_step(model, data)
 
-                is_running = True
-                while is_running:
-                    
-                    accelerometer = env.get_accelerometer(data)
-                    gyroscope = env.get_gyro(data)
-                    gravity = env.get_gravity(data)
+                viewer.sync()
+                
+                if data.time >= 10.0:
+                    data.time = 0.0
+                    i += 1
+                    is_running = False
 
-                    imu_state = np.concatenate(
-                        [accelerometer, gyroscope, gravity],
-                        axis=0,
-                    )
-                    imu_states.append(imu_state)
+            imu_states = np.array(imu_states)
+            # Pickle Data:
+            data_directory = os.path.join(
+                os.path.dirname(__file__),
+                'data',
+            )
+            os.makedirs(data_directory, exist_ok=True)
+            imu_data_file = os.path.join(
+                data_directory,
+                f'simulation_{names[i-1]}.pkl',
+            )
 
-                    data.qpos[2] = 0.5
-                    data.qpos[3:7] = rotation
+            with open(imu_data_file, 'wb') as f:
+                pickle.dump(imu_states, f)
 
-                    mujoco.mj_step(model, data)
-
-                    viewer.sync()
-                    
-                    if data.time >= 10.0:
-                        data.time = 0.0
-                        i += 1
-                        is_running = False
-
-                # Append all tests:
-                imu_history.append(imu_states)
-
-    # Pickle Data:
-    data_directory = os.path.join(
-        os.path.dirname(__file__),
-        'data',
-    )
-    os.makedirs(data_directory, exist_ok=True)
-    imu_data_file = os.path.join(
-        data_directory,
-        'simulation_imu_data.pkl',
-    )
-
-    with open(imu_data_file, 'wb') as f:
-        pickle.dump(imu_history, f)
 
 if __name__ == '__main__':
     app.run(main)

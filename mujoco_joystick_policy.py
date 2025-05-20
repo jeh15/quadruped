@@ -12,8 +12,8 @@ import numpy.typing as npt
 import mujoco
 import mujoco.viewer
 
-from src.envs import unitree_go2_joystick as unitree_go2
-# from src.envs import unitree_go2_mujocoplayground_joystick as unitree_go2
+# from src.envs import unitree_go2_joystick as unitree_go2
+from src.envs import unitree_go2_mujocoplayground_joystick as unitree_go2
 from src.algorithms.ppo.load_utilities import load_policy
 
 
@@ -49,11 +49,17 @@ def main(argv=None):
     logging.set_verbosity(logging.INFO)
 
     # Load from Env:
-    env = unitree_go2.UnitreeGo2Env()
+    filename = 'unitree_go2/scene_mjx_joystick.xml'
+    action_scale = 0.25
+
+    # filename = 'unitree_go2/scene_mjx.xml'
+    # action_scale = 0.3
+
+    env = unitree_go2.UnitreeGo2Env(filename=filename, action_scale=action_scale)
 
     model_path = os.path.join(
         os.path.dirname(__file__),
-        f'models/{env.filename}',
+        f'{env.filename}',
     )
     model = mujoco.MjModel.from_xml_path(
         model_path,
