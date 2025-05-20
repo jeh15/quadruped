@@ -86,7 +86,7 @@ def main(argv=None):
         batch_size=256,
         num_minibatches=32,
         num_ppo_iterations=4,
-        normalize_observations=False,
+        normalize_observations=True,
         optimizer='optax.chain(optax.clip_by_global_norm(max_norm=1.0),optax.adam(3e-4))',
     )
 
