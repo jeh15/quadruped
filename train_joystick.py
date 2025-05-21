@@ -74,9 +74,9 @@ def main(argv=None):
         kernel_sigma=0.25,
     )
 
-    env = unitree_go2.UnitreeGo2Env(config=reward_config, time_window=15)
-    eval_env = unitree_go2.UnitreeGo2Env(config=reward_config, time_window=15)
-    render_env = unitree_go2.UnitreeGo2Env(config=reward_config, time_window=15)
+    env = unitree_go2.UnitreeGo2Env(config=reward_config, motorstate_observation=True, low_friction_model=True)
+    eval_env = unitree_go2.UnitreeGo2Env(config=reward_config, motorstate_observation=True, low_friction_model=True)
+    render_env = unitree_go2.UnitreeGo2Env(config=reward_config, motorstate_observation=True, low_friction_model=True)
 
     # Metadata:
     policy_layer_size = [512, 256, 128,]

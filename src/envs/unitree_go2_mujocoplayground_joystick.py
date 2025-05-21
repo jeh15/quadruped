@@ -189,6 +189,7 @@ class UnitreeGo2Env(PipelineEnv):
         action_scale: float = 0.3,
         low_friction_model: bool = False,
         time_window: int = 5,
+        motorstate_observation: bool = False,
         **kwargs,
     ):
         self.filename = f'models/{filename}'
@@ -206,7 +207,7 @@ class UnitreeGo2Env(PipelineEnv):
 
         if low_friction_model:
             sys = sys.tree_replace({
-                'dof_frictionloss': 0.01 * jnp.ones_like(sys.dof_frictionloss),
+                'dof_frictionloss': 0.0 * jnp.ones_like(sys.dof_frictionloss),
                 'dof_armature': 0.005 * jnp.ones_like(sys.dof_armature),
             })
 
@@ -307,8 +308,12 @@ class UnitreeGo2Env(PipelineEnv):
         ]
 
         # Observation Size:
+        self.motorstate_observation = motorstate_observation
         self.time_window = time_window
-        self.num_observations = 45 * self.time_window
+        if not self.motorstate_observation:
+            self.num_observations = 45 * self.time_window
+        else:
+            self.num_observations = 39 * self.time_window
         self.num_privileged_observations = self.num_observations + 75
 
     def sample_command(
@@ -630,20 +635,29 @@ class UnitreeGo2Env(PipelineEnv):
         )
         noisy_joint_velocities = qd + joint_velocity_noise
 
-        new_observation = jnp.concatenate([
-            noisy_angular_rate,                         # 3
-            noisy_projected_gravity,                    # 3
-            noisy_joint_positions - self.default_pose,  # 12
-            noisy_joint_velocities,                     # 12
-            state_info['previous_action'],              # 12
-            state_info['command'],                      # 3
-        ])
+        if not self.motorstate_observation:
+            new_observation = jnp.concatenate([
+                noisy_angular_rate,                         # 3
+                noisy_projected_gravity,                    # 3
+                noisy_joint_positions - self.default_pose,  # 12
+                noisy_joint_velocities,                     # 12
+                state_info['previous_action'],              # 12
+                state_info['command'],                      # 3
+            ]) # Size: 45
+        else:
+            new_observation = jnp.concatenate([
+                noisy_joint_positions - self.default_pose,  # 12
+                noisy_joint_velocities,                     # 12
+                state_info['previous_action'],              # 12
+                state_info['command'],                      # 3
+            ]) # Size: 39
+
 
         observation = jnp.roll(
             observation,
             new_observation.size
         ).at[:new_observation.size].set(new_observation)
-        # Size: 45 * self.time_window
+        # Size: new_obsevation_size.size * self.time_window
 
         accelerometer = self.get_accelerometer(pipeline_state)
         linear_velocity = self.get_local_linvel(pipeline_state)
@@ -652,7 +666,7 @@ class UnitreeGo2Env(PipelineEnv):
         feet_velocity = self.get_feet_velocity(pipeline_state).ravel()
 
         privileged_observation = jnp.concatenate([
-            observation,                                                                                # 45
+            observation,                                                                                # 45/39
             accelerometer,                                                                              # 3
             gyroscope,                                                                                  # 3
             projected_gravity,                                                                          # 3
@@ -965,14 +979,23 @@ class UnitreeGo2Env(PipelineEnv):
                 size=qd.shape,
             )
 
-        new_observation = np.concatenate([
-            gyroscope,
-            projected_gravity,
-            q - self.default_ctrl,
-            qd,
-            previous_action,
-            command,
-        ])
+        if not self.motorstate_observation:
+            new_observation = np.concatenate([
+                gyroscope,
+                projected_gravity,
+                q - self.default_ctrl,
+                qd,
+                previous_action,
+                command,
+            ])
+        else:
+            new_observation = jnp.concatenate([
+                q - self.default_ctrl,
+                qd,
+                previous_action,
+                command,
+            ])
+
         observation = np.roll(
             observation_history,
             new_observation.size
@@ -1017,14 +1040,23 @@ class UnitreeGo2Env(PipelineEnv):
             inverse_base_rotation,
         )
 
-        new_observation = np.concatenate([
-            gyroscope,
-            projected_gravity,
-            q - self.default_ctrl,
-            qd,
-            previous_action,
-            command,
-        ])
+        if not self.motorstate_observation:
+            new_observation = np.concatenate([
+                gyroscope,
+                projected_gravity,
+                joint_positions - self.default_ctrl,
+                joint_velocities,
+                previous_action,
+                command,
+            ])
+        else:
+            new_observation = jnp.concatenate([
+                joint_positions - self.default_ctrl,
+                joint_velocities,
+                previous_action,
+                command,
+            ])
+
         observation = np.roll(
             observation_history,
             new_observation.size
