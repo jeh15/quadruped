@@ -13,8 +13,8 @@ import numpy.typing as npt
 
 from unitree_api_bindings import unitree_api
 
-from src.envs import unitree_go2_joystick as unitree_go2
-# from src.envs import unitree_go2_mujocoplayground_joystick as unitree_go2
+# from src.envs import unitree_go2_joystick as unitree_go2
+from src.envs import unitree_go2_mujocoplayground_joystick as unitree_go2
 from src.algorithms.ppo.load_utilities import load_policy
 
 jax.config.update("jax_enable_x64", True)
@@ -45,15 +45,18 @@ def main(argv=None):
     logging.set_verbosity(logging.INFO)
 
     # Load from Env:
-    filename = 'unitree_go2/scene_mjx_joystick.xml'
-    action_scale = 0.25
-    kp = 25.0
+    # filename = 'unitree_go2/scene_mjx_joystick.xml'
+    # action_scale = 0.25
+    # kp = 25.0
+    # time_window = 5
 
-    # filename = 'unitree_go2/scene_mjx.xml'
-    # action_scale = 0.3
-    # kp = 35.0
+    filename = 'unitree_go2/scene_mjx_v2.xml'
+    action_scale = 0.3
+    kp = 35.0
+    kd = 0.5
+    time_window = 5
 
-    env = unitree_go2.UnitreeGo2Env(filename=filename, action_scale=action_scale)
+    env = unitree_go2.UnitreeGo2Env(filename=filename, action_scale=action_scale, time_window=time_window)
 
     control_rate = 0.02
     control_rate_ns = 2e7
@@ -157,6 +160,29 @@ def main(argv=None):
                 print(f"Joystick {event.instance_id} disconnected")
 
         for joystick in joysticks.values():
+            # Switch:
+            # if joystick.get_button(0) == 1:
+            #     string = 'Switching to Policy Control Mode...'
+            #     logging.info(string)
+            #     print(string)
+            #     policy_control_mode = True
+
+            # if joystick.get_button(1) == 1:
+            #     string = 'Switching to Damping Control Mode...'
+            #     logging.info(string)
+            #     print(string)
+            #     damping_control_mode = True
+            #     policy_control_mode = False
+
+            # if joystick.get_button(9) == 1:
+            #     string = 'Terminating...'
+            #     logging.info(string)
+            #     print(string)
+            #     is_running = False
+            #     damping_control_mode = True
+            #     policy_control_mode = False
+
+            # Xbox One:
             if joystick.get_button(0) == 1:
                 string = 'Switching to Policy Control Mode...'
                 logging.info(string)
@@ -170,7 +196,7 @@ def main(argv=None):
                 damping_control_mode = True
                 policy_control_mode = False
 
-            if joystick.get_button(9) == 1:
+            if joystick.get_button(6) == 1:
                 string = 'Terminating...'
                 logging.info(string)
                 print(string)
@@ -178,10 +204,17 @@ def main(argv=None):
                 damping_control_mode = True
                 policy_control_mode = False
 
-            # Walking Policy:
+            # Switch:
+            # forward_command = -1 * joystick.get_axis(1)
+            # lateral_command = -1 * joystick.get_axis(0)
+            # rotation_command = -1 * joystick.get_axis(2)
+
+            # XBox One:
             forward_command = -1 * joystick.get_axis(1)
             lateral_command = -1 * joystick.get_axis(0)
-            rotation_command = -1 * joystick.get_axis(2)
+            rotation_command = -1 * joystick.get_axis(3)
+            alpha = (joystick.get_axis(5) + 1) / 2
+
 
         # Walking Policy:
         command = np.array([
@@ -209,6 +242,9 @@ def main(argv=None):
         action = np.asarray(action)
 
         ctrl = controller_fn(action)
+
+        ctrl = (1 - alpha) * env.default_ctrl + (alpha) * ctrl
+
         ctrl = ctrl.astype(np.float32)
 
         q_setpoint = ctrl.tolist()
@@ -220,7 +256,7 @@ def main(argv=None):
             motor_commands.qd_setpoint = [0.0, 0.0, 0.0] * 4
             motor_commands.torque_feedforward = [0.0, 0.0, 0.0] * 4
             motor_commands.stiffness = [kp, kp, kp] * 4
-            motor_commands.damping = [0.5, 0.5, 0.5] * 4
+            motor_commands.damping = [kd, kd, kd] * 4
             unitree_driver.update_command(motor_commands)
 
         if damping_control_mode:

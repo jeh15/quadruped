@@ -49,13 +49,15 @@ def main(argv=None):
     logging.set_verbosity(logging.INFO)
 
     # Load from Env:
-    filename = 'unitree_go2/scene_mjx_joystick.xml'
-    action_scale = 0.25
+    # filename = 'unitree_go2/scene_mjx_joystick.xml'
+    # action_scale = 0.25
+    # time_window = 5
 
-    # filename = 'unitree_go2/scene_mjx.xml'
-    # action_scale = 0.3
+    filename = 'unitree_go2/scene_mjx_v2.xml'
+    action_scale = 0.3
+    time_window = 5
 
-    env = unitree_go2.UnitreeGo2Env(filename=filename, action_scale=action_scale)
+    env = unitree_go2.UnitreeGo2Env(filename=filename, action_scale=action_scale, time_window=time_window)
 
     model_path = os.path.join(
         os.path.dirname(__file__),
@@ -118,13 +120,24 @@ def main(argv=None):
 
             for joystick in joysticks.values():
                 # If Switch Controller:
-                if joystick.get_button(11) == 1:
+                # if joystick.get_button(11) == 1:
+                #     termination_flag = True
+
+                if joystick.get_button(6) == 1:
                     termination_flag = True
 
                 # Walking Policy:
+                # forward_command = -1 * joystick.get_axis(1)
+                # lateral_command = -1 * joystick.get_axis(0)
+                # rotation_command = -1 * joystick.get_axis(2)
+
+                # XBox One:
                 forward_command = -1 * joystick.get_axis(1)
                 lateral_command = -1 * joystick.get_axis(0)
-                rotation_command = -1 * joystick.get_axis(2)
+                rotation_command = -1 * joystick.get_axis(3)
+                alpha = (joystick.get_axis(5) + 1) / 2
+
+
 
             # Walking Policy:
             command = np.array([
@@ -148,6 +161,9 @@ def main(argv=None):
                 inference_fn(observation, action_rng),
             )
             ctrl = controller_fn(action)
+            
+            ctrl = (1 - alpha) * env.default_ctrl + (alpha) * ctrl
+            
             data.ctrl = ctrl
 
             for _ in range(num_steps):

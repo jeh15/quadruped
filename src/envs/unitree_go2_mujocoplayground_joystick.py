@@ -1017,11 +1017,18 @@ class UnitreeGo2Env(PipelineEnv):
             inverse_base_rotation,
         )
 
+        # Scale Observation Values:
+        gyroscope_scale = 0.1
+        joint_velocity_scale = 1.0
+        gyroscope = gyroscope_scale * gyroscope
+        # projected_gravity = np.array([0.0, 0.0, -1.0])
+        joint_velocities = joint_velocity_scale * joint_velocities
+
         new_observation = np.concatenate([
             gyroscope,
             projected_gravity,
-            q - self.default_ctrl,
-            qd,
+            joint_positions - self.default_ctrl,
+            joint_velocities,
             previous_action,
             command,
         ])
