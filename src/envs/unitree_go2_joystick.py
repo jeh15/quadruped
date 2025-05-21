@@ -181,6 +181,7 @@ class UnitreeGo2Env(PipelineEnv):
         filename: str = 'unitree_go2/scene_mjx_joystick.xml',
         config: RewardConfig = RewardConfig(),
         action_scale: float = 0.25,
+        time_window: int = 5,
         low_friction_model: bool = False,
         **kwargs,
     ):
@@ -298,7 +299,7 @@ class UnitreeGo2Env(PipelineEnv):
         ]
 
         # Observation Size:
-        self.time_window = 5
+        self.time_window = time_window
         self.num_observations = 45 * self.time_window
         self.num_privileged_observations = self.num_observations + 75
 
@@ -307,7 +308,9 @@ class UnitreeGo2Env(PipelineEnv):
         rng: jax.Array,
         previous_command: jax.Array
     ) -> jax.Array:
-        _, command_key, sample_key, continuation_key = jax.random.split(rng, 4)
+        # _, command_key, sample_key, continuation_key = jax.random.split(rng, 4)
+
+        _, command_key, stand_still_key = jax.random.split(rng, 3)
         
         # new_cmd = jax.random.uniform(
         #     command_key, shape=(3,), minval=-self.command_config.command_range, maxval=self.command_config.command_range,
@@ -323,6 +326,11 @@ class UnitreeGo2Env(PipelineEnv):
         command = jax.random.uniform(
             command_key, shape=(3,), minval=-self.command_config.command_range, maxval=self.command_config.command_range,
         )
+        stand_still_mask = jax.random.bernoulli(
+            stand_still_key, p=0.8, shape=(1,),
+        )
+
+        command = stand_still_mask * command
 
         return command
 
@@ -768,7 +776,7 @@ class UnitreeGo2Env(PipelineEnv):
     ) -> jax.Array:
         # Penalize motion at zero commands
         command_norm = jnp.linalg.norm(commands)
-        return jnp.sum(jnp.abs(joint_angles - self.default_pose)) * (command_norm < 0.01)
+        return jnp.sum(jnp.abs(joint_angles - self.default_pose)) * (command_norm < 0.1)
 
     def _reward_air_time(
         self,
@@ -780,7 +788,7 @@ class UnitreeGo2Env(PipelineEnv):
         command_norm = jnp.linalg.norm(commands)
         reward_air_time = jnp.sum((air_time - self.target_air_time) * first_contact)
         reward_air_time *= (
-            command_norm > 0.01
+            command_norm > 0.1
         )
         return reward_air_time
 
@@ -795,7 +803,7 @@ class UnitreeGo2Env(PipelineEnv):
         foot_velocity = self.get_feet_velocity(pipeline_state)
         foot_velocity_xy = foot_velocity[..., :2]
         velocity_xy_sq = jnp.sum(jnp.square(foot_velocity_xy), axis=-1)
-        return jnp.sum(velocity_xy_sq * contact) * (command_norm > 0.01)
+        return jnp.sum(velocity_xy_sq * contact) * (command_norm > 0.1)
 
     def _reward_foot_clearance(
         self,
@@ -819,7 +827,7 @@ class UnitreeGo2Env(PipelineEnv):
         # Penalize peak swing foot height error from target
         command_norm = jnp.linalg.norm(commands)
         error = swing_peak / self.foot_height_target - 1.0
-        return jnp.sum(jnp.square(error) * first_contact) * (command_norm > 0.01)
+        return jnp.sum(jnp.square(error) * first_contact) * (command_norm > 0.1)
 
     def _reward_termination(self, done: jax.Array) -> jax.Array:
         return done

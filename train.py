@@ -46,7 +46,33 @@ flags.DEFINE_string(
 
 def main(argv=None):
     # Config:
-    reward_config = unitree_go2.RewardConfig()
+    reward_config = unitree_go2.RewardConfig(
+        # Rewards:
+        tracking_linear_velocity=1.5,
+        tracking_angular_velocity=0.75,
+        # Orientation Regularization Terms:
+        orientation_regularization=-2.5,
+        linear_z_velocity=-2.0,
+        angular_xy_velocity=-0.05,
+        # Energy Regularization Terms:
+        torque=-2e-4,
+        action_rate=-0.01,
+        acceleration=-2.5e-7,
+        # Auxilary Terms:
+        stand_still=-1.0,
+        termination=-1.0,
+        # Gait Reward Terms:
+        foot_slip=-0.1,
+        air_time=0.25,
+        # Gait Hyperparameters:
+        target_air_time=0.5,
+        # Hyperparameter for exponential kernel:
+        kernel_sigma=0.25,
+    )
+
+    env = unitree_go2.UnitreeGo2Env(config=reward_config, time_window=5)
+    eval_env = unitree_go2.UnitreeGo2Env(config=reward_config, time_window=5)
+    render_env = unitree_go2.UnitreeGo2Env(config=reward_config, time_window=5)
 
     # Metadata:
     policy_layer_size = [512, 256, 128,]
@@ -72,7 +98,7 @@ def main(argv=None):
         normalize_advantages=True,
     )
     training_metadata = checkpoint_utilities.training_metadata(
-        num_epochs=50,
+        num_epochs=100,
         num_training_steps=20,
         episode_length=1000,
         num_policy_steps=40,
@@ -128,9 +154,6 @@ def main(argv=None):
         gae_lambda=loss_metadata.gae_lambda,
         normalize_advantages=loss_metadata.normalize_advantages,
     )
-    env = unitree_go2.UnitreeGo2Env(config=reward_config)
-    eval_env = unitree_go2.UnitreeGo2Env(config=reward_config)
-    render_env = unitree_go2.UnitreeGo2Env(config=reward_config)
 
     def progress_fn(iteration, num_steps, metrics):
         print(
@@ -191,6 +214,7 @@ def main(argv=None):
     #     optax.adam(learning_rate=3e-4),
     # )
 
+
     optimizer = optax.chain(
         optax.clip_by_global_norm(max_norm=1.0),
         optax.adam(learning_rate=3e-4),
@@ -224,7 +248,7 @@ def main(argv=None):
         restored_checkpoint=restored_checkpoint,
         wandb_run=run,
         render_environment=render_env,
-        render_interval=1,
+        render_interval=5,
     )
 
     policy_generator, params, metrics = train_fn(

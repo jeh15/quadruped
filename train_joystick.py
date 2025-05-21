@@ -74,6 +74,10 @@ def main(argv=None):
         kernel_sigma=0.25,
     )
 
+    env = unitree_go2.UnitreeGo2Env(config=reward_config, time_window=15)
+    eval_env = unitree_go2.UnitreeGo2Env(config=reward_config, time_window=15)
+    render_env = unitree_go2.UnitreeGo2Env(config=reward_config, time_window=15)
+
     # Metadata:
     policy_layer_size = [512, 256, 128,]
     value_layer_size = [512, 256, 128,]
@@ -90,8 +94,8 @@ def main(argv=None):
         action_distribution='ParametricDistribution(distribution=distrax.Normal, bijector=distrax.Tanh())',
     )
     loss_metadata = checkpoint_utilities.loss_metadata(
-        clip_coef=0.2,
-        value_coef=1.0,
+        clip_coef=0.3,
+        value_coef=0.25,
         entropy_coef=0.01,
         gamma=0.99,
         gae_lambda=0.95,
@@ -154,9 +158,6 @@ def main(argv=None):
         gae_lambda=loss_metadata.gae_lambda,
         normalize_advantages=loss_metadata.normalize_advantages,
     )
-    env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx.xml', config=reward_config, action_scale=0.3)
-    eval_env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx.xml', config=reward_config, action_scale=0.3)
-    render_env = unitree_go2.UnitreeGo2Env(filename='unitree_go2/scene_mjx.xml', config=reward_config, action_scale=0.3)
 
     def progress_fn(iteration, num_steps, metrics):
         print(
@@ -250,7 +251,7 @@ def main(argv=None):
         restored_checkpoint=restored_checkpoint,
         wandb_run=run,
         render_environment=render_env,
-        render_interval=1,
+        render_interval=5,
     )
 
     policy_generator, params, metrics = train_fn(
