@@ -52,11 +52,12 @@ def main(argv=None):
 
     filename = 'unitree_go2/scene_mjx_v2.xml'
     action_scale = 0.3
+    time_window = 5
+    motorstate_observation = True
     kp = 35.0
     kd = 0.5
-    time_window = 5
 
-    env = unitree_go2.UnitreeGo2Env(filename=filename, action_scale=action_scale, time_window=time_window)
+    env = unitree_go2.UnitreeGo2Env(filename=filename, action_scale=action_scale, time_window=time_window, motorstate_observation=motorstate_observation)
 
     control_rate = 0.02
     control_rate_ns = 2e7
