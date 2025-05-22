@@ -10,7 +10,8 @@ import optax
 import wandb
 import orbax.checkpoint as ocp
 
-from src.envs import unitree_go2_barkour_joystick as unitree_go2
+# from src.envs import unitree_go2_barkour_joystick as unitree_go2
+from src.envs import unitree_go2_barkour_joystick_v2 as unitree_go2
 from src.algorithms.ppo import network_utilities as ppo_networks
 from src.algorithms.ppo.loss_utilities import loss_function
 from src.distribution_utilities import ParametricDistribution
@@ -61,16 +62,20 @@ def main(argv=None):
         termination=-1.0,
         # Gait Reward Terms:
         foot_slip=-0.1,
-        air_time=0.2,
+        air_time=0.1,
+        foot_clearance=-1.0,
+        foot_height=-0.0,
         # Gait Hyperparameters:
-        target_air_time=0.1,
+        target_air_time=0.2,
+        foot_height_target=0.075,
+        max_foot_height=0.1,
         # Hyperparameter for exponential kernel:
         kernel_sigma=0.25,
     )
 
-    env = unitree_go2.UnitreeGo2Env(config=reward_config, time_window=15, low_friction_model=True)
-    eval_env = unitree_go2.UnitreeGo2Env(config=reward_config, time_window=15, low_friction_model=True)
-    render_env = unitree_go2.UnitreeGo2Env(config=reward_config, time_window=15, low_friction_model=True)
+    env = unitree_go2.UnitreeGo2Env(config=reward_config, time_window=15)
+    eval_env = unitree_go2.UnitreeGo2Env(config=reward_config, time_window=15)
+    render_env = unitree_go2.UnitreeGo2Env(config=reward_config, time_window=15)
 
     # Metadata:
     policy_layer_size = [512, 256, 128,]
@@ -110,7 +115,7 @@ def main(argv=None):
         batch_size=256,
         num_minibatches=32,
         num_ppo_iterations=4,
-        normalize_observations=False,
+        normalize_observations=True,
         optimizer='optax.chain(optax.clip_by_global_norm(max_norm=1.0),optax.adam(3e-4))',
     )
 

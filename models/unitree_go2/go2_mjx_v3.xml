@@ -31,7 +31,7 @@
       <default class="go2/collision">
         <geom group="3" contype="0" conaffinity="1"/>
         <default class="go2/collision/foot">
-          <geom type="sphere" size="0.022" pos="-0.002 0 -0.213" solimp="0.9 .95 0.022"/>
+          <geom type="sphere" size="0.023" pos="-0.002 0 -0.213" solimp="0.9 .95 0.023"/>
         </default>
       </default>
     </default>
@@ -184,21 +184,6 @@
             </body>
         </body>
     </worldbody>
-
-  <!-- <actuator>
-    <general class="go2/abduction" name="front_right_hip" joint="front_right_hip_joint"/>
-    <general class="go2/hip" name="front_right_thigh" joint="front_right_thigh_joint"/>
-    <general class="go2/knee" name="front_right_calf" joint="front_right_calf_joint"/>
-    <general class="go2/abduction" name="front_left_hip" joint="front_left_hip_joint"/>
-    <general class="go2/hip" name="front_left_thigh" joint="front_left_thigh_joint"/>
-    <general class="go2/knee" name="front_left_calf" joint="front_left_calf_joint"/>
-    <general class="go2/abduction" name="hind_right_hip" joint="hind_right_hip_joint"/>
-    <general class="go2/hip" name="hind_right_thigh" joint="hind_right_thigh_joint"/>
-    <general class="go2/knee" name="hind_right_calf" joint="hind_right_calf_joint"/>
-    <general class="go2/abduction" name="hind_left_hip" joint="hind_left_hip_joint"/>
-    <general class="go2/hip" name="hind_left_thigh" joint="hind_left_thigh_joint"/>
-    <general class="go2/knee" name="hind_left_calf" joint="hind_left_calf_joint"/>
-  </actuator> -->
 
   <actuator>
     <position class="go2/abduction" name="front_right_hip" joint="front_right_hip_joint"/>
