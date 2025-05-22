@@ -10,7 +10,7 @@ import optax
 import wandb
 import orbax.checkpoint as ocp
 
-from src.envs import unitree_go2_mujocoplayground_joystick as unitree_go2
+from src.envs import unitree_go2_barkour_joystick as unitree_go2
 from src.algorithms.ppo import network_utilities as ppo_networks
 from src.algorithms.ppo.loss_utilities import loss_function
 from src.distribution_utilities import ParametricDistribution
@@ -47,36 +47,30 @@ def main(argv=None):
     # Config:
     reward_config = unitree_go2.RewardConfig(
         # Rewards:
-        tracking_linear_velocity=1.0,
-        tracking_angular_velocity=0.5,
+        tracking_linear_velocity=1.5,
+        tracking_angular_velocity=0.8,
         # Orientation Regularization Terms:
         orientation_regularization=-5.0,
-        linear_z_velocity=-0.5,
+        linear_z_velocity=-2.0,
         angular_xy_velocity=-0.05,
-        pose_regularization=0.1,
         # Energy Regularization Terms:
-        torque=-2e-4,
-        action_rate=-0.01,
-        mechanical_power=-1e-3,
-        acceleration=-0.0,
+        torque=-2.0e-4,
+        action_rate=-0.1,
         # Auxilary Terms:
-        stand_still=-1.0,
+        stand_still=-0.5,
         termination=-1.0,
         # Gait Reward Terms:
         foot_slip=-0.1,
-        air_time=0.1,
-        foot_clearance=-0.0,
-        foot_height=-0.0,
+        air_time=0.2,
         # Gait Hyperparameters:
         target_air_time=0.1,
-        foot_height_target=0.1,
         # Hyperparameter for exponential kernel:
         kernel_sigma=0.25,
     )
 
-    env = unitree_go2.UnitreeGo2Env(config=reward_config, motorstate_observation=True, low_friction_model=True, time_window=15)
-    eval_env = unitree_go2.UnitreeGo2Env(config=reward_config, motorstate_observation=True, low_friction_model=True, time_window=15)
-    render_env = unitree_go2.UnitreeGo2Env(config=reward_config, motorstate_observation=True, low_friction_model=True, time_window=15)
+    env = unitree_go2.UnitreeGo2Env(config=reward_config, time_window=15, low_friction_model=True)
+    eval_env = unitree_go2.UnitreeGo2Env(config=reward_config, time_window=15, low_friction_model=True)
+    render_env = unitree_go2.UnitreeGo2Env(config=reward_config, time_window=15, low_friction_model=True)
 
     # Metadata:
     policy_layer_size = [512, 256, 128,]

@@ -41,23 +41,17 @@ class RewardConfig:
     orientation_regularization: float = -5.0
     linear_z_velocity: float = -2.0
     angular_xy_velocity: float = -0.05
-    pose_regularization: float = 0.5
     # Energy Regularization Terms:
     torque: float = -2e-4
-    action_rate: float = -0.01
-    mechanical_power: float = -1e-3
-    acceleration: float = -1e-4
+    action_rate: float = -0.1
     # Auxilary Terms:
-    stand_still: float = -1.0
+    stand_still: float = -0.5
     termination: float = -1.0
     # Gait Reward Terms:
     foot_slip: float = -0.1
     air_time: float = 0.2
-    foot_clearance: float = -2.0
-    foot_height: float = -0.2
     # Gait Hyperparameters:
     target_air_time: float = 0.1
-    foot_height_target: float = 0.1
     # Hyperparameter for exponential kernel:
     kernel_sigma: float = 0.25
 
@@ -65,10 +59,8 @@ class RewardConfig:
 @flax.struct.dataclass
 class NoiseConfig:
     joint_position: float = 0.05
-    joint_velocity: float = 1.5
     gyroscope: float = 0.2
     gravity_vector: float = 0.05
-    accelerometer: float = 0.5
 
 
 @flax.struct.dataclass
@@ -93,7 +85,7 @@ def domain_randomize(sys: System, rng: PRNGKey) -> tuple[System, System]:
 
         # Floor Friction:
         rng, key = jax.random.split(rng)
-        geom_friction = jax.random.uniform(key, minval=0.4, maxval=1.0)
+        geom_friction = jax.random.uniform(key, minval=0.6, maxval=1.2)
         friction = sys.geom_friction.at[FLOOR_BODY_ID, 0].set(geom_friction)
 
         # Joint Friction:
@@ -188,8 +180,7 @@ class UnitreeGo2Env(PipelineEnv):
         config: RewardConfig = RewardConfig(),
         action_scale: float = 0.3,
         low_friction_model: bool = False,
-        time_window: int = 5,
-        motorstate_observation: bool = False,
+        time_window: int = 15,
         **kwargs,
     ):
         self.filename = f'models/{filename}'
@@ -216,11 +207,9 @@ class UnitreeGo2Env(PipelineEnv):
 
         self.kernel_sigma = config.kernel_sigma
         self.target_air_time = config.target_air_time
-        self.foot_height_target = config.foot_height_target
         config_dict = flax.serialization.to_state_dict(config)
         del config_dict['kernel_sigma']
         del config_dict['target_air_time']
-        del config_dict['foot_height_target']
         self.reward_config = config_dict
 
         self.noise_config = NoiseConfig()
@@ -308,12 +297,8 @@ class UnitreeGo2Env(PipelineEnv):
         ]
 
         # Observation Size:
-        self.motorstate_observation = motorstate_observation
         self.time_window = time_window
-        if not self.motorstate_observation:
-            self.num_observations = 45 * self.time_window
-        else:
-            self.num_observations = 39 * self.time_window
+        self.num_observations = 31 * self.time_window
         self.num_privileged_observations = self.num_observations + 75
 
     def sample_command(
@@ -491,17 +476,8 @@ class UnitreeGo2Env(PipelineEnv):
             'orientation_regularization': self._reward_orientation_regularization(
                 self.get_upvector(pipeline_state),
             ),
-            'pose_regularization': self._reward_pose_regularization(
-                joint_angles,
-            ),
             'torque': self._reward_torques(pipeline_state.actuator_force),
             'action_rate': self._reward_action_rate(action, state.info['previous_action']),
-            'mechanical_power': self._reward_mechanical_power(
-                joint_velocities, pipeline_state.actuator_force,
-            ),
-            'acceleration': self._reward_acceleration(
-                pipeline_state.qacc,
-            ),
             'stand_still': self._reward_stand_still(
                 state.info['command'], joint_angles,
             ),
@@ -512,12 +488,6 @@ class UnitreeGo2Env(PipelineEnv):
                 state.info['feet_air_time'],
                 first_contact,
                 state.info['command'],
-            ),
-            'foot_clearance': self._reward_foot_clearance(
-                pipeline_state,
-            ),
-            'foot_height': self._reward_foot_height(
-                state.info['swing_peak'], first_contact, state.info['command'],
             ),
             'termination': jnp.float64(
                 self._reward_termination(done)
@@ -585,7 +555,6 @@ class UnitreeGo2Env(PipelineEnv):
                 gyroscope,
                 projected_gravity,
                 relative_motor_positions,
-                motor_velocities,
                 previous_action,
                 command,
             ]
@@ -603,6 +572,7 @@ class UnitreeGo2Env(PipelineEnv):
             maxval=self.noise_config.gyroscope,
         )
         noisy_angular_rate = gyroscope + gyroscope_noise
+        noisy_yaw_rate = jnp.array([noisy_angular_rate[2]])
 
         # Gravity noise:
         projected_gravity = self.get_gravity(pipeline_state)
@@ -625,32 +595,13 @@ class UnitreeGo2Env(PipelineEnv):
         )
         noisy_joint_positions = q + joint_position_noise
 
-        # Joint velocity noise:
-        state_info['rng'], noise_key = jax.random.split(state_info['rng'])
-        joint_velocity_noise = jax.random.uniform(
-            noise_key,
-            shape=qd.shape,
-            minval=-self.noise_config.joint_velocity,
-            maxval=self.noise_config.joint_velocity,
-        )
-        noisy_joint_velocities = qd + joint_velocity_noise
-
-        if not self.motorstate_observation:
-            new_observation = jnp.concatenate([
-                noisy_angular_rate,                         # 3
-                noisy_projected_gravity,                    # 3
-                noisy_joint_positions - self.default_pose,  # 12
-                noisy_joint_velocities,                     # 12
-                state_info['previous_action'],              # 12
-                state_info['command'],                      # 3
-            ]) # Size: 45
-        else:
-            new_observation = jnp.concatenate([
-                noisy_joint_positions - self.default_pose,  # 12
-                noisy_joint_velocities,                     # 12
-                state_info['previous_action'],              # 12
-                state_info['command'],                      # 3
-            ]) # Size: 39
+        new_observation = jnp.concatenate([
+            noisy_yaw_rate,                             # 1
+            noisy_projected_gravity,                    # 3
+            noisy_joint_positions - self.default_pose,  # 12
+            state_info['previous_action'],              # 12
+            state_info['command'],                      # 3
+        ]) # Size: 31
 
 
         observation = jnp.roll(
@@ -666,7 +617,7 @@ class UnitreeGo2Env(PipelineEnv):
         feet_velocity = self.get_feet_velocity(pipeline_state).ravel()
 
         privileged_observation = jnp.concatenate([
-            observation,                                                                                # 45/39
+            observation,                                                                                # 31
             accelerometer,                                                                              # 3
             gyroscope,                                                                                  # 3
             projected_gravity,                                                                          # 3
@@ -979,22 +930,15 @@ class UnitreeGo2Env(PipelineEnv):
                 size=qd.shape,
             )
 
-        if not self.motorstate_observation:
-            new_observation = np.concatenate([
-                gyroscope,
-                projected_gravity,
-                q - self.default_ctrl,
-                qd,
-                previous_action,
-                command,
-            ])
-        else:
-            new_observation = jnp.concatenate([
-                q - self.default_ctrl,
-                qd,
-                previous_action,
-                command,
-            ])
+        yaw_rate = np.array([gyroscope[2]])
+
+        new_observation = np.concatenate([
+            yaw_rate,
+            projected_gravity,
+            q - self.default_ctrl,
+            previous_action,
+            command,
+        ])
 
         observation = np.roll(
             observation_history,
@@ -1030,6 +974,7 @@ class UnitreeGo2Env(PipelineEnv):
         # Set to Correct Data Type:
         base_rotation = np.asarray(imu_state.quaternion, dtype=np.float32)
         gyroscope = np.asarray(imu_state.gyroscope, dtype=np.float32)
+        yaw_rate = np.array([gyroscope[2]], dtype=np.float32)
         joint_positions = np.asarray(motor_state.q, dtype=np.float32)
         joint_velocities = np.asarray(motor_state.qd, dtype=np.float32)
 
@@ -1042,27 +987,16 @@ class UnitreeGo2Env(PipelineEnv):
 
         # Scale Observation Values:
         gyroscope_scale = 1.0
-        joint_velocity_scale = 1.0
         gyroscope = gyroscope_scale * gyroscope
         # projected_gravity = np.array([0.0, 0.0, -1.0])
-        joint_velocities = joint_velocity_scale * joint_velocities
 
-        if not self.motorstate_observation:
-            new_observation = np.concatenate([
-                gyroscope,
-                projected_gravity,
-                joint_positions - self.default_ctrl,
-                joint_velocities,
-                previous_action,
-                command,
-            ])
-        else:
-            new_observation = jnp.concatenate([
-                joint_positions - self.default_ctrl,
-                joint_velocities,
-                previous_action,
-                command,
-            ])
+        new_observation = np.concatenate([
+            yaw_rate,
+            projected_gravity,
+            joint_positions - self.default_ctrl,
+            previous_action,
+            command,
+        ])
 
         observation = np.roll(
             observation_history,
