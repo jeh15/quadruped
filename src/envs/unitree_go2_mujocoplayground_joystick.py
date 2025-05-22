@@ -1041,7 +1041,7 @@ class UnitreeGo2Env(PipelineEnv):
         )
 
         # Scale Observation Values:
-        gyroscope_scale = 0.1
+        gyroscope_scale = 1.0
         joint_velocity_scale = 1.0
         gyroscope = gyroscope_scale * gyroscope
         # projected_gravity = np.array([0.0, 0.0, -1.0])
