@@ -48,7 +48,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 p = graphics_layout_widget.addPlot(row=i, col=j)
                 p.showGrid(x=True, y=True, alpha=0.3)
                 p.setTitle(f"{name} {axis}", color="k", size="20pt")
-                p.setBackground('w')
+                
 
                 x_deque = collections.deque(
                     np.linspace(0, 0, self.window_size),
@@ -61,19 +61,17 @@ class MainWindow(QtWidgets.QMainWindow):
 
                 plot_item = p.plot(
                     list(x_deque), list(y_deque),
-                    pen=pg.mkPen(color=(255, 87, 51), width=2)
+                    pen=pg.mkPen(color=(100, 149, 237), width=2)
                 )
                 self.imu_main_plot_items.append(plot_item)
                 self.imu_buffers.append({'x': x_deque, 'y': y_deque})
 
                 if i == 0 and j == 0:
-                    p.setLabel("left", "Acceleration (m/s²)", **{"color": "black", "font-size": "18px"})
+                    p.setLabel("left", "Acceleration (m/s²)", **{"color": "black", "font-size": "12pt"})
                 elif i == 1 and j == 0:
-                    p.setLabel("left", "Angular Velocity (rad/s)", **{"color": "black", "font-size": "18px"})
+                    p.setLabel("left", "Angular Velocity (rad/s)", **{"color": "black", "font-size": "12pt"})
                 elif i == 2 and j == 0:
-                    p.setLabel("left", "Angle (rad)", **{"color": "black", "font-size": "18px"})
-                if i == 2 and j == 2:
-                    p.setLabel("bottom", "Time (s)", **{"color": "black", "font-size": "18px"})
+                    p.setLabel("left", "Angle (rad)", **{"color": "black", "font-size": "12pt"})
 
         shared_x_label_text = "Time (s)"
         label_item = pg.LabelItem(shared_x_label_text, size="11pt", bold=True, color='k')
@@ -91,7 +89,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 p = graphics_layout_widget.addPlot(row=i, col=j)
                 p.showGrid(x=True, y=True, alpha=0.3)
                 p.setTitle(f"{leg} {joint}", color="k", size="20pt")
-                p.setBackground('w')
+                
 
                 x_deque = collections.deque(
                     np.linspace(0, 0, self.window_size),
@@ -104,20 +102,20 @@ class MainWindow(QtWidgets.QMainWindow):
 
                 plot_item = p.plot(
                     list(x_deque), list(y_deque),
-                    pen=pg.mkPen(color=(255, 87, 51), width=2)
+                    pen=pg.mkPen(color=(100, 149, 237), width=2)
                 )
                 self.joint_position_plot_items.append(plot_item)
                 self.joint_position_buffers.append({'x': x_deque, 'y': y_deque})
 
                 if i == 0 and j == 0:
-                    p.setLabel("left", "Position (rad)", **{"color": "black", "font-size": "18px"})
+                    p.setLabel("left", "Position (rad)", **{"color": "black", "font-size": "12pt"})
                 elif i == 1 and j == 0:
-                    p.setLabel("left", "Position (rad)", **{"color": "black", "font-size": "18px"})
+                    p.setLabel("left", "Position (rad)", **{"color": "black", "font-size": "12pt"})
                 elif i == 2 and j == 0:
-                    p.setLabel("left", "Position (rad)", **{"color": "black", "font-size": "18px"})
+                    p.setLabel("left", "Position (rad)", **{"color": "black", "font-size": "12pt"})
                 elif i == 3 and j == 0:
-                    p.setLabel("left", "Position (rad)", **{"color": "black", "font-size": "18px"})
-
+                    p.setLabel("left", "Position (rad)", **{"color": "black", "font-size": "12pt"})
+        
         shared_x_label_text = "Time (s)"
         label_item = pg.LabelItem(shared_x_label_text, size="11pt", bold=True, color='k')
         graphics_layout_widget.addItem(label_item, row=4, col=0, colspan=3)
@@ -134,7 +132,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 p = graphics_layout_widget.addPlot(row=i, col=j)
                 p.showGrid(x=True, y=True, alpha=0.3)
                 p.setTitle(f"{leg} {joint}", color="k", size="20pt")
-                p.setBackground('w')
+                
 
                 x_deque = collections.deque(
                     np.linspace(0, 0, self.window_size),
@@ -147,20 +145,20 @@ class MainWindow(QtWidgets.QMainWindow):
 
                 plot_item = p.plot(
                     list(x_deque), list(y_deque),
-                    pen=pg.mkPen(color=(255, 87, 51), width=2)
+                    pen=pg.mkPen(color=(100, 149, 237), width=2)
                 )
 
                 self.joint_velocity_plot_items.append(plot_item)
                 self.joint_velocity_buffers.append({'x': x_deque, 'y': y_deque})
 
                 if i == 0 and j == 0:
-                    p.setLabel("left", "Velocity (rad/s)", **{"color": "black", "font-size": "18px"})
+                    p.setLabel("left", "Velocity (rad/s)", **{"color": "black", "font-size": "12pt"})
                 elif i == 1 and j == 0:
-                    p.setLabel("left", "Velocity (rad/s)", **{"color": "black", "font-size": "18px"})
+                    p.setLabel("left", "Velocity (rad/s)", **{"color": "black", "font-size": "12pt"})
                 elif i == 2 and j == 0:
-                    p.setLabel("left", "Velocity (rad/s)", **{"color": "black", "font-size": "18px"})
+                    p.setLabel("left", "Velocity (rad/s)", **{"color": "black", "font-size": "12pt"})
                 elif i == 3 and j == 0:
-                    p.setLabel("left", "Velocity (rad/s)", **{"color": "black", "font-size": "18px"})
+                    p.setLabel("left", "Velocity (rad/s)", **{"color": "black", "font-size": "12pt"})
 
         shared_x_label_text = "Time (s)"
         label_item = pg.LabelItem(shared_x_label_text, size="11pt", bold=True, color='k')
@@ -178,7 +176,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 p = graphics_layout_widget.addPlot(row=i, col=j)
                 p.showGrid(x=True, y=True, alpha=0.3)
                 p.setTitle(f"{leg} {joint}", color="k", size="20pt")
-                p.setBackground('w')
+                
 
                 x_deque = collections.deque(
                     np.linspace(0, 0, self.window_size),
@@ -191,19 +189,19 @@ class MainWindow(QtWidgets.QMainWindow):
 
                 plot_item = p.plot(
                     list(x_deque), list(y_deque),
-                    pen=pg.mkPen(color=(255, 87, 51), width=2)
+                    pen=pg.mkPen(color=(100, 149, 237), width=2)
                 )
                 self.torque_estimate_plot_items.append(plot_item)
                 self.torque_estimate_buffers.append({'x': x_deque, 'y': y_deque})
 
                 if i == 0 and j == 0:
-                    p.setLabel("left", "Torque (Nm)", **{"color": "black", "font-size": "18px"})
+                    p.setLabel("left", "Torque (Nm)", **{"color": "black", "font-size": "12pt"})
                 elif i == 1 and j == 0:
-                    p.setLabel("left", "Torque (Nm)", **{"color": "black", "font-size": "18px"})
+                    p.setLabel("left", "Torque (Nm)", **{"color": "black", "font-size": "12pt"})
                 elif i == 2 and j == 0:
-                    p.setLabel("left", "Torque (Nm)", **{"color": "black", "font-size": "18px"})
+                    p.setLabel("left", "Torque (Nm)", **{"color": "black", "font-size": "12pt"})
                 elif i == 3 and j == 0:
-                    p.setLabel("left", "Torque (Nm)", **{"color": "black", "font-size": "18px"})
+                    p.setLabel("left", "Torque (Nm)", **{"color": "black", "font-size": "12pt"})
 
         shared_x_label_text = "Time (s)"
         label_item = pg.LabelItem(shared_x_label_text, size="11pt", bold=True, color='k')
@@ -276,7 +274,8 @@ def main(argv=None):
     qt_app = QtWidgets.QApplication([])
 
     # Set global Config:
-    pg.setConfigOption('foreground', 'k')
+    pg.setConfigOption('background', 'w')  # 'w' stands for white
+    pg.setConfigOption('foreground', 'k')  # 'k' stands for black
 
     main_window = MainWindow(window_size=100)
     main_window.show()
