@@ -230,7 +230,7 @@ def main(argv=None):
             forward_command, lateral_command, rotation_command,
         ])
         command = np.where(np.abs(command) < 0.1, 0.0, command)
-        command = np.clip(command, -0.75, 0.75)
+        command = np.clip(command, -0.5, 0.5)
 
         key, subkey = jax.random.split(subkey)
         imu_state = unitree_driver.get_imu_state()

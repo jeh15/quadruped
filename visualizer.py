@@ -196,18 +196,19 @@ class MainWindow(QtWidgets.QMainWindow):
                     p.setLabel("bottom", "Time (s)", **{"color": "red", "font-size": "18px"})
 
         # Time Initialization:
+        self.update_interval_ms = 100
         self.timer = QtCore.QTimer()
-        self.timer.setInterval(100)
+        self.timer.setInterval(self.update_interval_ms)
         self.timer.timeout.connect(self.update_plot)
         self.timer.start()
+        self.current_time = 0.0
 
     def update_plot(self):
         imu_state = self.unitree_driver.get_imu_state()
         motor_state = self.unitree_driver.get_motor_state()
 
         # Update Plot Data:
-        self.time = self.time[1:]
-        self.time.append(self.time[-1] + 1)
+        self.current_time += self.update_interval_ms * 1.0e-3
 
         # Unpack IMU state:
         accelerometer = np.asarray(imu_state.accelerometer)
@@ -215,16 +216,16 @@ class MainWindow(QtWidgets.QMainWindow):
         rpy = np.asarray(imu_state.rpy)
 
         # Unpack Motor state:
-        joint_positions = np.asarray(motor_state.joint_position)
-        joint_velocities = np.asarray(motor_state.joint_velocity)
+        joint_positions = np.asarray(motor_state.q)
+        joint_velocities = np.asarray(motor_state.qd)
         torque_estimates = np.asarray(motor_state.torque_estimate)
 
         # Update IMU Data:
-        sensors = np.array([accelerometer, gyroscope, rpy])
+        sensors = np.concatenate([accelerometer, gyroscope, rpy])
         for sensor, plot_item, buffer in zip(sensors, self.imu_main_plot_items, self.imu_buffers):
             x_deque = buffer['x']
             y_deque = buffer['y']
-            x_deque.append(self.time[-1])
+            x_deque.append(self.current_time )
             y_deque.append(sensor)
             # Update the plot item with the new data
             plot_item.setData(list(x_deque), list(y_deque))
@@ -233,25 +234,25 @@ class MainWindow(QtWidgets.QMainWindow):
         for joint_position, plot_item, buffer in zip(joint_positions, self.joint_position_plot_items, self.joint_position_buffers):
             x_deque = buffer['x']
             y_deque = buffer['y']
-            x_deque.append(self.time[-1])
+            x_deque.append(self.current_time )
             y_deque.append(joint_position)
             # Update the plot item with the new data
             plot_item.setData(list(x_deque), list(y_deque))
 
         # Update Motor Data: Joint Velocities
-        for joint_velocity, plot_item in zip(joint_velocities, self.joint_velocity_plot_items, self.joint_velocity_buffers):
+        for joint_velocity, plot_item, buffer in zip(joint_velocities, self.joint_velocity_plot_items, self.joint_velocity_buffers):
             x_deque = buffer['x']
             y_deque = buffer['y']
-            x_deque.append(self.time[-1])
+            x_deque.append(self.current_time )
             y_deque.append(joint_velocity)
             # Update the plot item with the new data
             plot_item.setData(list(x_deque), list(y_deque))
 
         # Update Motor Data: Torque Estimates
-        for torque_estimate, plot_item in zip(torque_estimates, self.torque_estimate_plot_items, self.torque_estimate_buffers):
+        for torque_estimate, plot_item, buffer in zip(torque_estimates, self.torque_estimate_plot_items, self.torque_estimate_buffers):
             x_deque = buffer['x']
             y_deque = buffer['y']
-            x_deque.append(self.time[-1])
+            x_deque.append(self.current_time )
             y_deque.append(torque_estimate)
             # Update the plot item with the new data
             plot_item.setData(list(x_deque), list(y_deque))
