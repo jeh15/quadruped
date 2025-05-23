@@ -59,7 +59,7 @@ class RewardConfig:
 @flax.struct.dataclass
 class NoiseConfig:
     joint_position: float = 0.05
-    gyroscope: float = 0.2
+    gyroscope: float = 0.5  # Used to be 0.2
     gravity_vector: float = 0.05
 
 
@@ -85,7 +85,7 @@ def domain_randomize(sys: System, rng: PRNGKey) -> tuple[System, System]:
 
         # Floor Friction:
         rng, key = jax.random.split(rng)
-        geom_friction = jax.random.uniform(key, minval=0.6, maxval=1.2)
+        geom_friction = jax.random.uniform(key, minval=0.6, maxval=1.5)
         friction = sys.geom_friction.at[FLOOR_BODY_ID, 0].set(geom_friction)
 
         # Joint Friction:
@@ -659,13 +659,6 @@ class UnitreeGo2Env(PipelineEnv):
         # Penalize non flat base orientation
         return jnp.sum(jnp.square(base_z_axis[:2]))
 
-    def _reward_pose_regularization(
-        self, qpos: jax.Array,
-    ) -> jax.Array:
-        weight = jnp.array([1.0, 1.0, 0.1] * 4) / 12.0
-        error = jnp.sum(jnp.square(qpos - self.default_pose) * weight)
-        return jnp.exp(-error)
-
     def _reward_torques(self, torques: jax.Array) -> jax.Array:
         # Penalize torques
         return jnp.sqrt(jnp.sum(jnp.square(torques))) + jnp.sum(jnp.abs(torques))
@@ -675,18 +668,6 @@ class UnitreeGo2Env(PipelineEnv):
     ) -> jax.Array:
         # Penalize changes in actions
         return jnp.sum(jnp.square(action - previous_action))
-
-    def _reward_mechanical_power(
-        self, qd: jax.Array, torques: jax.Array
-    ) -> jax.Array:
-        # Penalize mechanical power
-        return jnp.sum(jnp.abs(torques) * jnp.abs(qd))
-
-    def _reward_acceleration(
-        self, qacc: jax.Array,
-    ) -> jax.Array:
-        # Penalize Motor/Joint Acceleration
-        return jnp.sqrt(jnp.sum(jnp.square(qacc)))
 
     def _reward_tracking_velocity(
         self, commands: jax.Array, local_velocity: jax.Array
@@ -724,40 +705,6 @@ class UnitreeGo2Env(PipelineEnv):
             command_norm > 0.1
         )
         return reward_air_time
-
-    def _reward_air_time_(
-        self,
-        air_time: jax.Array,
-        first_contact: jax.Array,
-        commands: jax.Array,
-    ) -> jax.Array:
-        # Flight Phase Reward:
-        command_norm = jnp.linalg.norm(commands)
-        sigma = 0.05
-        errors = jnp.square(air_time - self.target_air_time)
-        reward_air_time = jnp.sum(
-            jnp.exp(-errors / sigma) * first_contact
-        )
-        reward_air_time *= (
-            command_norm > 0.1
-        )
-        return reward_air_time
-
-    def _reward_foot_clearance(
-        self,
-        pipeline_state: base.State,
-    ) -> jax.Array:
-        # Penalize low foot clearance if moving
-        # Foot height target scale with velocity?
-        # Issue is this could incentivize the robot to stand still if positive reward...
-        foot_velocity = self.get_feet_velocity(pipeline_state)
-        foot_velocity_xy = foot_velocity[..., :2]
-        velocity_norm = jnp.sqrt(jnp.linalg.norm(foot_velocity_xy, axis=-1))
-        foot_position = pipeline_state.site_xpos[self.feet_site_idx]
-        foot_position_z = foot_position[..., -1]
-        height_target = self.foot_height_target * velocity_norm
-        error = jnp.sum(jnp.square(foot_position_z - self.foot_height_target))
-        return jnp.exp(-error / 0.1) * (velocity_norm > 0.1)
 
     def _reward_foot_slip(
         self,
