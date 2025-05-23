@@ -889,6 +889,8 @@ class UnitreeGo2Env(PipelineEnv):
 
         yaw_rate = np.array([gyroscope[2]])
 
+        print(command)
+
         new_observation = np.concatenate([
             yaw_rate,
             projected_gravity,
@@ -943,9 +945,11 @@ class UnitreeGo2Env(PipelineEnv):
         )
 
         # Scale Observation Values:
-        gyroscope_scale = 1.0
-        gyroscope = gyroscope_scale * gyroscope
-        # projected_gravity = np.array([0.0, 0.0, -1.0])
+        gyroscope_scale = 0.1
+        alpha = 0.0
+        yaw_rate = gyroscope_scale * yaw_rate
+        projected_gravity = (alpha) * np.array([0.0, 0.0, -1.0]) + (1 - alpha) * projected_gravity
+        projected_gravity = projected_gravity / np.linalg.norm(projected_gravity)
 
         new_observation = np.concatenate([
             yaw_rate,

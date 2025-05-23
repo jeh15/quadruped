@@ -14,7 +14,8 @@ import numpy.typing as npt
 from unitree_api_bindings import unitree_api
 
 # from src.envs import unitree_go2_joystick as unitree_go2
-from src.envs import unitree_go2_mujocoplayground_joystick as unitree_go2
+# from src.envs import unitree_go2_mujocoplayground_joystick as unitree_go2
+from src.envs import unitree_go2_barkour_joystick as unitree_go2
 from src.algorithms.ppo.load_utilities import load_policy
 
 jax.config.update("jax_enable_x64", True)
@@ -50,14 +51,22 @@ def main(argv=None):
     # kp = 25.0
     # time_window = 5
 
+    # filename = 'unitree_go2/scene_mjx_v2.xml'
+    # action_scale = 0.3
+    # time_window = 5
+    # motorstate_observation = True
+    # kp = 35.0
+    # kd = 0.5
+
+    # env = unitree_go2.UnitreeGo2Env(filename=filename, action_scale=action_scale, time_window=time_window, motorstate_observation=motorstate_observation)
+
     filename = 'unitree_go2/scene_mjx_v2.xml'
     action_scale = 0.3
-    time_window = 5
-    motorstate_observation = True
+    time_window = 15
     kp = 35.0
     kd = 0.5
 
-    env = unitree_go2.UnitreeGo2Env(filename=filename, action_scale=action_scale, time_window=time_window, motorstate_observation=motorstate_observation)
+    env = unitree_go2.UnitreeGo2Env(filename=filename, action_scale=action_scale, time_window=time_window)
 
     control_rate = 0.02
     control_rate_ns = 2e7
@@ -145,9 +154,8 @@ def main(argv=None):
     damping_control_mode = False
     is_running = True
 
-    next_time_ns = time.clock_gettime_ns(time.CLOCK_MONOTONIC)
+    global_iter = 0
     while is_running:
-        next_time_ns += control_rate_ns
         start_time = time.clock_gettime_ns(time.CLOCK_MONOTONIC)
 
         for event in pygame.event.get():
@@ -228,6 +236,12 @@ def main(argv=None):
         imu_state = unitree_driver.get_imu_state()
         motor_state = unitree_driver.get_motor_state()
 
+        # if (global_iter % 50) == 0:
+        #     print(imu_state.gyroscope)
+        #     print(imu_state.quaternion)
+
+        # global_iter += 1
+
         observation = env.hardware_observation(
             imu_state=imu_state,
             motor_state=motor_state,
@@ -269,13 +283,21 @@ def main(argv=None):
             motor_commands.damping = [5.0, 5.0, 5.0] * 4
             unitree_driver.update_command(motor_commands)
 
-        now_ns = time.clock_gettime_ns(time.CLOCK_MONOTONIC)
-        if now_ns < next_time_ns:
-            sleep_time_ns = next_time_ns - now_ns
-            time.sleep(sleep_time_ns / 1e9)
+        # now_ns = time.clock_gettime_ns(time.CLOCK_MONOTONIC)
+        elapsed_time = time.clock_gettime_ns(time.CLOCK_MONOTONIC) - start_time
+
+        # if now_ns < next_time_ns:
+        #     sleep_time_ns = next_time_ns - now_ns
+        #     time.sleep(sleep_time_ns / 1e9)
+        # else:
+        #     print('Warning: Control rate exceeded.')
+        #     next_time_ns = now_ns
+
+        if elapsed_time < control_rate_ns:
+            sleep_time_ns = control_rate_ns - elapsed_time
+            time.sleep(sleep_time_ns / 1.0e9)
         else:
             print('Warning: Control rate exceeded.')
-            next_time_ns = now_ns
 
     # Stop Thread:
     unitree_driver.stop_thread()
