@@ -27,7 +27,7 @@ class MainWindow(QtWidgets.QMainWindow):
 
         # Initialize PyQt5 Window:
         self.setWindowTitle("Unitree Visualizer")
-        self.setGeometry(100, 100, 1600, 900)
+        self.setGeometry(100, 100, 1920, 1080)
 
         # Main widget and layout
         main_widget = QtWidgets.QWidget()
@@ -47,7 +47,8 @@ class MainWindow(QtWidgets.QMainWindow):
             for j, axis in enumerate(["X", "Y", "Z"]):
                 p = graphics_layout_widget.addPlot(row=i, col=j)
                 p.showGrid(x=True, y=True, alpha=0.3)
-                p.setTitle(f"{name} {axis}", color="b", size="20pt")
+                p.setTitle(f"{name} {axis}", color="k", size="20pt")
+                p.setBackground('w')
 
                 x_deque = collections.deque(
                     np.linspace(0, 0, self.window_size),
@@ -60,19 +61,23 @@ class MainWindow(QtWidgets.QMainWindow):
 
                 plot_item = p.plot(
                     list(x_deque), list(y_deque),
-                    pen=pg.mkPen(color=(i*60, j*20, 255-i*30-j*10), width=2)
+                    pen=pg.mkPen(color=(255, 87, 51), width=2)
                 )
                 self.imu_main_plot_items.append(plot_item)
                 self.imu_buffers.append({'x': x_deque, 'y': y_deque})
 
                 if i == 0 and j == 0:
-                    p.setLabel("left", "Acceleration (m/s²)", **{"color": "red", "font-size": "18px"})
+                    p.setLabel("left", "Acceleration (m/s²)", **{"color": "black", "font-size": "18px"})
                 elif i == 1 and j == 0:
-                    p.setLabel("left", "Angular Velocity (rad/s)", **{"color": "red", "font-size": "18px"})
+                    p.setLabel("left", "Angular Velocity (rad/s)", **{"color": "black", "font-size": "18px"})
                 elif i == 2 and j == 0:
-                    p.setLabel("left", "Angle (rad)", **{"color": "red", "font-size": "18px"})
+                    p.setLabel("left", "Angle (rad)", **{"color": "black", "font-size": "18px"})
                 if i == 2 and j == 2:
-                    p.setLabel("bottom", "Time (s)", **{"color": "red", "font-size": "18px"})
+                    p.setLabel("bottom", "Time (s)", **{"color": "black", "font-size": "18px"})
+
+        shared_x_label_text = "Time (s)"
+        label_item = pg.LabelItem(shared_x_label_text, size="11pt", bold=True, color='k')
+        graphics_layout_widget.addItem(label_item, row=3, col=0, colspan=3)
 
         # Mtor Data Visualization: Joint Positions
         graphics_layout_widget = pg.GraphicsLayoutWidget(show=True)
@@ -85,7 +90,8 @@ class MainWindow(QtWidgets.QMainWindow):
             for j, joint in enumerate(["Abduction", "Hip", "Knee"]):
                 p = graphics_layout_widget.addPlot(row=i, col=j)
                 p.showGrid(x=True, y=True, alpha=0.3)
-                p.setTitle(f"{leg} {joint}", color="b", size="20pt")
+                p.setTitle(f"{leg} {joint}", color="k", size="20pt")
+                p.setBackground('w')
 
                 x_deque = collections.deque(
                     np.linspace(0, 0, self.window_size),
@@ -98,21 +104,23 @@ class MainWindow(QtWidgets.QMainWindow):
 
                 plot_item = p.plot(
                     list(x_deque), list(y_deque),
-                    pen=pg.mkPen(color=(i*60, j*20, 255-i*30-j*10), width=2)
+                    pen=pg.mkPen(color=(255, 87, 51), width=2)
                 )
                 self.joint_position_plot_items.append(plot_item)
                 self.joint_position_buffers.append({'x': x_deque, 'y': y_deque})
 
                 if i == 0 and j == 0:
-                    p.setLabel("left", "Position (rad)", **{"color": "red", "font-size": "18px"})
+                    p.setLabel("left", "Position (rad)", **{"color": "black", "font-size": "18px"})
                 elif i == 1 and j == 0:
-                    p.setLabel("left", "Position (rad)", **{"color": "red", "font-size": "18px"})
+                    p.setLabel("left", "Position (rad)", **{"color": "black", "font-size": "18px"})
                 elif i == 2 and j == 0:
-                    p.setLabel("left", "Position (rad)", **{"color": "red", "font-size": "18px"})
+                    p.setLabel("left", "Position (rad)", **{"color": "black", "font-size": "18px"})
                 elif i == 3 and j == 0:
-                    p.setLabel("left", "Position (rad)", **{"color": "red", "font-size": "18px"})
-                if i == 3 and j == 2:
-                    p.setLabel("bottom", "Time (s)", **{"color": "red", "font-size": "18px"})
+                    p.setLabel("left", "Position (rad)", **{"color": "black", "font-size": "18px"})
+
+        shared_x_label_text = "Time (s)"
+        label_item = pg.LabelItem(shared_x_label_text, size="11pt", bold=True, color='k')
+        graphics_layout_widget.addItem(label_item, row=4, col=0, colspan=3)
 
         # Motor Data Visualization: Joint Velocities
         graphics_layout_widget = pg.GraphicsLayoutWidget(show=True)
@@ -125,7 +133,8 @@ class MainWindow(QtWidgets.QMainWindow):
             for j, joint in enumerate(["Abduction", "Hip", "Knee"]):
                 p = graphics_layout_widget.addPlot(row=i, col=j)
                 p.showGrid(x=True, y=True, alpha=0.3)
-                p.setTitle(f"{leg} {joint}", color="b", size="20pt")
+                p.setTitle(f"{leg} {joint}", color="k", size="20pt")
+                p.setBackground('w')
 
                 x_deque = collections.deque(
                     np.linspace(0, 0, self.window_size),
@@ -138,22 +147,24 @@ class MainWindow(QtWidgets.QMainWindow):
 
                 plot_item = p.plot(
                     list(x_deque), list(y_deque),
-                    pen=pg.mkPen(color=(i*60, j*20, 255-i*30-j*10), width=2)
+                    pen=pg.mkPen(color=(255, 87, 51), width=2)
                 )
 
                 self.joint_velocity_plot_items.append(plot_item)
                 self.joint_velocity_buffers.append({'x': x_deque, 'y': y_deque})
 
                 if i == 0 and j == 0:
-                    p.setLabel("left", "Velocity (rad/s)", **{"color": "red", "font-size": "18px"})
+                    p.setLabel("left", "Velocity (rad/s)", **{"color": "black", "font-size": "18px"})
                 elif i == 1 and j == 0:
-                    p.setLabel("left", "Velocity (rad/s)", **{"color": "red", "font-size": "18px"})
+                    p.setLabel("left", "Velocity (rad/s)", **{"color": "black", "font-size": "18px"})
                 elif i == 2 and j == 0:
-                    p.setLabel("left", "Velocity (rad/s)", **{"color": "red", "font-size": "18px"})
+                    p.setLabel("left", "Velocity (rad/s)", **{"color": "black", "font-size": "18px"})
                 elif i == 3 and j == 0:
-                    p.setLabel("left", "Velocity (rad/s)", **{"color": "red", "font-size": "18px"})
-                if i == 3 and j == 2:
-                    p.setLabel("bottom", "Time (s)", **{"color": "red", "font-size": "18px"})
+                    p.setLabel("left", "Velocity (rad/s)", **{"color": "black", "font-size": "18px"})
+
+        shared_x_label_text = "Time (s)"
+        label_item = pg.LabelItem(shared_x_label_text, size="11pt", bold=True, color='k')
+        graphics_layout_widget.addItem(label_item, row=4, col=0, colspan=3)
 
         # Motor Data Visualization: Torque Estimates
         graphics_layout_widget = pg.GraphicsLayoutWidget(show=True)
@@ -166,7 +177,8 @@ class MainWindow(QtWidgets.QMainWindow):
             for j, joint in enumerate(["Abduction", "Hip", "Knee"]):
                 p = graphics_layout_widget.addPlot(row=i, col=j)
                 p.showGrid(x=True, y=True, alpha=0.3)
-                p.setTitle(f"{leg} {joint}", color="b", size="20pt")
+                p.setTitle(f"{leg} {joint}", color="k", size="20pt")
+                p.setBackground('w')
 
                 x_deque = collections.deque(
                     np.linspace(0, 0, self.window_size),
@@ -179,21 +191,23 @@ class MainWindow(QtWidgets.QMainWindow):
 
                 plot_item = p.plot(
                     list(x_deque), list(y_deque),
-                    pen=pg.mkPen(color=(i*60, j*20, 255-i*30-j*10), width=2)
+                    pen=pg.mkPen(color=(255, 87, 51), width=2)
                 )
                 self.torque_estimate_plot_items.append(plot_item)
                 self.torque_estimate_buffers.append({'x': x_deque, 'y': y_deque})
 
                 if i == 0 and j == 0:
-                    p.setLabel("left", "Torque (Nm)", **{"color": "red", "font-size": "18px"})
+                    p.setLabel("left", "Torque (Nm)", **{"color": "black", "font-size": "18px"})
                 elif i == 1 and j == 0:
-                    p.setLabel("left", "Torque (Nm)", **{"color": "red", "font-size": "18px"})
+                    p.setLabel("left", "Torque (Nm)", **{"color": "black", "font-size": "18px"})
                 elif i == 2 and j == 0:
-                    p.setLabel("left", "Torque (Nm)", **{"color": "red", "font-size": "18px"})
+                    p.setLabel("left", "Torque (Nm)", **{"color": "black", "font-size": "18px"})
                 elif i == 3 and j == 0:
-                    p.setLabel("left", "Torque (Nm)", **{"color": "red", "font-size": "18px"})
-                if i == 3 and j == 2:
-                    p.setLabel("bottom", "Time (s)", **{"color": "red", "font-size": "18px"})
+                    p.setLabel("left", "Torque (Nm)", **{"color": "black", "font-size": "18px"})
+
+        shared_x_label_text = "Time (s)"
+        label_item = pg.LabelItem(shared_x_label_text, size="11pt", bold=True, color='k')
+        graphics_layout_widget.addItem(label_item, row=4, col=0, colspan=3)
 
         # Time Initialization:
         self.update_interval_ms = 100
@@ -225,7 +239,7 @@ class MainWindow(QtWidgets.QMainWindow):
         for sensor, plot_item, buffer in zip(sensors, self.imu_main_plot_items, self.imu_buffers):
             x_deque = buffer['x']
             y_deque = buffer['y']
-            x_deque.append(self.current_time )
+            x_deque.append(self.current_time)
             y_deque.append(sensor)
             # Update the plot item with the new data
             plot_item.setData(list(x_deque), list(y_deque))
@@ -234,7 +248,7 @@ class MainWindow(QtWidgets.QMainWindow):
         for joint_position, plot_item, buffer in zip(joint_positions, self.joint_position_plot_items, self.joint_position_buffers):
             x_deque = buffer['x']
             y_deque = buffer['y']
-            x_deque.append(self.current_time )
+            x_deque.append(self.current_time)
             y_deque.append(joint_position)
             # Update the plot item with the new data
             plot_item.setData(list(x_deque), list(y_deque))
@@ -243,7 +257,7 @@ class MainWindow(QtWidgets.QMainWindow):
         for joint_velocity, plot_item, buffer in zip(joint_velocities, self.joint_velocity_plot_items, self.joint_velocity_buffers):
             x_deque = buffer['x']
             y_deque = buffer['y']
-            x_deque.append(self.current_time )
+            x_deque.append(self.current_time)
             y_deque.append(joint_velocity)
             # Update the plot item with the new data
             plot_item.setData(list(x_deque), list(y_deque))
@@ -252,7 +266,7 @@ class MainWindow(QtWidgets.QMainWindow):
         for torque_estimate, plot_item, buffer in zip(torque_estimates, self.torque_estimate_plot_items, self.torque_estimate_buffers):
             x_deque = buffer['x']
             y_deque = buffer['y']
-            x_deque.append(self.current_time )
+            x_deque.append(self.current_time)
             y_deque.append(torque_estimate)
             # Update the plot item with the new data
             plot_item.setData(list(x_deque), list(y_deque))
@@ -260,6 +274,10 @@ class MainWindow(QtWidgets.QMainWindow):
 
 def main(argv=None):
     qt_app = QtWidgets.QApplication([])
+
+    # Set global Config:
+    pg.setConfigOption('foreground', 'k')
+
     main_window = MainWindow(window_size=100)
     main_window.show()
     qt_app.exec()
