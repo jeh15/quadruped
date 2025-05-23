@@ -498,7 +498,7 @@ class UnitreeGo2Env(PipelineEnv):
                 state.info['command'],
             ),
             'foot_clearance': self._reward_foot_clearance(
-                pipeline_state, state.info['command'],
+                pipeline_state,
             ),
             'foot_height': self._reward_foot_height(
                 state.info['swing_peak'], first_contact, state.info['command'],
@@ -782,7 +782,7 @@ class UnitreeGo2Env(PipelineEnv):
         velocity_norm = jnp.sqrt(jnp.linalg.norm(foot_velocity_xy, axis=-1))
         foot_position = pipeline_state.site_xpos[self.feet_site_idx]
         foot_position_z = foot_position[..., -1]
-        delta = jnp.abs(foot_position_z - self.foot_height_target)
+        delta = foot_position_z - self.foot_height_target
         return jnp.sum(delta * velocity_norm)
 
     def _reward_foot_height(

@@ -10,8 +10,8 @@ import optax
 import wandb
 import orbax.checkpoint as ocp
 
-# from src.envs import unitree_go2_barkour_joystick as unitree_go2
-from src.envs import unitree_go2_barkour_joystick_v2 as unitree_go2
+from src.envs import unitree_go2_barkour_joystick as unitree_go2
+# from src.envs import unitree_go2_barkour_joystick_v2 as unitree_go2
 from src.algorithms.ppo import network_utilities as ppo_networks
 from src.algorithms.ppo.loss_utilities import loss_function
 from src.distribution_utilities import ParametricDistribution
@@ -61,14 +61,10 @@ def main(argv=None):
         stand_still=-0.5,
         termination=-1.0,
         # Gait Reward Terms:
-        foot_slip=-0.1,
-        air_time=0.1,
-        foot_clearance=-1.0,
-        foot_height=-0.0,
+        foot_slip=-0.25,
+        air_time=0.2,
         # Gait Hyperparameters:
-        target_air_time=0.2,
-        foot_height_target=0.075,
-        max_foot_height=0.1,
+        target_air_time=0.1,
         # Hyperparameter for exponential kernel:
         kernel_sigma=0.25,
     )
@@ -101,7 +97,7 @@ def main(argv=None):
         normalize_advantages=True,
     )
     training_metadata = checkpoint_utilities.training_metadata(
-        num_epochs=50,
+        num_epochs=35,
         num_training_steps=20,
         episode_length=1000,
         num_policy_steps=40,
