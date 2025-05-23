@@ -49,9 +49,13 @@ class RewardConfig:
     termination: float = -1.0
     # Gait Reward Terms:
     foot_slip: float = -0.1
-    air_time: float = 0.2
+    air_time: float = 0.1
+    foot_clearance: float = -2.0
+    foot_height: float = -0.1
     # Gait Hyperparameters:
     target_air_time: float = 0.1
+    foot_height_target: float = 0.1
+    max_foot_height: float = 0.1
     # Hyperparameter for exponential kernel:
     kernel_sigma: float = 0.25
 
@@ -207,9 +211,13 @@ class UnitreeGo2Env(PipelineEnv):
 
         self.kernel_sigma = config.kernel_sigma
         self.target_air_time = config.target_air_time
+        self.foot_height_target = config.foot_height_target
+        self.max_foot_height = config.max_foot_height
         config_dict = flax.serialization.to_state_dict(config)
         del config_dict['kernel_sigma']
         del config_dict['target_air_time']
+        del config_dict['foot_height_target']
+        del config_dict['max_foot_height']
         self.reward_config = config_dict
 
         self.noise_config = NoiseConfig()
@@ -489,6 +497,12 @@ class UnitreeGo2Env(PipelineEnv):
                 first_contact,
                 state.info['command'],
             ),
+            'foot_clearance': self._reward_foot_clearance(
+                pipeline_state, state.info['command'],
+            ),
+            'foot_height': self._reward_foot_height(
+                state.info['swing_peak'], first_contact, state.info['command'],
+            ),
             'termination': jnp.float64(
                 self._reward_termination(done)
             ) if jax.config.x64_enabled else jnp.float32(
@@ -725,39 +739,62 @@ class UnitreeGo2Env(PipelineEnv):
         )
         return reward_air_time
 
-    def _reward_air_time_(
-        self,
-        air_time: jax.Array,
-        first_contact: jax.Array,
-        commands: jax.Array,
-    ) -> jax.Array:
-        # Flight Phase Reward:
-        command_norm = jnp.linalg.norm(commands)
-        sigma = 0.05
-        errors = jnp.square(air_time - self.target_air_time)
-        reward_air_time = jnp.sum(
-            jnp.exp(-errors / sigma) * first_contact
-        )
-        reward_air_time *= (
-            command_norm > 0.1
-        )
-        return reward_air_time
+    # def _reward_air_time(
+    #     self,
+    #     air_time: jax.Array,
+    #     first_contact: jax.Array,
+    #     commands: jax.Array,
+    # ) -> jax.Array:
+    #     # Flight Phase Reward:
+    #     command_norm = jnp.linalg.norm(commands)
+    #     reward_air_time = jax.nn.elu((air_time - self.target_air_time) * first_contact)
+    #     reward_air_time = jnp.sum(reward_air_time)
+    #     reward_air_time *= (
+    #         command_norm > 0.1
+    #     )
+    #     return reward_air_time
+
+    # def _reward_foot_clearance(
+    #     self,
+    #     pipeline_state: base.State,
+    #     commands: jax.Array,
+    # ) -> jax.Array:
+    #     # Penalize low foot clearance if moving
+    #     foot_velocity = self.get_feet_velocity(pipeline_state)
+    #     foot_velocity_xy = foot_velocity[..., :2]
+    #     velocity_norm = jnp.sqrt(jnp.linalg.norm(foot_velocity_xy, axis=-1))
+    #     foot_position = pipeline_state.site_xpos[self.feet_site_idx]
+    #     foot_position_z = foot_position[..., -1]
+    #     minimal_height_target = self.foot_height_target * jnp.linalg.norm(commands[:2])
+    #     minimal_height_target = jnp.clip(minimal_height_target, 0.0, self.max_foot_height)
+    #     reward_foot_clearance = jax.nn.elu(
+    #         (foot_position_z - minimal_height_target) * (velocity_norm > 0.1)
+    #     )
+    #     return jnp.sum(reward_foot_clearance)
 
     def _reward_foot_clearance(
         self,
         pipeline_state: base.State,
     ) -> jax.Array:
         # Penalize low foot clearance if moving
-        # Foot height target scale with velocity?
-        # Issue is this could incentivize the robot to stand still if positive reward...
         foot_velocity = self.get_feet_velocity(pipeline_state)
         foot_velocity_xy = foot_velocity[..., :2]
         velocity_norm = jnp.sqrt(jnp.linalg.norm(foot_velocity_xy, axis=-1))
         foot_position = pipeline_state.site_xpos[self.feet_site_idx]
         foot_position_z = foot_position[..., -1]
-        height_target = self.foot_height_target * velocity_norm
-        error = jnp.sum(jnp.square(foot_position_z - self.foot_height_target))
-        return jnp.exp(-error / 0.1) * (velocity_norm > 0.1)
+        delta = jnp.abs(foot_position_z - self.foot_height_target)
+        return jnp.sum(delta * velocity_norm)
+
+    def _reward_foot_height(
+        self,
+        swing_peak: jax.Array,
+        first_contact: jax.Array,
+        commands: jax.Array,
+    ) -> jax.Array:
+        # Penalize peak swing foot height error from target
+        command_norm = jnp.linalg.norm(commands)
+        error = swing_peak / self.foot_height_target - 1.0
+        return jnp.sum(jnp.square(error) * first_contact) * (command_norm > 0.1)
 
     def _reward_foot_slip(
         self,
@@ -942,8 +979,6 @@ class UnitreeGo2Env(PipelineEnv):
 
         yaw_rate = np.array([gyroscope[2]])
 
-        print(command)
-
         new_observation = np.concatenate([
             yaw_rate,
             projected_gravity,
@@ -998,11 +1033,9 @@ class UnitreeGo2Env(PipelineEnv):
         )
 
         # Scale Observation Values:
-        gyroscope_scale = 0.1
-        alpha = 0.0
-        yaw_rate = gyroscope_scale * yaw_rate
-        projected_gravity = (alpha) * np.array([0.0, 0.0, -1.0]) + (1 - alpha) * projected_gravity
-        projected_gravity = projected_gravity / np.linalg.norm(projected_gravity)
+        gyroscope_scale = 1.0
+        gyroscope = gyroscope_scale * gyroscope
+        # projected_gravity = np.array([0.0, 0.0, -1.0])
 
         new_observation = np.concatenate([
             yaw_rate,
