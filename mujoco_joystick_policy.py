@@ -13,7 +13,9 @@ import mujoco
 import mujoco.viewer
 
 # from src.envs import unitree_go2_joystick as unitree_go2
-from src.envs import unitree_go2_mujocoplayground_joystick as unitree_go2
+# from src.envs import unitree_go2_mujocoplayground_joystick as unitree_go2
+from src.envs import unitree_go2_barkour_joystick as unitree_go2
+
 from src.algorithms.ppo.load_utilities import load_policy
 
 
@@ -53,12 +55,18 @@ def main(argv=None):
     # action_scale = 0.25
     # time_window = 5
 
+    # filename = 'unitree_go2/scene_mjx_v2.xml'
+    # action_scale = 0.3
+    # time_window = 5
+    # motorstate_observation = True
+
+    # env = unitree_go2.UnitreeGo2Env(filename=filename, action_scale=action_scale, time_window=time_window, motorstate_observation=motorstate_observation)
+
     filename = 'unitree_go2/scene_mjx_v2.xml'
     action_scale = 0.3
-    time_window = 5
-    motorstate_observation = True
+    time_window = 15
 
-    env = unitree_go2.UnitreeGo2Env(filename=filename, action_scale=action_scale, time_window=time_window, motorstate_observation=motorstate_observation)
+    env = unitree_go2.UnitreeGo2Env(filename=filename, action_scale=action_scale, time_window=time_window)
 
     model_path = os.path.join(
         os.path.dirname(__file__),
