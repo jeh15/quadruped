@@ -10,8 +10,9 @@ import optax
 import wandb
 import orbax.checkpoint as ocp
 
-from src.envs import unitree_go2_barkour_joystick as unitree_go2
+# from src.envs import unitree_go2_barkour_joystick as unitree_go2
 # from src.envs import unitree_go2_barkour_joystick_v2 as unitree_go2
+from src.envs import unitree_go2_barkour_joystick_v3 as unitree_go2
 from src.algorithms.ppo import network_utilities as ppo_networks
 from src.algorithms.ppo.loss_utilities import loss_function
 from src.distribution_utilities import ParametricDistribution
