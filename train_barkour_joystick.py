@@ -61,7 +61,7 @@ def main(argv=None):
         stand_still=-0.5,
         termination=-1.0,
         # Gait Reward Terms:
-        foot_slip=-0.25,
+        foot_slip=-0.1,
         air_time=0.2,
         # Gait Hyperparameters:
         target_air_time=0.1,

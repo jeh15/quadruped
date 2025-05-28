@@ -85,7 +85,7 @@ def domain_randomize(sys: System, rng: PRNGKey) -> tuple[System, System]:
 
         # Floor Friction:
         rng, key = jax.random.split(rng)
-        geom_friction = jax.random.uniform(key, minval=0.6, maxval=1.5)
+        geom_friction = jax.random.uniform(key, minval=0.6, maxval=1.4)
         friction = sys.geom_friction.at[FLOOR_BODY_ID, 0].set(geom_friction)
 
         # Joint Friction:
@@ -131,6 +131,15 @@ def domain_randomize(sys: System, rng: PRNGKey) -> tuple[System, System]:
         delta = jax.random.uniform(key, shape=(12,), minval=-0.05, maxval=0.05)
         qpos0 = qpos0.at[7:].set(qpos0[7:] + delta)
 
+        # actuator
+        rng, key = jax.random.split(rng)
+        gain_range = (-5, 5)
+        param = jax.random.uniform(
+            key, (1,), minval=gain_range[0], maxval=gain_range[1]
+        ) + sys.actuator_gainprm[:, 0]
+        gain = sys.actuator_gainprm.at[:, 0].set(param)
+        bias = sys.actuator_biasprm.at[:, 1].set(-param)
+
         return (
             friction,
             dof_frictionloss,
@@ -138,6 +147,8 @@ def domain_randomize(sys: System, rng: PRNGKey) -> tuple[System, System]:
             body_ipos,
             body_mass,
             qpos0,
+            gain,
+            bias,
         )
 
     (
@@ -147,6 +158,8 @@ def domain_randomize(sys: System, rng: PRNGKey) -> tuple[System, System]:
         body_ipos,
         body_mass,
         qpos0,
+        gain,
+        bias,
     ) = randomize_parameters(rng)
 
     in_axes = jax.tree.map(lambda x: None, sys)
@@ -157,6 +170,8 @@ def domain_randomize(sys: System, rng: PRNGKey) -> tuple[System, System]:
         'body_ipos': 0,
         'body_mass': 0,
         'qpos0': 0,
+        'actuator_gainprm': 0,
+        'actuator_biasprm': 0,
     })
 
     sys = sys.tree_replace({
@@ -166,6 +181,8 @@ def domain_randomize(sys: System, rng: PRNGKey) -> tuple[System, System]:
         'body_ipos': body_ipos,
         'body_mass': body_mass,
         'qpos0': qpos0,
+        'actuator_gainprm': gain,
+        'actuator_biasprm': bias,
     })  # type: ignore
 
     return sys, in_axes
