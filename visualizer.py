@@ -10,10 +10,16 @@ from unitree_api_bindings import unitree_api
 
 
 class MainWindow(QtWidgets.QMainWindow):
-    def __init__(self, window_size: int = 100):
+    def __init__(
+        self,
+        unitree_driver: Any,
+        window_size: int = 100,
+        update_interval_ms: int = 100,
+    ):
         super().__init__()
 
         # Initialize Unitree API
+        # HARDWWARE"
         network_name = "enx7cc2c647de4f"
         control_rate_us = 100000  # 10 Hz
         self.unitree_driver = unitree_api.UnitreeDriver(
@@ -48,7 +54,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 p = graphics_layout_widget.addPlot(row=i, col=j)
                 p.showGrid(x=True, y=True, alpha=0.3)
                 p.setTitle(f"{name} {axis}", color="k", size="20pt")
-                
 
                 x_deque = collections.deque(
                     np.linspace(0, 0, self.window_size),
@@ -89,7 +94,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 p = graphics_layout_widget.addPlot(row=i, col=j)
                 p.showGrid(x=True, y=True, alpha=0.3)
                 p.setTitle(f"{leg} {joint}", color="k", size="20pt")
-                
 
                 x_deque = collections.deque(
                     np.linspace(0, 0, self.window_size),
@@ -115,7 +119,7 @@ class MainWindow(QtWidgets.QMainWindow):
                     p.setLabel("left", "Position (rad)", **{"color": "black", "font-size": "12pt"})
                 elif i == 3 and j == 0:
                     p.setLabel("left", "Position (rad)", **{"color": "black", "font-size": "12pt"})
-        
+
         shared_x_label_text = "Time (s)"
         label_item = pg.LabelItem(shared_x_label_text, size="11pt", bold=True, color='k')
         graphics_layout_widget.addItem(label_item, row=4, col=0, colspan=3)
@@ -132,7 +136,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 p = graphics_layout_widget.addPlot(row=i, col=j)
                 p.showGrid(x=True, y=True, alpha=0.3)
                 p.setTitle(f"{leg} {joint}", color="k", size="20pt")
-                
 
                 x_deque = collections.deque(
                     np.linspace(0, 0, self.window_size),
@@ -176,7 +179,6 @@ class MainWindow(QtWidgets.QMainWindow):
                 p = graphics_layout_widget.addPlot(row=i, col=j)
                 p.showGrid(x=True, y=True, alpha=0.3)
                 p.setTitle(f"{leg} {joint}", color="k", size="20pt")
-                
 
                 x_deque = collections.deque(
                     np.linspace(0, 0, self.window_size),
@@ -208,7 +210,7 @@ class MainWindow(QtWidgets.QMainWindow):
         graphics_layout_widget.addItem(label_item, row=4, col=0, colspan=3)
 
         # Time Initialization:
-        self.update_interval_ms = 100
+        self.update_interval_ms = update_interval_ms
         self.timer = QtCore.QTimer()
         self.timer.setInterval(self.update_interval_ms)
         self.timer.timeout.connect(self.update_plot)
