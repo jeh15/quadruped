@@ -75,7 +75,7 @@ class DisturbanceConfig:
 @flax.struct.dataclass
 class CommandConfig:
     command_range: jax.Array = flax.struct.field(default_factory=lambda: jnp.array([1.5, 0.8, 1.2]))
-    command_mask_probability: jax.Array = flax.struct.field(default_factory=lambda: jnp.array([0.9, 0.25, 0.5]))
+    command_mask_probability: jax.Array = flax.struct.field(default_factory=lambda: jnp.array([0.8]))
 
 
 def domain_randomize(sys: System, rng: PRNGKey) -> tuple[System, System]:
@@ -87,7 +87,7 @@ def domain_randomize(sys: System, rng: PRNGKey) -> tuple[System, System]:
 
         # Floor Friction:
         rng, key = jax.random.split(rng)
-        geom_friction = jax.random.uniform(key, minval=0.4, maxval=1.0)
+        geom_friction = jax.random.uniform(key, minval=0.6, maxval=1.2)
         friction = sys.geom_friction.at[FLOOR_BODY_ID, 0].set(geom_friction)
 
         # Joint Friction:
@@ -178,11 +178,11 @@ class UnitreeGo2Env(PipelineEnv):
 
     def __init__(
         self,
-        filename: str = 'unitree_go2/scene_mjx_joystick.xml',
+        filename: str = 'unitree_go2/scene_mjx.xml',
         config: RewardConfig = RewardConfig(),
-        action_scale: float = 0.25,
+        action_scale: float = 0.3,
         time_window: int = 5,
-        low_friction_model: bool = False,
+        fast_command_sampling: bool = False,
         **kwargs,
     ):
         self.filename = f'models/{filename}'
@@ -197,12 +197,6 @@ class UnitreeGo2Env(PipelineEnv):
         sys = mjcf.load(self.filepath)
         self.step_dt = 0.02
         sys = sys.tree_replace({'opt.timestep': 0.004})
-
-        if low_friction_model:
-            sys = sys.tree_replace({
-                'dof_frictionloss': 0.01 * jnp.ones_like(sys.dof_frictionloss),
-                'dof_armature': 0.005 * jnp.ones_like(sys.dof_armature),
-            })
 
         n_frames = kwargs.pop('n_frames', int(self.step_dt / sys.opt.timestep))
         super().__init__(sys, backend='mjx', n_frames=n_frames)
@@ -298,6 +292,9 @@ class UnitreeGo2Env(PipelineEnv):
             "hl_global_linvel",
         ]
 
+        # Fast Command Sampling:
+        self.fast_command_sampling = fast_command_sampling
+
         # Observation Size:
         self.time_window = time_window
         self.num_observations = 45 * self.time_window
@@ -308,26 +305,13 @@ class UnitreeGo2Env(PipelineEnv):
         rng: jax.Array,
         previous_command: jax.Array
     ) -> jax.Array:
-        # _, command_key, sample_key, continuation_key = jax.random.split(rng, 4)
-
         _, command_key, stand_still_key = jax.random.split(rng, 3)
-        
-        # new_cmd = jax.random.uniform(
-        #     command_key, shape=(3,), minval=-self.command_config.command_range, maxval=self.command_config.command_range,
-        # )
-        # new_cmd_mask = jax.random.bernoulli(
-        #     sample_key, p=self.command_config.command_mask_probability, shape=(3,),
-        # )
-        # continuation_mask = jax.random.bernoulli(
-        #     continuation_key, p=0.5, shape=(3,),
-        # )
-        # command = previous_command - continuation_mask * (previous_command - new_cmd_mask * new_cmd)
 
         command = jax.random.uniform(
             command_key, shape=(3,), minval=-self.command_config.command_range, maxval=self.command_config.command_range,
         )
         stand_still_mask = jax.random.bernoulli(
-            stand_still_key, p=0.8, shape=(1,),
+            stand_still_key, p=self.command_config.command_mask_probability, shape=(1,),
         )
 
         command = stand_still_mask * command
@@ -387,19 +371,18 @@ class UnitreeGo2Env(PipelineEnv):
 
         # Command Sampling:
         rng, command_interval_key, command_sample_key = jax.random.split(rng, 3)
-        
-        # time_until_next_command = 5.0 * jax.random.exponential(
-        #     command_interval_key
-        # )
-        # steps_until_next_command = jnp.round(
-        #     time_until_next_command / self.dt
-        # ).astype(jnp.int32)
 
-        time_until_next_command = jax.random.uniform(
-            command_interval_key,
-            minval=10.0,
-            maxval=10.0,
-        )
+        if self.fast_command_sampling:
+            time_until_next_command = 5.0 * jax.random.exponential(
+                command_interval_key
+            )
+        else:
+            time_until_next_command = jax.random.uniform(
+                command_interval_key,
+                minval=5.0,
+                maxval=10.0,
+            )
+        
         steps_until_next_command = jnp.round(
             time_until_next_command / self.dt
         ).astype(jnp.int32)
@@ -480,6 +463,9 @@ class UnitreeGo2Env(PipelineEnv):
         first_contact = (state.info['feet_air_time'] > 0) * contact_filt
         state.info['feet_air_time'] += self.dt
 
+        # Mask here for reward calculation:
+        # state.info['feet_air_time'] *= ~contact
+
         foot_position = pipeline_state.site_xpos[self.feet_site_idx]
         foot_position_z = foot_position[..., -1]
         state.info['swing_peak'] = jnp.maximum(
@@ -547,8 +533,8 @@ class UnitreeGo2Env(PipelineEnv):
         # State management
         state.info['previous_action'] = action
         state.info['previous_velocity'] = joint_velocities
-        state.info['feet_air_time'] *= ~contact
         state.info['previous_contact'] = contact
+        state.info['feet_air_time'] *= ~contact
         state.info['swing_peak'] *= ~contact
         state.info['rewards'] = rewards
         state.info['steps_until_next_command'] -= 1
@@ -561,27 +547,27 @@ class UnitreeGo2Env(PipelineEnv):
             state.info['command'],
         )
 
-        # Randomize Command Interval:
-        # state.info['steps_until_next_command'] = jnp.where(
-        #     done | (state.info['steps_until_next_command'] <= 0),
-        #     jnp.round(
-        #         jax.random.exponential(sample_key) * 5.0 / self.dt
-        #     ).astype(jnp.int32),
-        #     state.info['steps_until_next_command'],
-        # )
-
-        # Randomize Command Interval:
-        state.info['steps_until_next_command'] = jnp.where(
-            done | (state.info['steps_until_next_command'] <= 0),
-            jnp.round(
-                jax.random.uniform(
-                    sample_key,
-                    minval=10.0,
-                    maxval=10.0,
-                ) / self.dt
-            ).astype(jnp.int32),
-            state.info['steps_until_next_command'],
-        )
+        # Randomized Command Interval:
+        if self.fast_command_sampling:
+            state.info['steps_until_next_command'] = jnp.where(
+                done | (state.info['steps_until_next_command'] <= 0),
+                jnp.round(
+                    jax.random.exponential(sample_key) * 5.0 / self.dt
+                ).astype(jnp.int32),
+                state.info['steps_until_next_command'],
+            )
+        else:
+            state.info['steps_until_next_command'] = jnp.where(
+                done | (state.info['steps_until_next_command'] <= 0),
+                jnp.round(
+                    jax.random.uniform(
+                        sample_key,
+                        minval=5.0,
+                        maxval=10.0,
+                    ) / self.dt
+                ).astype(jnp.int32),
+                state.info['steps_until_next_command'],
+            )
 
         # Proxy Metrics:
         state.metrics['total_distance'] = math.normalize(

@@ -10,7 +10,6 @@ import optax
 import wandb
 import orbax.checkpoint as ocp
 
-# from src.envs import unitree_go2_mujocoplayground as unitree_go2
 from src.envs import unitree_go2_joystick as unitree_go2
 from src.algorithms.ppo import network_utilities as ppo_networks
 from src.algorithms.ppo.loss_utilities import loss_function
@@ -51,28 +50,30 @@ def main(argv=None):
         tracking_linear_velocity=1.5,
         tracking_angular_velocity=0.75,
         # Orientation Regularization Terms:
-        orientation_regularization=-2.5,
-        linear_z_velocity=-2.0,
+        orientation_regularization=-5.0,
+        linear_z_velocity=-1.0,
         angular_xy_velocity=-0.05,
         # Energy Regularization Terms:
         torque=-2e-4,
         action_rate=-0.01,
-        acceleration=-2.5e-7,
+        acceleration=-2.5e-4,
         # Auxilary Terms:
-        stand_still=-1.0,
+        stand_still=-0.5,
         termination=-1.0,
         # Gait Reward Terms:
         foot_slip=-0.1,
-        air_time=0.25,
+        air_time=0.5,
         # Gait Hyperparameters:
-        target_air_time=0.5,
+        target_air_time=0.1,
         # Hyperparameter for exponential kernel:
         kernel_sigma=0.25,
     )
 
-    env = unitree_go2.UnitreeGo2Env(config=reward_config, time_window=5)
-    eval_env = unitree_go2.UnitreeGo2Env(config=reward_config, time_window=5)
-    render_env = unitree_go2.UnitreeGo2Env(config=reward_config, time_window=5)
+    time_window = 5
+    fast_command_sampling = True
+    env = unitree_go2.UnitreeGo2Env(config=reward_config, time_window=time_window, fast_command_sampling=fast_command_sampling)
+    eval_env = unitree_go2.UnitreeGo2Env(config=reward_config, time_window=time_window, fast_command_sampling=fast_command_sampling)
+    render_env = unitree_go2.UnitreeGo2Env(config=reward_config, time_window=time_window, fast_command_sampling=fast_command_sampling)
 
     # Metadata:
     policy_layer_size = [512, 256, 128,]
@@ -90,15 +91,15 @@ def main(argv=None):
         action_distribution='ParametricDistribution(distribution=distrax.Normal, bijector=distrax.Tanh())',
     )
     loss_metadata = checkpoint_utilities.loss_metadata(
-        clip_coef=0.2,
-        value_coef=1.0,
+        clip_coef=0.3,
+        value_coef=0.25,
         entropy_coef=0.01,
         gamma=0.99,
         gae_lambda=0.95,
         normalize_advantages=True,
     )
     training_metadata = checkpoint_utilities.training_metadata(
-        num_epochs=100,
+        num_epochs=35,
         num_training_steps=20,
         episode_length=1000,
         num_policy_steps=40,

@@ -59,7 +59,7 @@ class RewardConfig:
 @flax.struct.dataclass
 class NoiseConfig:
     joint_position: float = 0.05
-    gyroscope: float = 0.5  # Used to be 0.2
+    gyroscope: float = 0.2
     gravity_vector: float = 0.05
 
 
@@ -73,7 +73,7 @@ class DisturbanceConfig:
 @flax.struct.dataclass
 class CommandConfig:
     command_range: jax.Array = flax.struct.field(default_factory=lambda: jnp.array([1.5, 0.8, 1.2]))
-    command_mask_probability: jax.Array = flax.struct.field(default_factory=lambda: jnp.array([0.9, 0.25, 0.5]))
+    command_mask_probability: jax.Array = flax.struct.field(default_factory=lambda: jnp.array([0.8]))
 
 
 def domain_randomize(sys: System, rng: PRNGKey) -> tuple[System, System]:
@@ -85,7 +85,7 @@ def domain_randomize(sys: System, rng: PRNGKey) -> tuple[System, System]:
 
         # Floor Friction:
         rng, key = jax.random.split(rng)
-        geom_friction = jax.random.uniform(key, minval=0.6, maxval=1.4)
+        geom_friction = jax.random.uniform(key, minval=0.6, maxval=1.2)
         friction = sys.geom_friction.at[FLOOR_BODY_ID, 0].set(geom_friction)
 
         # Joint Friction:
@@ -131,15 +131,6 @@ def domain_randomize(sys: System, rng: PRNGKey) -> tuple[System, System]:
         delta = jax.random.uniform(key, shape=(12,), minval=-0.05, maxval=0.05)
         qpos0 = qpos0.at[7:].set(qpos0[7:] + delta)
 
-        # actuator
-        rng, key = jax.random.split(rng)
-        gain_range = (-5, 5)
-        param = jax.random.uniform(
-            key, (1,), minval=gain_range[0], maxval=gain_range[1]
-        ) + sys.actuator_gainprm[:, 0]
-        gain = sys.actuator_gainprm.at[:, 0].set(param)
-        bias = sys.actuator_biasprm.at[:, 1].set(-param)
-
         return (
             friction,
             dof_frictionloss,
@@ -147,8 +138,6 @@ def domain_randomize(sys: System, rng: PRNGKey) -> tuple[System, System]:
             body_ipos,
             body_mass,
             qpos0,
-            gain,
-            bias,
         )
 
     (
@@ -158,8 +147,6 @@ def domain_randomize(sys: System, rng: PRNGKey) -> tuple[System, System]:
         body_ipos,
         body_mass,
         qpos0,
-        gain,
-        bias,
     ) = randomize_parameters(rng)
 
     in_axes = jax.tree.map(lambda x: None, sys)
@@ -170,8 +157,6 @@ def domain_randomize(sys: System, rng: PRNGKey) -> tuple[System, System]:
         'body_ipos': 0,
         'body_mass': 0,
         'qpos0': 0,
-        'actuator_gainprm': 0,
-        'actuator_biasprm': 0,
     })
 
     sys = sys.tree_replace({
@@ -181,8 +166,6 @@ def domain_randomize(sys: System, rng: PRNGKey) -> tuple[System, System]:
         'body_ipos': body_ipos,
         'body_mass': body_mass,
         'qpos0': qpos0,
-        'actuator_gainprm': gain,
-        'actuator_biasprm': bias,
     })  # type: ignore
 
     return sys, in_axes
@@ -193,10 +176,9 @@ class UnitreeGo2Env(PipelineEnv):
 
     def __init__(
         self,
-        filename: str = 'unitree_go2/scene_mjx_v2.xml',
+        filename: str = 'unitree_go2/scene_mjx.xml',
         config: RewardConfig = RewardConfig(),
         action_scale: float = 0.3,
-        low_friction_model: bool = False,
         time_window: int = 15,
         **kwargs,
     ):
@@ -212,12 +194,6 @@ class UnitreeGo2Env(PipelineEnv):
         sys = mjcf.load(self.filepath)
         self.step_dt = 0.02
         sys = sys.tree_replace({'opt.timestep': 0.004})
-
-        if low_friction_model:
-            sys = sys.tree_replace({
-                'dof_frictionloss': 0.01 * jnp.ones_like(sys.dof_frictionloss),
-                'dof_armature': 0.005 * jnp.ones_like(sys.dof_armature),
-            })
 
         n_frames = kwargs.pop('n_frames', int(self.step_dt / sys.opt.timestep))
         super().__init__(sys, backend='mjx', n_frames=n_frames)
@@ -328,7 +304,7 @@ class UnitreeGo2Env(PipelineEnv):
             command_key, shape=(3,), minval=-self.command_config.command_range, maxval=self.command_config.command_range,
         )
         stand_still_mask = jax.random.bernoulli(
-            stand_still_key, p=0.8, shape=(1,),
+            stand_still_key, p=self.command_config.command_mask_probability, shape=(1,),
         )
         command = stand_still_mask * command
 
@@ -385,7 +361,7 @@ class UnitreeGo2Env(PipelineEnv):
         # Command Sampling:
         rng, command_sample_key = jax.random.split(rng, 2)
         steps_until_next_command = jnp.round(
-            10.0 / self.dt
+            5.0 / self.dt
         ).astype(jnp.int32)
         command = self.sample_command(command_sample_key)
 
@@ -538,7 +514,7 @@ class UnitreeGo2Env(PipelineEnv):
         state.info['steps_until_next_command'] = jnp.where(
             done | (state.info['steps_until_next_command'] <= 0),
             jnp.round(
-                10.0 / self.dt
+                5.0 / self.dt
             ).astype(jnp.int32),
             state.info['steps_until_next_command'],
         )
@@ -569,6 +545,7 @@ class UnitreeGo2Env(PipelineEnv):
     ) -> Dict[str, jax.Array]:
         """
             Observation: [
+                gyroscope,
                 projected_gravity,
                 relative_motor_positions,
                 previous_action,
@@ -588,7 +565,6 @@ class UnitreeGo2Env(PipelineEnv):
             maxval=self.noise_config.gyroscope,
         )
         noisy_angular_rate = gyroscope + gyroscope_noise
-        noisy_yaw_rate = jnp.array([noisy_angular_rate[2]])
 
         # Gravity noise:
         projected_gravity = self.get_gravity(pipeline_state)
@@ -612,11 +588,12 @@ class UnitreeGo2Env(PipelineEnv):
         noisy_joint_positions = q + joint_position_noise
 
         new_observation = jnp.concatenate([
+            noisy_angular_rate,                         # 3
             noisy_projected_gravity,                    # 3
             noisy_joint_positions - self.default_pose,  # 12
             state_info['previous_action'],              # 12
             state_info['command'],                      # 3
-        ]) # Size: 30
+        ]) # Size: 33
 
 
         observation = jnp.roll(
@@ -632,7 +609,7 @@ class UnitreeGo2Env(PipelineEnv):
         feet_velocity = self.get_feet_velocity(pipeline_state).ravel()
 
         privileged_observation = jnp.concatenate([
-            observation,                                                                                # 30
+            observation,                                                                                # 33
             accelerometer,                                                                              # 3
             gyroscope,                                                                                  # 3
             projected_gravity,                                                                          # 3
