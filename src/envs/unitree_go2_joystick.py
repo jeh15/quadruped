@@ -463,9 +463,6 @@ class UnitreeGo2Env(PipelineEnv):
         first_contact = (state.info['feet_air_time'] > 0) * contact_filt
         state.info['feet_air_time'] += self.dt
 
-        # Mask here for reward calculation:
-        # state.info['feet_air_time'] *= ~contact
-
         foot_position = pipeline_state.site_xpos[self.feet_site_idx]
         foot_position_z = foot_position[..., -1]
         state.info['swing_peak'] = jnp.maximum(
@@ -694,6 +691,20 @@ class UnitreeGo2Env(PipelineEnv):
             'privileged_state': privileged_observation,
         }
 
+    def _reward_tracking_velocity(
+        self, commands: jax.Array, local_velocity: jax.Array
+    ) -> jax.Array:
+        # Tracking of linear velocity commands (xy axes)
+        error = jnp.sum(jnp.square(commands[:2] - local_velocity[:2]))
+        return jnp.exp(-error / self.kernel_sigma)
+
+    def _reward_tracking_yaw_rate(
+        self, commands: jax.Array, x: jax.Array
+    ) -> jax.Array:
+        # Tracking of angular velocity commands (yaw)
+        error = jnp.square(commands[2] - x[2])
+        return jnp.exp(-error / self.kernel_sigma)
+
     def _reward_vertical_velocity(
         self, global_base_linvel: jax.Array
     ) -> jax.Array:
@@ -740,20 +751,6 @@ class UnitreeGo2Env(PipelineEnv):
     ) -> jax.Array:
         # Penalize Motor/Joint Acceleration
         return jnp.sqrt(jnp.sum(jnp.square(qacc)))
-
-    def _reward_tracking_velocity(
-        self, commands: jax.Array, local_velocity: jax.Array
-    ) -> jax.Array:
-        # Tracking of linear velocity commands (xy axes)
-        error = jnp.sum(jnp.square(commands[:2] - local_velocity[:2]))
-        return jnp.exp(-error / self.kernel_sigma)
-
-    def _reward_tracking_yaw_rate(
-        self, commands: jax.Array, x: jax.Array
-    ) -> jax.Array:
-        # Tracking of angular velocity commands (yaw)
-        error = jnp.square(commands[2] - x[2])
-        return jnp.exp(-error / self.kernel_sigma)
 
     def _reward_stand_still(
         self,

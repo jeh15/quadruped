@@ -61,19 +61,20 @@ def main(argv=None):
         stand_still=-0.5,
         termination=-1.0,
         # Gait Reward Terms:
-        foot_slip=-0.1,
-        air_time=0.5,
+        foot_slip=-0.25,
+        air_time=5.0,
         # Gait Hyperparameters:
-        target_air_time=0.1,
+        target_air_time=0.2,
         # Hyperparameter for exponential kernel:
         kernel_sigma=0.25,
     )
 
+    action_scale = 0.5
     time_window = 5
     fast_command_sampling = True
-    env = unitree_go2.UnitreeGo2Env(config=reward_config, time_window=time_window, fast_command_sampling=fast_command_sampling)
-    eval_env = unitree_go2.UnitreeGo2Env(config=reward_config, time_window=time_window, fast_command_sampling=fast_command_sampling)
-    render_env = unitree_go2.UnitreeGo2Env(config=reward_config, time_window=time_window, fast_command_sampling=fast_command_sampling)
+    env = unitree_go2.UnitreeGo2Env(config=reward_config, action_scale=action_scale, time_window=time_window, fast_command_sampling=fast_command_sampling)
+    eval_env = unitree_go2.UnitreeGo2Env(config=reward_config, action_scale=action_scale, time_window=time_window, fast_command_sampling=fast_command_sampling)
+    render_env = unitree_go2.UnitreeGo2Env(config=reward_config, action_scale=action_scale, time_window=time_window, fast_command_sampling=fast_command_sampling)
 
     # Metadata:
     policy_layer_size = [512, 256, 128,]
@@ -99,7 +100,7 @@ def main(argv=None):
         normalize_advantages=True,
     )
     training_metadata = checkpoint_utilities.training_metadata(
-        num_epochs=35,
+        num_epochs=15,
         num_training_steps=20,
         episode_length=1000,
         num_policy_steps=40,
