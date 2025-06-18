@@ -55,8 +55,8 @@ def main(argv=None):
         angular_xy_velocity=-0.05,
         # Energy Regularization Terms:
         torque=-2e-4,
-        action_rate=-0.01,
-        acceleration=-2.5e-4,
+        action_rate=-0.1,
+        acceleration=-2.5e-3,
         # Auxilary Terms:
         stand_still=-0.5,
         termination=-1.0,
